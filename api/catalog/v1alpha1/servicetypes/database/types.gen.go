@@ -11,17 +11,22 @@ import (
 	externalRef0 "github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes"
 )
 
-// DatabaseResources Resource allocation for the database
-type DatabaseResources struct {
-	// Cpu CPU cores
-	Cpu int `json:"cpu"`
+// Defines values for DatabaseSpecEngine.
+const (
+	Mysql    DatabaseSpecEngine = "mysql"
+	Postgres DatabaseSpecEngine = "postgres"
+)
 
-	// Memory Memory with unit suffix
-	Memory string `json:"memory"`
-
-	// Storage Storage size with unit suffix
-	Storage              string                 `json:"storage"`
-	AdditionalProperties map[string]interface{} `json:"-"`
+// Valid indicates whether the value is a known member of the DatabaseSpecEngine enum.
+func (e DatabaseSpecEngine) Valid() bool {
+	switch e {
+	case Mysql:
+		return true
+	case Postgres:
+		return true
+	default:
+		return false
+	}
 }
 
 // DatabaseSpec defines model for DatabaseSpec.
@@ -29,17 +34,8 @@ type DatabaseSpec struct {
 	// CreateTime Timestamp when the resource was created (RFC 3339)
 	CreateTime *time.Time `json:"create_time,omitempty"`
 
-	// Engine Database engine type.
-	//
-	// Common engines include:
-	// - Relational: postgresql, mysql, mariadb, cockroachdb
-	// - Document: mongodb, couchdb
-	// - Key-Value: redis, memcached, etcd
-	// - Search: elasticsearch, opensearch
-	// - Time-series: influxdb, timescaledb
-	// - Graph: neo4j
-	// - Wide-column: cassandra, scylladb
-	Engine string `json:"engine"`
+	// Engine Database engine.
+	Engine DatabaseSpecEngine `json:"engine"`
 
 	// Id Unique identifier for the resource.
 	Id *string `json:"id,omitempty"`
@@ -59,9 +55,7 @@ type DatabaseSpec struct {
 	// Keys are provider identifiers (e.g., kubevirt, vmware, aws).
 	// Values are provider-specific configuration objects.
 	ProviderHints *externalRef0.ProviderHints `json:"provider_hints,omitempty"`
-
-	// Resources Resource allocation for the database
-	Resources DatabaseResources `json:"resources"`
+	Resources     Resources                   `json:"resources"`
 
 	// ServiceType Service type identifier.
 	// Makes the payload self-describing and enables routing/validation.
@@ -76,102 +70,24 @@ type DatabaseSpec struct {
 	// UpdateTime Timestamp when the resource was last updated (RFC 3339)
 	UpdateTime *time.Time `json:"update_time,omitempty"`
 
-	// Version Database engine version.
-	// Providers map this to their supported versions.
-	Version              string                 `json:"version"`
+	// Version Engine version. Concrete (e.g. `16`, engine-dependent — see registry conditional-constraints, E3) OR an abstract channel the PROVIDER resolves (`latest`, `lts`). Optional: when omitted it defaults to `latest`. Because the value may be abstract, two provider obligations apply (ADR-014; provider-contract §8.1a): (1) the provider DECLARES its channel→version resolution so an abstract request stays comparable/conformable/validatable against a pinned requirement and across compatible providers (declared, not live-queried); (2) the concrete version actually provisioned is recorded in outputs.applied_version for audit. Intent carries the abstract; realized carries the concrete.
+	Version              *string                `json:"version,omitempty"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// Getter for additional properties for DatabaseResources. Returns the specified
-// element and whether it was found
-func (a DatabaseResources) Get(fieldName string) (value interface{}, found bool) {
-	if a.AdditionalProperties != nil {
-		value, found = a.AdditionalProperties[fieldName]
-	}
-	return
-}
+// DatabaseSpecEngine Database engine.
+type DatabaseSpecEngine string
 
-// Setter for additional properties for DatabaseResources
-func (a *DatabaseResources) Set(fieldName string, value interface{}) {
-	if a.AdditionalProperties == nil {
-		a.AdditionalProperties = make(map[string]interface{})
-	}
-	a.AdditionalProperties[fieldName] = value
-}
+// Resources defines model for Resources.
+type Resources struct {
+	// Cpu CPU allocation, as a millicore string (`500m`) or whole/fractional cores (`2`, `1.5`) — Kubernetes-aligned quantity convention (Noam, #40). The provider reconciles to its concrete units at naturalization.
+	Cpu *string `json:"cpu,omitempty"`
 
-// Override default JSON handling for DatabaseResources to handle AdditionalProperties
-func (a *DatabaseResources) UnmarshalJSON(b []byte) error {
-	object := make(map[string]json.RawMessage)
-	err := json.Unmarshal(b, &object)
-	if err != nil {
-		return err
-	}
-
-	if raw, found := object["cpu"]; found {
-		err = json.Unmarshal(raw, &a.Cpu)
-		if err != nil {
-			return fmt.Errorf("error reading 'cpu': %w", err)
-		}
-		delete(object, "cpu")
-	}
-
-	if raw, found := object["memory"]; found {
-		err = json.Unmarshal(raw, &a.Memory)
-		if err != nil {
-			return fmt.Errorf("error reading 'memory': %w", err)
-		}
-		delete(object, "memory")
-	}
-
-	if raw, found := object["storage"]; found {
-		err = json.Unmarshal(raw, &a.Storage)
-		if err != nil {
-			return fmt.Errorf("error reading 'storage': %w", err)
-		}
-		delete(object, "storage")
-	}
-
-	if len(object) != 0 {
-		a.AdditionalProperties = make(map[string]interface{})
-		for fieldName, fieldBuf := range object {
-			var fieldVal interface{}
-			err := json.Unmarshal(fieldBuf, &fieldVal)
-			if err != nil {
-				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
-			}
-			a.AdditionalProperties[fieldName] = fieldVal
-		}
-	}
-	return nil
-}
-
-// Override default JSON handling for DatabaseResources to handle AdditionalProperties
-func (a DatabaseResources) MarshalJSON() ([]byte, error) {
-	var err error
-	object := make(map[string]json.RawMessage)
-
-	object["cpu"], err = json.Marshal(a.Cpu)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'cpu': %w", err)
-	}
-
-	object["memory"], err = json.Marshal(a.Memory)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'memory': %w", err)
-	}
-
-	object["storage"], err = json.Marshal(a.Storage)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'storage': %w", err)
-	}
-
-	for fieldName, field := range a.AdditionalProperties {
-		object[fieldName], err = json.Marshal(field)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
-		}
-	}
-	return json.Marshal(object)
+	// InstanceSize Provider-neutral size class (e.g. small|medium|large, or a named profile). Generic sizing INTENT — usable in place of, or alongside, explicit cpu/memory/storage. The PROVIDER reconciles it to concrete resources / its own instance classes at naturalization (DCM ADR-023, provider-naturalization boundary); UDLM/DCM does NOT define the mapping. A shared sizing option available to any resource type (common-elements §sizing).
+	InstanceSize         *string                `json:"instance_size,omitempty"`
+	Memory               *string                `json:"memory,omitempty"`
+	Storage              *string                `json:"storage,omitempty"`
+	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
 // Getter for additional properties for DatabaseSpec. Returns the specified
@@ -383,9 +299,124 @@ func (a DatabaseSpec) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	object["version"], err = json.Marshal(a.Version)
+	if a.Version != nil {
+		object["version"], err = json.Marshal(a.Version)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'version': %w", err)
+		}
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
+
+// Getter for additional properties for Resources. Returns the specified
+// element and whether it was found
+func (a Resources) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for Resources
+func (a *Resources) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for Resources to handle AdditionalProperties
+func (a *Resources) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'version': %w", err)
+		return err
+	}
+
+	if raw, found := object["cpu"]; found {
+		err = json.Unmarshal(raw, &a.Cpu)
+		if err != nil {
+			return fmt.Errorf("error reading 'cpu': %w", err)
+		}
+		delete(object, "cpu")
+	}
+
+	if raw, found := object["instance_size"]; found {
+		err = json.Unmarshal(raw, &a.InstanceSize)
+		if err != nil {
+			return fmt.Errorf("error reading 'instance_size': %w", err)
+		}
+		delete(object, "instance_size")
+	}
+
+	if raw, found := object["memory"]; found {
+		err = json.Unmarshal(raw, &a.Memory)
+		if err != nil {
+			return fmt.Errorf("error reading 'memory': %w", err)
+		}
+		delete(object, "memory")
+	}
+
+	if raw, found := object["storage"]; found {
+		err = json.Unmarshal(raw, &a.Storage)
+		if err != nil {
+			return fmt.Errorf("error reading 'storage': %w", err)
+		}
+		delete(object, "storage")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for Resources to handle AdditionalProperties
+func (a Resources) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.Cpu != nil {
+		object["cpu"], err = json.Marshal(a.Cpu)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'cpu': %w", err)
+		}
+	}
+
+	if a.InstanceSize != nil {
+		object["instance_size"], err = json.Marshal(a.InstanceSize)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'instance_size': %w", err)
+		}
+	}
+
+	if a.Memory != nil {
+		object["memory"], err = json.Marshal(a.Memory)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'memory': %w", err)
+		}
+	}
+
+	if a.Storage != nil {
+		object["storage"], err = json.Marshal(a.Storage)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'storage': %w", err)
+		}
 	}
 
 	for fieldName, field := range a.AdditionalProperties {

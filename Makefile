@@ -36,6 +36,23 @@ include make/sp.mk
 build:
 	CGO_ENABLED=0 go build -buildvcs=false -o bin/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
 
+# Regenerate the service-type OpenAPI specs from the UDLM registry (single source
+# of truth), then regenerate their Go types. Point UDLM_DIR at a croadfeldt/udlm
+# checkout. Run this after a UDLM resource-type changes, then commit the diff.
+UDLM_DIR ?= ../udlm
+OAPI_CODEGEN_VERSION ?= v2.7.0
+SERVICE_TYPES := vm container database cluster storage
+generate:
+	go run ./cmd/udlm-servicetype-gen -udlm $(UDLM_DIR) -out api/catalog/v1alpha1/servicetypes -type all
+	@for st in $(SERVICE_TYPES); do \
+		echo "oapi-codegen $$st"; \
+		( cd api/catalog/v1alpha1/servicetypes/$$st && \
+		  go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION) \
+		    -config spec.gen.cfg \
+		    -import-mapping '../common.yaml:github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes' \
+		    spec.yaml > types.gen.go ) || exit 1; \
+	done
+
 # Quick local start with SQLite (no Postgres/NATS stack required).
 # Uses a throwaway file under /tmp; override DB_NAME if you want a different path.
 run:
@@ -109,5 +126,5 @@ test:
 tidy:
 	go mod tidy
 
-.PHONY: build run run-dev compose-up compose-up-with-providers compose-down image-build \
+.PHONY: build generate run run-dev compose-up compose-up-with-providers compose-down image-build \
 	clean fmt vet lint test test-catalog test-placement test-policy test-sp tidy

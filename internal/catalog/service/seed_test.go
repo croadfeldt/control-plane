@@ -122,11 +122,11 @@ var _ = Describe("Seed", func() {
 						Expect(st.Spec).To(HaveKey(key))
 					}
 				},
-				Entry("vm", "vm", []string{"vcpu", "memory", "storage", "guest_os", "access"}),
-				Entry("container", "container", []string{"image", "resources", "process", "network"}),
+				Entry("vm", "vm", []string{"instance_size", "vcpu", "memory", "guest_os", "disks", "placement", "networks", "power"}),
+				Entry("container", "container", []string{"image", "command", "args", "resources", "process", "network", "runtime"}),
 				Entry("database", "database", []string{"engine", "version", "resources"}),
-				Entry("cluster", "cluster", []string{"version"}),
-				Entry("storage", "storage", []string{"capacity"}),
+				Entry("cluster", "cluster", []string{"release", "node_pools", "network"}),
+				Entry("storage", "storage", []string{"capacity", "access_mode", "volume_mode", "storage_class", "retain_on_release"}),
 			)
 		})
 

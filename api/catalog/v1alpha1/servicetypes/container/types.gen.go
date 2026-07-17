@@ -11,85 +11,89 @@ import (
 	externalRef0 "github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes"
 )
 
-// Defines values for ContainerPortVisibility.
+// Defines values for PortProtocol.
 const (
-	External ContainerPortVisibility = "external"
-	Internal ContainerPortVisibility = "internal"
-	None     ContainerPortVisibility = "none"
+	Tcp PortProtocol = "tcp"
+	Udp PortProtocol = "udp"
 )
 
-// Valid indicates whether the value is a known member of the ContainerPortVisibility enum.
-func (e ContainerPortVisibility) Valid() bool {
+// Valid indicates whether the value is a known member of the PortProtocol enum.
+func (e PortProtocol) Valid() bool {
 	switch e {
-	case External:
+	case Tcp:
 		return true
-	case Internal:
-		return true
-	case None:
+	case Udp:
 		return true
 	default:
 		return false
 	}
 }
 
-// ContainerPort Container port specification
-type ContainerPort struct {
-	// ContainerPort Port number inside container
-	ContainerPort int `json:"container_port"`
+// Defines values for PortVisibility.
+const (
+	External PortVisibility = "external"
+	Internal PortVisibility = "internal"
+	Loopback PortVisibility = "loopback"
+)
 
-	// Visibility How this port is exposed to consumers.
-	//
-	// - none: Port is not exposed outside the container process
-	// - internal: Exposed to the host or cluster network
-	//   (e.g., Docker -p, Kubernetes ClusterIP Service)
-	// - external: Reachable from outside the host/cluster
-	//   (e.g., OpenShift Route, Kubernetes Ingress/LoadBalancer)
-	Visibility           ContainerPortVisibility `json:"visibility"`
-	AdditionalProperties map[string]interface{}  `json:"-"`
+// Valid indicates whether the value is a known member of the PortVisibility enum.
+func (e PortVisibility) Valid() bool {
+	switch e {
+	case External:
+		return true
+	case Internal:
+		return true
+	case Loopback:
+		return true
+	default:
+		return false
+	}
 }
 
-// ContainerPortVisibility How this port is exposed to consumers.
-//
-//   - none: Port is not exposed outside the container process
-//   - internal: Exposed to the host or cluster network
-//     (e.g., Docker -p, Kubernetes ClusterIP Service)
-//   - external: Reachable from outside the host/cluster
-//     (e.g., OpenShift Route, Kubernetes Ingress/LoadBalancer)
-type ContainerPortVisibility string
+// Defines values for RuntimeRestartPolicy.
+const (
+	Always    RuntimeRestartPolicy = "always"
+	Never     RuntimeRestartPolicy = "never"
+	OnFailure RuntimeRestartPolicy = "on-failure"
+)
 
-// ContainerResources Resource allocation (CPU and memory)
-type ContainerResources struct {
-	// Cpu CPU allocation (in cores)
-	Cpu CpuResources `json:"cpu"`
-
-	// Memory Memory allocation
-	Memory               MemoryResources        `json:"memory"`
-	AdditionalProperties map[string]interface{} `json:"-"`
+// Valid indicates whether the value is a known member of the RuntimeRestartPolicy enum.
+func (e RuntimeRestartPolicy) Valid() bool {
+	switch e {
+	case Always:
+		return true
+	case Never:
+		return true
+	case OnFailure:
+		return true
+	default:
+		return false
+	}
 }
 
 // ContainerSpec defines model for ContainerSpec.
 type ContainerSpec struct {
+	Args *[]string `json:"args,omitempty"`
+
+	// Command Entrypoint override.
+	Command *[]string `json:"command,omitempty"`
+
 	// CreateTime Timestamp when the resource was created (RFC 3339)
 	CreateTime *time.Time `json:"create_time,omitempty"`
 
 	// Id Unique identifier for the resource.
 	Id *string `json:"id,omitempty"`
 
-	// Image Container image specification.
-	// Based on OCI Image Specification for portable image references.
-	Image Image `json:"image"`
+	// Image The container image — either the inline OCI reference (first branch) OR a data_reference to a governed container_image reference-data layer. The reference form lets DCM compute the change-impact blast radius when a base image or embedded library is bumped (UDLM ADR-012; DCM ADR-024) — an inline OCI string cannot be cascaded.
+	Image string `json:"image"`
 
 	// Metadata Resource metadata for identification and governance.
 	// Used by all service type specifications.
 	Metadata externalRef0.ServiceMetadata `json:"metadata"`
-
-	// Network Network and port configuration (optional)
-	Network *Network `json:"network,omitempty"`
+	Network  *Network                     `json:"network,omitempty"`
 
 	// Path Resource path or location within the system hierarchy.
-	Path *string `json:"path,omitempty"`
-
-	// Process Container process configuration (optional)
+	Path    *string  `json:"path,omitempty"`
 	Process *Process `json:"process,omitempty"`
 
 	// ProviderHints Optional provider-specific configuration.
@@ -100,9 +104,8 @@ type ContainerSpec struct {
 	// Keys are provider identifiers (e.g., kubevirt, vmware, aws).
 	// Values are provider-specific configuration objects.
 	ProviderHints *externalRef0.ProviderHints `json:"provider_hints,omitempty"`
-
-	// Resources Resource allocation (CPU and memory)
-	Resources ContainerResources `json:"resources"`
+	Resources     *Resources                  `json:"resources,omitempty"`
+	Runtime       *Runtime                    `json:"runtime,omitempty"`
 
 	// ServiceType Service type identifier.
 	// Makes the payload self-describing and enables routing/validation.
@@ -119,228 +122,83 @@ type ContainerSpec struct {
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// CpuResources CPU allocation (in cores)
-type CpuResources struct {
-	// Max Maximum allowed CPU cores
-	Max int `json:"max"`
-
-	// Min Minimum guaranteed CPU cores
-	Min                  int                    `json:"min"`
-	AdditionalProperties map[string]interface{} `json:"-"`
-}
-
-// EnvVar Environment variable definition
-type EnvVar struct {
-	// Name Variable name
+// Env defines model for Env.
+type Env struct {
 	Name string `json:"name"`
 
-	// Value Variable value
-	Value                string                 `json:"value"`
+	// Value Literal value — non-secret only.
+	Value *string `json:"value,omitempty"`
+
+	// ValueFrom Reference to a Security.CredentialRef or config source. Secret material is NEVER inline (DCM ADR-023).
+	ValueFrom            *ValueFrom             `json:"value_from,omitempty"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// Image Container image specification.
-// Based on OCI Image Specification for portable image references.
-type Image struct {
-	// Reference Complete OCI image reference.
-	//
-	// Format: [REGISTRY/]REPOSITORY[:TAG|@DIGEST]
-	// Examples:
-	// - quay.io/organization/app:v1.2.3 (registry + tag)
-	// - docker.io/library/nginx:latest (Docker Hub)
-	// - gcr.io/project/image@sha256:abc123... (digest)
-	Reference            string                 `json:"reference"`
+// Mount defines model for Mount.
+type Mount struct {
+	MountPath string `json:"mount_path"`
+	ReadOnly  *bool  `json:"read_only,omitempty"`
+
+	// SourceRef handle/uuid of the mounted source (config/model snapshot
+	SourceRef            string                 `json:"source_ref"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// MemoryResources Memory allocation
-type MemoryResources struct {
-	// Max Maximum allowed memory with unit suffix
-	Max string `json:"max"`
-
-	// Min Minimum guaranteed memory with unit suffix
-	Min                  string                 `json:"min"`
-	AdditionalProperties map[string]interface{} `json:"-"`
-}
-
-// Network Network and port configuration (optional)
+// Network defines model for Network.
 type Network struct {
-	// Ports Container ports to expose
-	Ports                *[]ContainerPort       `json:"ports,omitempty"`
+	Ports                *[]Port                `json:"ports,omitempty"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// Process Container process configuration (optional)
+// Port defines model for Port.
+type Port struct {
+	ContainerPort        int                    `json:"container_port"`
+	Protocol             *PortProtocol          `json:"protocol,omitempty"`
+	PublishedPort        *int                   `json:"published_port,omitempty"`
+	Visibility           *PortVisibility        `json:"visibility,omitempty"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
+// PortProtocol defines model for Port.Protocol.
+type PortProtocol string
+
+// PortVisibility defines model for Port.Visibility.
+type PortVisibility string
+
+// Process defines model for Process.
 type Process struct {
-	// Args Arguments to the entrypoint.
-	// Passed to the command or the container's default entrypoint.
-	Args *[]string `json:"args,omitempty"`
-
-	// Command Entrypoint override.
-	// Replaces the container image's default entrypoint.
-	Command *[]string `json:"command,omitempty"`
-
-	// Env Environment variables
-	Env                  *[]EnvVar              `json:"env,omitempty"`
+	Env                  *[]Env                 `json:"env,omitempty"`
+	Mounts               *[]Mount               `json:"mounts,omitempty"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// Getter for additional properties for ContainerPort. Returns the specified
-// element and whether it was found
-func (a ContainerPort) Get(fieldName string) (value interface{}, found bool) {
-	if a.AdditionalProperties != nil {
-		value, found = a.AdditionalProperties[fieldName]
-	}
-	return
+// Resources defines model for Resources.
+type Resources struct {
+	// Cpu vCPU request in cores.
+	Cpu *float32 `json:"cpu,omitempty"`
+
+	// InstanceSize Provider-neutral size class (small|medium|large) — size by class in place of cpu/memory; the provider maps it at naturalization (common-elements §2.2, ADR-014).
+	InstanceSize         *string                `json:"instance_size,omitempty"`
+	Memory               *string                `json:"memory,omitempty"`
+	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// Setter for additional properties for ContainerPort
-func (a *ContainerPort) Set(fieldName string, value interface{}) {
-	if a.AdditionalProperties == nil {
-		a.AdditionalProperties = make(map[string]interface{})
-	}
-	a.AdditionalProperties[fieldName] = value
+// Runtime defines model for Runtime.
+type Runtime struct {
+	Replicas             *int                   `json:"replicas,omitempty"`
+	RestartPolicy        *RuntimeRestartPolicy  `json:"restart_policy,omitempty"`
+	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// Override default JSON handling for ContainerPort to handle AdditionalProperties
-func (a *ContainerPort) UnmarshalJSON(b []byte) error {
-	object := make(map[string]json.RawMessage)
-	err := json.Unmarshal(b, &object)
-	if err != nil {
-		return err
-	}
+// RuntimeRestartPolicy defines model for Runtime.RestartPolicy.
+type RuntimeRestartPolicy string
 
-	if raw, found := object["container_port"]; found {
-		err = json.Unmarshal(raw, &a.ContainerPort)
-		if err != nil {
-			return fmt.Errorf("error reading 'container_port': %w", err)
-		}
-		delete(object, "container_port")
-	}
-
-	if raw, found := object["visibility"]; found {
-		err = json.Unmarshal(raw, &a.Visibility)
-		if err != nil {
-			return fmt.Errorf("error reading 'visibility': %w", err)
-		}
-		delete(object, "visibility")
-	}
-
-	if len(object) != 0 {
-		a.AdditionalProperties = make(map[string]interface{})
-		for fieldName, fieldBuf := range object {
-			var fieldVal interface{}
-			err := json.Unmarshal(fieldBuf, &fieldVal)
-			if err != nil {
-				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
-			}
-			a.AdditionalProperties[fieldName] = fieldVal
-		}
-	}
-	return nil
-}
-
-// Override default JSON handling for ContainerPort to handle AdditionalProperties
-func (a ContainerPort) MarshalJSON() ([]byte, error) {
-	var err error
-	object := make(map[string]json.RawMessage)
-
-	object["container_port"], err = json.Marshal(a.ContainerPort)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'container_port': %w", err)
-	}
-
-	object["visibility"], err = json.Marshal(a.Visibility)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'visibility': %w", err)
-	}
-
-	for fieldName, field := range a.AdditionalProperties {
-		object[fieldName], err = json.Marshal(field)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
-		}
-	}
-	return json.Marshal(object)
-}
-
-// Getter for additional properties for ContainerResources. Returns the specified
-// element and whether it was found
-func (a ContainerResources) Get(fieldName string) (value interface{}, found bool) {
-	if a.AdditionalProperties != nil {
-		value, found = a.AdditionalProperties[fieldName]
-	}
-	return
-}
-
-// Setter for additional properties for ContainerResources
-func (a *ContainerResources) Set(fieldName string, value interface{}) {
-	if a.AdditionalProperties == nil {
-		a.AdditionalProperties = make(map[string]interface{})
-	}
-	a.AdditionalProperties[fieldName] = value
-}
-
-// Override default JSON handling for ContainerResources to handle AdditionalProperties
-func (a *ContainerResources) UnmarshalJSON(b []byte) error {
-	object := make(map[string]json.RawMessage)
-	err := json.Unmarshal(b, &object)
-	if err != nil {
-		return err
-	}
-
-	if raw, found := object["cpu"]; found {
-		err = json.Unmarshal(raw, &a.Cpu)
-		if err != nil {
-			return fmt.Errorf("error reading 'cpu': %w", err)
-		}
-		delete(object, "cpu")
-	}
-
-	if raw, found := object["memory"]; found {
-		err = json.Unmarshal(raw, &a.Memory)
-		if err != nil {
-			return fmt.Errorf("error reading 'memory': %w", err)
-		}
-		delete(object, "memory")
-	}
-
-	if len(object) != 0 {
-		a.AdditionalProperties = make(map[string]interface{})
-		for fieldName, fieldBuf := range object {
-			var fieldVal interface{}
-			err := json.Unmarshal(fieldBuf, &fieldVal)
-			if err != nil {
-				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
-			}
-			a.AdditionalProperties[fieldName] = fieldVal
-		}
-	}
-	return nil
-}
-
-// Override default JSON handling for ContainerResources to handle AdditionalProperties
-func (a ContainerResources) MarshalJSON() ([]byte, error) {
-	var err error
-	object := make(map[string]json.RawMessage)
-
-	object["cpu"], err = json.Marshal(a.Cpu)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'cpu': %w", err)
-	}
-
-	object["memory"], err = json.Marshal(a.Memory)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'memory': %w", err)
-	}
-
-	for fieldName, field := range a.AdditionalProperties {
-		object[fieldName], err = json.Marshal(field)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
-		}
-	}
-	return json.Marshal(object)
+// ValueFrom Reference to a Security.CredentialRef or config source. Secret material is NEVER inline (DCM ADR-023).
+type ValueFrom struct {
+	// CredentialRef handle or uuid of a Security.CredentialRef
+	CredentialRef        *string                `json:"credential_ref,omitempty"`
+	Key                  *string                `json:"key,omitempty"`
+	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
 // Getter for additional properties for ContainerSpec. Returns the specified
@@ -366,6 +224,22 @@ func (a *ContainerSpec) UnmarshalJSON(b []byte) error {
 	err := json.Unmarshal(b, &object)
 	if err != nil {
 		return err
+	}
+
+	if raw, found := object["args"]; found {
+		err = json.Unmarshal(raw, &a.Args)
+		if err != nil {
+			return fmt.Errorf("error reading 'args': %w", err)
+		}
+		delete(object, "args")
+	}
+
+	if raw, found := object["command"]; found {
+		err = json.Unmarshal(raw, &a.Command)
+		if err != nil {
+			return fmt.Errorf("error reading 'command': %w", err)
+		}
+		delete(object, "command")
 	}
 
 	if raw, found := object["create_time"]; found {
@@ -440,6 +314,14 @@ func (a *ContainerSpec) UnmarshalJSON(b []byte) error {
 		delete(object, "resources")
 	}
 
+	if raw, found := object["runtime"]; found {
+		err = json.Unmarshal(raw, &a.Runtime)
+		if err != nil {
+			return fmt.Errorf("error reading 'runtime': %w", err)
+		}
+		delete(object, "runtime")
+	}
+
 	if raw, found := object["service_type"]; found {
 		err = json.Unmarshal(raw, &a.ServiceType)
 		if err != nil {
@@ -490,6 +372,20 @@ func (a *ContainerSpec) UnmarshalJSON(b []byte) error {
 func (a ContainerSpec) MarshalJSON() ([]byte, error) {
 	var err error
 	object := make(map[string]json.RawMessage)
+
+	if a.Args != nil {
+		object["args"], err = json.Marshal(a.Args)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'args': %w", err)
+		}
+	}
+
+	if a.Command != nil {
+		object["command"], err = json.Marshal(a.Command)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'command': %w", err)
+		}
+	}
 
 	if a.CreateTime != nil {
 		object["create_time"], err = json.Marshal(a.CreateTime)
@@ -543,9 +439,18 @@ func (a ContainerSpec) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	object["resources"], err = json.Marshal(a.Resources)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'resources': %w", err)
+	if a.Resources != nil {
+		object["resources"], err = json.Marshal(a.Resources)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'resources': %w", err)
+		}
+	}
+
+	if a.Runtime != nil {
+		object["runtime"], err = json.Marshal(a.Runtime)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'runtime': %w", err)
+		}
 	}
 
 	object["service_type"], err = json.Marshal(a.ServiceType)
@@ -583,104 +488,25 @@ func (a ContainerSpec) MarshalJSON() ([]byte, error) {
 	return json.Marshal(object)
 }
 
-// Getter for additional properties for CpuResources. Returns the specified
+// Getter for additional properties for Env. Returns the specified
 // element and whether it was found
-func (a CpuResources) Get(fieldName string) (value interface{}, found bool) {
+func (a Env) Get(fieldName string) (value interface{}, found bool) {
 	if a.AdditionalProperties != nil {
 		value, found = a.AdditionalProperties[fieldName]
 	}
 	return
 }
 
-// Setter for additional properties for CpuResources
-func (a *CpuResources) Set(fieldName string, value interface{}) {
+// Setter for additional properties for Env
+func (a *Env) Set(fieldName string, value interface{}) {
 	if a.AdditionalProperties == nil {
 		a.AdditionalProperties = make(map[string]interface{})
 	}
 	a.AdditionalProperties[fieldName] = value
 }
 
-// Override default JSON handling for CpuResources to handle AdditionalProperties
-func (a *CpuResources) UnmarshalJSON(b []byte) error {
-	object := make(map[string]json.RawMessage)
-	err := json.Unmarshal(b, &object)
-	if err != nil {
-		return err
-	}
-
-	if raw, found := object["max"]; found {
-		err = json.Unmarshal(raw, &a.Max)
-		if err != nil {
-			return fmt.Errorf("error reading 'max': %w", err)
-		}
-		delete(object, "max")
-	}
-
-	if raw, found := object["min"]; found {
-		err = json.Unmarshal(raw, &a.Min)
-		if err != nil {
-			return fmt.Errorf("error reading 'min': %w", err)
-		}
-		delete(object, "min")
-	}
-
-	if len(object) != 0 {
-		a.AdditionalProperties = make(map[string]interface{})
-		for fieldName, fieldBuf := range object {
-			var fieldVal interface{}
-			err := json.Unmarshal(fieldBuf, &fieldVal)
-			if err != nil {
-				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
-			}
-			a.AdditionalProperties[fieldName] = fieldVal
-		}
-	}
-	return nil
-}
-
-// Override default JSON handling for CpuResources to handle AdditionalProperties
-func (a CpuResources) MarshalJSON() ([]byte, error) {
-	var err error
-	object := make(map[string]json.RawMessage)
-
-	object["max"], err = json.Marshal(a.Max)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'max': %w", err)
-	}
-
-	object["min"], err = json.Marshal(a.Min)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'min': %w", err)
-	}
-
-	for fieldName, field := range a.AdditionalProperties {
-		object[fieldName], err = json.Marshal(field)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
-		}
-	}
-	return json.Marshal(object)
-}
-
-// Getter for additional properties for EnvVar. Returns the specified
-// element and whether it was found
-func (a EnvVar) Get(fieldName string) (value interface{}, found bool) {
-	if a.AdditionalProperties != nil {
-		value, found = a.AdditionalProperties[fieldName]
-	}
-	return
-}
-
-// Setter for additional properties for EnvVar
-func (a *EnvVar) Set(fieldName string, value interface{}) {
-	if a.AdditionalProperties == nil {
-		a.AdditionalProperties = make(map[string]interface{})
-	}
-	a.AdditionalProperties[fieldName] = value
-}
-
-// Override default JSON handling for EnvVar to handle AdditionalProperties
-func (a *EnvVar) UnmarshalJSON(b []byte) error {
+// Override default JSON handling for Env to handle AdditionalProperties
+func (a *Env) UnmarshalJSON(b []byte) error {
 	object := make(map[string]json.RawMessage)
 	err := json.Unmarshal(b, &object)
 	if err != nil {
@@ -703,6 +529,14 @@ func (a *EnvVar) UnmarshalJSON(b []byte) error {
 		delete(object, "value")
 	}
 
+	if raw, found := object["value_from"]; found {
+		err = json.Unmarshal(raw, &a.ValueFrom)
+		if err != nil {
+			return fmt.Errorf("error reading 'value_from': %w", err)
+		}
+		delete(object, "value_from")
+	}
+
 	if len(object) != 0 {
 		a.AdditionalProperties = make(map[string]interface{})
 		for fieldName, fieldBuf := range object {
@@ -717,8 +551,8 @@ func (a *EnvVar) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Override default JSON handling for EnvVar to handle AdditionalProperties
-func (a EnvVar) MarshalJSON() ([]byte, error) {
+// Override default JSON handling for Env to handle AdditionalProperties
+func (a Env) MarshalJSON() ([]byte, error) {
 	var err error
 	object := make(map[string]json.RawMessage)
 
@@ -727,9 +561,18 @@ func (a EnvVar) MarshalJSON() ([]byte, error) {
 		return nil, fmt.Errorf("error marshaling 'name': %w", err)
 	}
 
-	object["value"], err = json.Marshal(a.Value)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'value': %w", err)
+	if a.Value != nil {
+		object["value"], err = json.Marshal(a.Value)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'value': %w", err)
+		}
+	}
+
+	if a.ValueFrom != nil {
+		object["value_from"], err = json.Marshal(a.ValueFrom)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'value_from': %w", err)
+		}
 	}
 
 	for fieldName, field := range a.AdditionalProperties {
@@ -741,37 +584,53 @@ func (a EnvVar) MarshalJSON() ([]byte, error) {
 	return json.Marshal(object)
 }
 
-// Getter for additional properties for Image. Returns the specified
+// Getter for additional properties for Mount. Returns the specified
 // element and whether it was found
-func (a Image) Get(fieldName string) (value interface{}, found bool) {
+func (a Mount) Get(fieldName string) (value interface{}, found bool) {
 	if a.AdditionalProperties != nil {
 		value, found = a.AdditionalProperties[fieldName]
 	}
 	return
 }
 
-// Setter for additional properties for Image
-func (a *Image) Set(fieldName string, value interface{}) {
+// Setter for additional properties for Mount
+func (a *Mount) Set(fieldName string, value interface{}) {
 	if a.AdditionalProperties == nil {
 		a.AdditionalProperties = make(map[string]interface{})
 	}
 	a.AdditionalProperties[fieldName] = value
 }
 
-// Override default JSON handling for Image to handle AdditionalProperties
-func (a *Image) UnmarshalJSON(b []byte) error {
+// Override default JSON handling for Mount to handle AdditionalProperties
+func (a *Mount) UnmarshalJSON(b []byte) error {
 	object := make(map[string]json.RawMessage)
 	err := json.Unmarshal(b, &object)
 	if err != nil {
 		return err
 	}
 
-	if raw, found := object["reference"]; found {
-		err = json.Unmarshal(raw, &a.Reference)
+	if raw, found := object["mount_path"]; found {
+		err = json.Unmarshal(raw, &a.MountPath)
 		if err != nil {
-			return fmt.Errorf("error reading 'reference': %w", err)
+			return fmt.Errorf("error reading 'mount_path': %w", err)
 		}
-		delete(object, "reference")
+		delete(object, "mount_path")
+	}
+
+	if raw, found := object["read_only"]; found {
+		err = json.Unmarshal(raw, &a.ReadOnly)
+		if err != nil {
+			return fmt.Errorf("error reading 'read_only': %w", err)
+		}
+		delete(object, "read_only")
+	}
+
+	if raw, found := object["source_ref"]; found {
+		err = json.Unmarshal(raw, &a.SourceRef)
+		if err != nil {
+			return fmt.Errorf("error reading 'source_ref': %w", err)
+		}
+		delete(object, "source_ref")
 	}
 
 	if len(object) != 0 {
@@ -788,93 +647,26 @@ func (a *Image) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Override default JSON handling for Image to handle AdditionalProperties
-func (a Image) MarshalJSON() ([]byte, error) {
+// Override default JSON handling for Mount to handle AdditionalProperties
+func (a Mount) MarshalJSON() ([]byte, error) {
 	var err error
 	object := make(map[string]json.RawMessage)
 
-	object["reference"], err = json.Marshal(a.Reference)
+	object["mount_path"], err = json.Marshal(a.MountPath)
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'reference': %w", err)
+		return nil, fmt.Errorf("error marshaling 'mount_path': %w", err)
 	}
 
-	for fieldName, field := range a.AdditionalProperties {
-		object[fieldName], err = json.Marshal(field)
+	if a.ReadOnly != nil {
+		object["read_only"], err = json.Marshal(a.ReadOnly)
 		if err != nil {
-			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+			return nil, fmt.Errorf("error marshaling 'read_only': %w", err)
 		}
 	}
-	return json.Marshal(object)
-}
 
-// Getter for additional properties for MemoryResources. Returns the specified
-// element and whether it was found
-func (a MemoryResources) Get(fieldName string) (value interface{}, found bool) {
-	if a.AdditionalProperties != nil {
-		value, found = a.AdditionalProperties[fieldName]
-	}
-	return
-}
-
-// Setter for additional properties for MemoryResources
-func (a *MemoryResources) Set(fieldName string, value interface{}) {
-	if a.AdditionalProperties == nil {
-		a.AdditionalProperties = make(map[string]interface{})
-	}
-	a.AdditionalProperties[fieldName] = value
-}
-
-// Override default JSON handling for MemoryResources to handle AdditionalProperties
-func (a *MemoryResources) UnmarshalJSON(b []byte) error {
-	object := make(map[string]json.RawMessage)
-	err := json.Unmarshal(b, &object)
+	object["source_ref"], err = json.Marshal(a.SourceRef)
 	if err != nil {
-		return err
-	}
-
-	if raw, found := object["max"]; found {
-		err = json.Unmarshal(raw, &a.Max)
-		if err != nil {
-			return fmt.Errorf("error reading 'max': %w", err)
-		}
-		delete(object, "max")
-	}
-
-	if raw, found := object["min"]; found {
-		err = json.Unmarshal(raw, &a.Min)
-		if err != nil {
-			return fmt.Errorf("error reading 'min': %w", err)
-		}
-		delete(object, "min")
-	}
-
-	if len(object) != 0 {
-		a.AdditionalProperties = make(map[string]interface{})
-		for fieldName, fieldBuf := range object {
-			var fieldVal interface{}
-			err := json.Unmarshal(fieldBuf, &fieldVal)
-			if err != nil {
-				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
-			}
-			a.AdditionalProperties[fieldName] = fieldVal
-		}
-	}
-	return nil
-}
-
-// Override default JSON handling for MemoryResources to handle AdditionalProperties
-func (a MemoryResources) MarshalJSON() ([]byte, error) {
-	var err error
-	object := make(map[string]json.RawMessage)
-
-	object["max"], err = json.Marshal(a.Max)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'max': %w", err)
-	}
-
-	object["min"], err = json.Marshal(a.Min)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'min': %w", err)
+		return nil, fmt.Errorf("error marshaling 'source_ref': %w", err)
 	}
 
 	for fieldName, field := range a.AdditionalProperties {
@@ -954,6 +746,117 @@ func (a Network) MarshalJSON() ([]byte, error) {
 	return json.Marshal(object)
 }
 
+// Getter for additional properties for Port. Returns the specified
+// element and whether it was found
+func (a Port) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for Port
+func (a *Port) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for Port to handle AdditionalProperties
+func (a *Port) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["container_port"]; found {
+		err = json.Unmarshal(raw, &a.ContainerPort)
+		if err != nil {
+			return fmt.Errorf("error reading 'container_port': %w", err)
+		}
+		delete(object, "container_port")
+	}
+
+	if raw, found := object["protocol"]; found {
+		err = json.Unmarshal(raw, &a.Protocol)
+		if err != nil {
+			return fmt.Errorf("error reading 'protocol': %w", err)
+		}
+		delete(object, "protocol")
+	}
+
+	if raw, found := object["published_port"]; found {
+		err = json.Unmarshal(raw, &a.PublishedPort)
+		if err != nil {
+			return fmt.Errorf("error reading 'published_port': %w", err)
+		}
+		delete(object, "published_port")
+	}
+
+	if raw, found := object["visibility"]; found {
+		err = json.Unmarshal(raw, &a.Visibility)
+		if err != nil {
+			return fmt.Errorf("error reading 'visibility': %w", err)
+		}
+		delete(object, "visibility")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for Port to handle AdditionalProperties
+func (a Port) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	object["container_port"], err = json.Marshal(a.ContainerPort)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'container_port': %w", err)
+	}
+
+	if a.Protocol != nil {
+		object["protocol"], err = json.Marshal(a.Protocol)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'protocol': %w", err)
+		}
+	}
+
+	if a.PublishedPort != nil {
+		object["published_port"], err = json.Marshal(a.PublishedPort)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'published_port': %w", err)
+		}
+	}
+
+	if a.Visibility != nil {
+		object["visibility"], err = json.Marshal(a.Visibility)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'visibility': %w", err)
+		}
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
+
 // Getter for additional properties for Process. Returns the specified
 // element and whether it was found
 func (a Process) Get(fieldName string) (value interface{}, found bool) {
@@ -979,28 +882,20 @@ func (a *Process) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	if raw, found := object["args"]; found {
-		err = json.Unmarshal(raw, &a.Args)
-		if err != nil {
-			return fmt.Errorf("error reading 'args': %w", err)
-		}
-		delete(object, "args")
-	}
-
-	if raw, found := object["command"]; found {
-		err = json.Unmarshal(raw, &a.Command)
-		if err != nil {
-			return fmt.Errorf("error reading 'command': %w", err)
-		}
-		delete(object, "command")
-	}
-
 	if raw, found := object["env"]; found {
 		err = json.Unmarshal(raw, &a.Env)
 		if err != nil {
 			return fmt.Errorf("error reading 'env': %w", err)
 		}
 		delete(object, "env")
+	}
+
+	if raw, found := object["mounts"]; found {
+		err = json.Unmarshal(raw, &a.Mounts)
+		if err != nil {
+			return fmt.Errorf("error reading 'mounts': %w", err)
+		}
+		delete(object, "mounts")
 	}
 
 	if len(object) != 0 {
@@ -1022,24 +917,281 @@ func (a Process) MarshalJSON() ([]byte, error) {
 	var err error
 	object := make(map[string]json.RawMessage)
 
-	if a.Args != nil {
-		object["args"], err = json.Marshal(a.Args)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'args': %w", err)
-		}
-	}
-
-	if a.Command != nil {
-		object["command"], err = json.Marshal(a.Command)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'command': %w", err)
-		}
-	}
-
 	if a.Env != nil {
 		object["env"], err = json.Marshal(a.Env)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'env': %w", err)
+		}
+	}
+
+	if a.Mounts != nil {
+		object["mounts"], err = json.Marshal(a.Mounts)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'mounts': %w", err)
+		}
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
+
+// Getter for additional properties for Resources. Returns the specified
+// element and whether it was found
+func (a Resources) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for Resources
+func (a *Resources) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for Resources to handle AdditionalProperties
+func (a *Resources) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["cpu"]; found {
+		err = json.Unmarshal(raw, &a.Cpu)
+		if err != nil {
+			return fmt.Errorf("error reading 'cpu': %w", err)
+		}
+		delete(object, "cpu")
+	}
+
+	if raw, found := object["instance_size"]; found {
+		err = json.Unmarshal(raw, &a.InstanceSize)
+		if err != nil {
+			return fmt.Errorf("error reading 'instance_size': %w", err)
+		}
+		delete(object, "instance_size")
+	}
+
+	if raw, found := object["memory"]; found {
+		err = json.Unmarshal(raw, &a.Memory)
+		if err != nil {
+			return fmt.Errorf("error reading 'memory': %w", err)
+		}
+		delete(object, "memory")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for Resources to handle AdditionalProperties
+func (a Resources) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.Cpu != nil {
+		object["cpu"], err = json.Marshal(a.Cpu)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'cpu': %w", err)
+		}
+	}
+
+	if a.InstanceSize != nil {
+		object["instance_size"], err = json.Marshal(a.InstanceSize)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'instance_size': %w", err)
+		}
+	}
+
+	if a.Memory != nil {
+		object["memory"], err = json.Marshal(a.Memory)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'memory': %w", err)
+		}
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
+
+// Getter for additional properties for Runtime. Returns the specified
+// element and whether it was found
+func (a Runtime) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for Runtime
+func (a *Runtime) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for Runtime to handle AdditionalProperties
+func (a *Runtime) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["replicas"]; found {
+		err = json.Unmarshal(raw, &a.Replicas)
+		if err != nil {
+			return fmt.Errorf("error reading 'replicas': %w", err)
+		}
+		delete(object, "replicas")
+	}
+
+	if raw, found := object["restart_policy"]; found {
+		err = json.Unmarshal(raw, &a.RestartPolicy)
+		if err != nil {
+			return fmt.Errorf("error reading 'restart_policy': %w", err)
+		}
+		delete(object, "restart_policy")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for Runtime to handle AdditionalProperties
+func (a Runtime) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.Replicas != nil {
+		object["replicas"], err = json.Marshal(a.Replicas)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'replicas': %w", err)
+		}
+	}
+
+	if a.RestartPolicy != nil {
+		object["restart_policy"], err = json.Marshal(a.RestartPolicy)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'restart_policy': %w", err)
+		}
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
+
+// Getter for additional properties for ValueFrom. Returns the specified
+// element and whether it was found
+func (a ValueFrom) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for ValueFrom
+func (a *ValueFrom) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for ValueFrom to handle AdditionalProperties
+func (a *ValueFrom) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["credential_ref"]; found {
+		err = json.Unmarshal(raw, &a.CredentialRef)
+		if err != nil {
+			return fmt.Errorf("error reading 'credential_ref': %w", err)
+		}
+		delete(object, "credential_ref")
+	}
+
+	if raw, found := object["key"]; found {
+		err = json.Unmarshal(raw, &a.Key)
+		if err != nil {
+			return fmt.Errorf("error reading 'key': %w", err)
+		}
+		delete(object, "key")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for ValueFrom to handle AdditionalProperties
+func (a ValueFrom) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.CredentialRef != nil {
+		object["credential_ref"], err = json.Marshal(a.CredentialRef)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'credential_ref': %w", err)
+		}
+	}
+
+	if a.Key != nil {
+		object["key"], err = json.Marshal(a.Key)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'key': %w", err)
 		}
 	}
 

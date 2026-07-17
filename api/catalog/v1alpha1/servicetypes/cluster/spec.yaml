@@ -1,117 +1,65 @@
 openapi: 3.0.4
-
 info:
-  title: DCM Kubernetes Cluster Specification
-  description: |
-    Provider-agnostic Kubernetes cluster specification.
-
-    This schema defines minimal portable fields common across all Kubernetes
-    distributions (OpenShift, EKS, GKE, AKS, self-managed, etc.).
-
-    Platform-specific configuration (CNI type, authentication, ingress settings)
-    should be specified via provider_hints.
+  title: DCM Cluster Specification
+  description: |-
+    Generated from the UDLM registry by cmd/udlm-servicetype-gen — DO NOT hand-edit.
+    Provider-agnostic Kubernetes cluster specification; the UDLM resource type is the source of truth.
   version: v1alpha1
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
-
 paths: {}
-
 components:
   schemas:
     ClusterSpec:
       type: object
-      description: |
-        Provider-agnostic Kubernetes cluster specification.
+      description: |-
+        A managed Kubernetes/OpenShift cluster with one or more node pools and a network. Derived from OSAC's `cluster` fulfillment type (osac-project/fulfillment-service); the spec is the vendor-neutral Intent contract a provider (e.g. OSAC Cluster Fulfillment via RHACM + Hosted Control Planes) realizes. Targets Network.VirtualNetwork and Platform.Hub are forthcoming OSAC-derived types.
 
-        Includes common fields (service_type, metadata, provider_hints)
-        plus cluster-specific fields for version and node configuration.
-
-        Providers translate this specification to their native format.
+        Provider-agnostic Kubernetes cluster specification, generated from the UDLM Compute.Cluster (v0.1.1) resource type — the UDLM registry is the source of truth. Non-portable provider settings go under provider_hints (CommonFields). Regenerate with cmd/udlm-servicetype-gen; do not hand-edit.
       allOf:
-        - $ref: '../common.yaml#/components/schemas/CommonFields'
+        - $ref: ../common.yaml#/components/schemas/CommonFields
         - type: object
           required:
-            - version
+            - release
+            - node_pools
           properties:
-            version:
+            release:
               type: string
-              description: |
-                Kubernetes version (e.g., "1.29", "1.30", "1.31").
-
-                Use standard Kubernetes version numbers. Providers translate
-                to their distribution's version if needed (e.g., OpenShift
-                providers map K8s 1.27 to OCP 4.14).
-              example: "1.30"
-
-            nodes:
-              $ref: '#/components/schemas/Nodes'
-
+              description: Platform release, e.g. 4.16 (OpenShift).
+            node_pools:
+              type: array
+              items:
+                $ref: '#/components/schemas/NodePool'
+            network:
+              $ref: '#/components/schemas/Network'
           additionalProperties: true
-
-    Nodes:
+    NodePool:
       type: object
-      description: Node configuration
+      required:
+        - name
+        - host_type
+        - count
       properties:
-        control_plane:
-          $ref: '#/components/schemas/ControlPlaneNodes'
-        workers:
-          $ref: '#/components/schemas/WorkerNodes'
-      additionalProperties: true
-
-    ControlPlaneNodes:
-      type: object
-      description: |
-        Control plane nodes configuration.
-        Managed services (ACM (with Hypershift),EKS, GKE, AKS) may ignore these fields.
-      properties:
+        name:
+          type: string
+        host_type:
+          type: string
+          description: Resource Type name of the node shape (Compute.HostType — forthcoming).
         count:
           type: integer
-          description: Number of control plane nodes (1, 3, or 5)
-          enum:
-            - 1
-            - 3
-            - 5
-          example: 3
-        cpu:
-          type: integer
-          description: CPU cores per control plane node
-          minimum: 2
-          example: 4
-        memory:
+          minimum: 1
+        instance_size:
           type: string
-          description: Memory per control plane node with unit suffix
-          pattern: '^[0-9]+(MB|GB|TB)$'
-          example: 16GB
-        storage:
-          type: string
-          description: Storage per control plane node with unit suffix
-          pattern: '^[0-9]+(MB|GB|TB)$'
-          example: 120GB
+          description: Provider-neutral node size class (small|medium|large) — sizes each node in the pool; the provider maps it to a concrete node shape at naturalization (common-elements §2.2, ADR-014).
       additionalProperties: true
-
-    WorkerNodes:
+    Network:
       type: object
-      description: Worker nodes configuration
       properties:
-        count:
-          type: integer
-          description: Number of worker nodes
-          minimum: 1
-          example: 3
-        cpu:
-          type: integer
-          description: CPU cores per worker node
-          minimum: 1
-          example: 4
-        memory:
+        pod_cidr:
           type: string
-          description: Memory per worker node with unit suffix
-          pattern: '^[0-9]+(MB|GB|TB)$'
-          example: 8GB
-        storage:
+          pattern: ^[0-9./]+$
+        service_cidr:
           type: string
-          description: Storage per worker node with unit suffix
-          pattern: '^[0-9]+(MB|GB|TB)$'
-          example: 120GB
+          pattern: ^[0-9./]+$
       additionalProperties: true

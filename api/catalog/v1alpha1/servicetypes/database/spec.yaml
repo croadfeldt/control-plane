@@ -1,87 +1,58 @@
 openapi: 3.0.4
-
 info:
   title: DCM Database Specification
-  description: |
-    Provider-agnostic database specification.
-
-    This schema defines minimal portable fields for database provisioning.
-    Database-specific configuration (HA, backups, connection settings,
-    engine parameters) should be specified via provider_hints.
+  description: |-
+    Generated from the UDLM registry by cmd/udlm-servicetype-gen — DO NOT hand-edit.
+    Provider-agnostic managed database specification; the UDLM resource type is the source of truth.
   version: v1alpha1
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
-
 paths: {}
-
 components:
   schemas:
     DatabaseSpec:
       type: object
-      description: |
-        Provider-agnostic database specification.
+      description: |-
+        A managed relational database instance. Publishes connection outputs other resources bind to. Reconciled 2026-07-07 with the dcm-project catalog DatabaseSpec (#271): resources now required (matching their DatabaseSpec), and the storage/host relationships added so a database's data volume and placement are first-class edges.
 
-        Includes common fields (service_type, metadata, provider_hints)
-        plus fields for engine, version, and resources.
+        Provider-agnostic managed database specification, generated from the UDLM Data.Database (v0.2.0) resource type — the UDLM registry is the source of truth. Non-portable provider settings go under provider_hints (CommonFields). Regenerate with cmd/udlm-servicetype-gen; do not hand-edit.
 
-        Providers translate this specification to their native format.
+        Envelope-reserved collisions skipped (owned by CommonFields, rename upstream in UDLM): metadata.
       allOf:
-        - $ref: '../common.yaml#/components/schemas/CommonFields'
+        - $ref: ../common.yaml#/components/schemas/CommonFields
         - type: object
           required:
             - engine
-            - version
             - resources
           properties:
             engine:
               type: string
-              description: |
-                Database engine type.
-
-                Common engines include:
-                - Relational: postgresql, mysql, mariadb, cockroachdb
-                - Document: mongodb, couchdb
-                - Key-Value: redis, memcached, etcd
-                - Search: elasticsearch, opensearch
-                - Time-series: influxdb, timescaledb
-                - Graph: neo4j
-                - Wide-column: cassandra, scylladb
-              example: postgresql
-
+              description: Database engine.
+              enum:
+                - postgres
+                - mysql
             version:
               type: string
-              description: |
-                Database engine version.
-                Providers map this to their supported versions.
-              example: "15"
-
+              description: 'Engine version. Concrete (e.g. `16`, engine-dependent — see registry conditional-constraints, E3) OR an abstract channel the PROVIDER resolves (`latest`, `lts`). Optional: when omitted it defaults to `latest`. Because the value may be abstract, two provider obligations apply (ADR-014; provider-contract §8.1a): (1) the provider DECLARES its channel→version resolution so an abstract request stays comparable/conformable/validatable against a pinned requirement and across compatible providers (declared, not live-queried); (2) the concrete version actually provisioned is recorded in outputs.applied_version for audit. Intent carries the abstract; realized carries the concrete.'
+              default: latest
             resources:
-              $ref: '#/components/schemas/DatabaseResources'
-
+              $ref: '#/components/schemas/Resources'
           additionalProperties: true
-
-    DatabaseResources:
+    Resources:
       type: object
-      description: Resource allocation for the database
-      required:
-        - cpu
-        - memory
-        - storage
       properties:
+        instance_size:
+          type: string
+          description: Provider-neutral size class (e.g. small|medium|large, or a named profile). Generic sizing INTENT — usable in place of, or alongside, explicit cpu/memory/storage. The PROVIDER reconciles it to concrete resources / its own instance classes at naturalization (DCM ADR-023, provider-naturalization boundary); UDLM/DCM does NOT define the mapping. A shared sizing option available to any resource type (common-elements §sizing).
         cpu:
-          type: integer
-          description: CPU cores
-          minimum: 1
-          example: 4
+          type: string
+          description: 'CPU allocation, as a millicore string (`500m`) or whole/fractional cores (`2`, `1.5`) — Kubernetes-aligned quantity convention (Noam, #40). The provider reconciles to its concrete units at naturalization.'
+          pattern: ^([0-9]+m|[0-9]+(\.[0-9]+)?)$
         memory:
           type: string
-          description: Memory with unit suffix
-          pattern: '^[0-9]+(MB|GB|TB)$'
-          example: 16GB
+          pattern: ^[0-9]+(MB|GB|TB|MiB|GiB|TiB)$
         storage:
           type: string
-          description: Storage size with unit suffix
-          pattern: '^[0-9]+(MB|GB|TB)$'
-          example: 100GB
+          pattern: ^[0-9]+(MB|GB|TB|MiB|GiB|TiB)$
       additionalProperties: true

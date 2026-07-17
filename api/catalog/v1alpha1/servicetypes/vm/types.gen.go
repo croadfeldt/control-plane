@@ -11,97 +11,127 @@ import (
 	externalRef0 "github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes"
 )
 
-// Access VM access configuration
-type Access struct {
-	// SshPublicKey SSH public key for VM access.
-	// Injected via cloud-init/cloudbase-init by providers.
-	//
-	// Provider mapping:
-	// - KubeVirt: cloud-init userData
-	// - AWS: key pair
-	// - Azure: SSH public key
-	// - GCP: instance metadata
-	// - VMware: guest customization
-	SshPublicKey         *string                `json:"ssh_public_key,omitempty"`
-	AdditionalProperties map[string]interface{} `json:"-"`
+// Defines values for PowerDesiredState.
+const (
+	Running   PowerDesiredState = "running"
+	Stopped   PowerDesiredState = "stopped"
+	Suspended PowerDesiredState = "suspended"
+)
+
+// Valid indicates whether the value is a known member of the PowerDesiredState enum.
+func (e PowerDesiredState) Valid() bool {
+	switch e {
+	case Running:
+		return true
+	case Stopped:
+		return true
+	case Suspended:
+		return true
+	default:
+		return false
+	}
 }
 
-// Disk Virtual disk specification
+// Disk Virtual disk specification.
 type Disk struct {
-	// Capacity Disk capacity with unit suffix (MB, GB, TB)
-	Capacity string `json:"capacity"`
+	// Size Disk capacity with unit suffix (GB, TB).
+	Size string `json:"size"`
 
-	// Name Disk identifier (unique within VM).
-	// The root volume must be named "boot".
-	// Additional disks can use names like "data", "log", etc.
-	Name                 string                 `json:"name"`
+	// StorageClass Optional storage class the provider maps to a concrete backend.
+	StorageClass         *string                `json:"storage_class,omitempty"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// GuestOS Guest operating system configuration.
-// Providers map the OS type to their image catalog.
+// GuestOS Guest operating system configuration. Providers map the OS type to their
+// image catalog (KubeVirt DataVolume, VMware template, AWS AMI, ...).
 type GuestOS struct {
-	// Type Operating system identifier.
-	//
-	// Naming convention: <distro>-<version>
-	// Examples:
-	// - Linux: rhel-9, ubuntu-22.04, fedora-39, centos-stream-9
-	// - Windows: windows-server-2022, windows-11
-	//
-	// Providers map this to their image catalog:
-	// - KubeVirt: Container image or DataVolume
-	// - VMware: VM template or content library item
-	// - AWS: AMI ID
-	// - Azure: Image reference
+	// Type Guest OS image identifier, e.g. rhel-9.
 	Type                 string                 `json:"type"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// Memory Memory configuration (RAM)
+// Memory Memory configuration (RAM).
 type Memory struct {
-	// Size Memory size with unit suffix (MB, GB, TB).
-	// Maps to guest memory in all providers.
+	// Size Memory allocation with unit suffix, e.g. 16GB.
 	Size                 string                 `json:"size"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// Storage Storage configuration
-type Storage struct {
-	// Disks Virtual disk specifications.
-	//
-	// Requirements:
-	// - Must contain at least one disk named "boot" for the root volume
-	// - Disk names must be unique within the VM
-	//
-	// Note: The boot disk requirement is enforced at application level.
-	Disks                []Disk                 `json:"disks"`
+// NetworkAttachment Network attachment intent — SELECTS an existing Network.VirtualNetwork the NIC
+// attaches to. The responsible network provider and policy decide eligibility.
+type NetworkAttachment struct {
+	// Name Local NIC name, e.g. eth0.
+	Name *string `json:"name,omitempty"`
+
+	// NetworkRef handle/uuid of an existing Network.VirtualNetwork.
+	NetworkRef           string                 `json:"network_ref"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
+// Placement Placement intent expressed as a SELECTION of an existing Facility.Location
+// (plus affinity relative to other existing resources). Policy governs which
+// locations a consumer may select; the VM references one, it does not define
+// locations itself.
+type Placement struct {
+	// LocationRef handle/uuid of an existing Facility.Location the VM is placed in.
+	LocationRef          *string                `json:"location_ref,omitempty"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
+// Power Desired guest power state the provider drives to (KubeVirt runStrategy /
+// Redfish PowerState). Distinct from the four-state lifecycle_state.
+type Power struct {
+	// DesiredState Target guest power state.
+	DesiredState         *PowerDesiredState     `json:"desired_state,omitempty"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
+// PowerDesiredState Target guest power state.
+type PowerDesiredState string
+
 // VMSpec defines model for VMSpec.
 type VMSpec struct {
-	// Access VM access configuration
-	Access *Access `json:"access,omitempty"`
-
 	// CreateTime Timestamp when the resource was created (RFC 3339)
 	CreateTime *time.Time `json:"create_time,omitempty"`
 
-	// GuestOs Guest operating system configuration.
-	// Providers map the OS type to their image catalog.
+	// Disks Virtual disk specifications.
+	Disks *[]Disk `json:"disks,omitempty"`
+
+	// GuestOs Guest operating system configuration. Providers map the OS type to their
+	// image catalog (KubeVirt DataVolume, VMware template, AWS AMI, ...).
 	GuestOs GuestOS `json:"guest_os"`
 
 	// Id Unique identifier for the resource.
 	Id *string `json:"id,omitempty"`
 
-	// Memory Memory configuration (RAM)
-	Memory Memory `json:"memory"`
+	// InstanceSize Provider-neutral size class (small|medium|large, ordered/comparable) IN
+	// PLACE OF vcpu+memory; the provider maps it to concrete resources at
+	// naturalization. Use instance_size OR vcpu+memory.
+	InstanceSize *string `json:"instance_size,omitempty"`
+
+	// Memory Memory configuration (RAM).
+	Memory *Memory `json:"memory,omitempty"`
 
 	// Metadata Resource metadata for identification and governance.
 	// Used by all service type specifications.
 	Metadata externalRef0.ServiceMetadata `json:"metadata"`
 
+	// Networks Network attachment intent — each entry SELECTS an existing
+	// Network.VirtualNetwork the NIC attaches to.
+	Networks *[]NetworkAttachment `json:"networks,omitempty"`
+
 	// Path Resource path or location within the system hierarchy.
 	Path *string `json:"path,omitempty"`
+
+	// Placement Placement intent expressed as a SELECTION of an existing Facility.Location
+	// (plus affinity relative to other existing resources). Policy governs which
+	// locations a consumer may select; the VM references one, it does not define
+	// locations itself.
+	Placement *Placement `json:"placement,omitempty"`
+
+	// Power Desired guest power state the provider drives to (KubeVirt runStrategy /
+	// Redfish PowerState). Distinct from the four-state lifecycle_state.
+	Power *Power `json:"power,omitempty"`
 
 	// ProviderHints Optional provider-specific configuration.
 	//
@@ -122,91 +152,19 @@ type VMSpec struct {
 	// StatusMessage Human-readable message providing details about the current status
 	StatusMessage *string `json:"status_message,omitempty"`
 
-	// Storage Storage configuration
-	Storage Storage `json:"storage"`
-
 	// UpdateTime Timestamp when the resource was last updated (RFC 3339)
 	UpdateTime *time.Time `json:"update_time,omitempty"`
 
-	// Vcpu Virtual CPU configuration
-	Vcpu                 Vcpu                   `json:"vcpu"`
+	// Vcpu Virtual CPU configuration.
+	Vcpu                 *Vcpu                  `json:"vcpu,omitempty"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// Vcpu Virtual CPU configuration
+// Vcpu Virtual CPU configuration.
 type Vcpu struct {
 	// Count Number of virtual CPUs.
-	// Maps to vCPU count in all providers.
 	Count                int                    `json:"count"`
 	AdditionalProperties map[string]interface{} `json:"-"`
-}
-
-// Getter for additional properties for Access. Returns the specified
-// element and whether it was found
-func (a Access) Get(fieldName string) (value interface{}, found bool) {
-	if a.AdditionalProperties != nil {
-		value, found = a.AdditionalProperties[fieldName]
-	}
-	return
-}
-
-// Setter for additional properties for Access
-func (a *Access) Set(fieldName string, value interface{}) {
-	if a.AdditionalProperties == nil {
-		a.AdditionalProperties = make(map[string]interface{})
-	}
-	a.AdditionalProperties[fieldName] = value
-}
-
-// Override default JSON handling for Access to handle AdditionalProperties
-func (a *Access) UnmarshalJSON(b []byte) error {
-	object := make(map[string]json.RawMessage)
-	err := json.Unmarshal(b, &object)
-	if err != nil {
-		return err
-	}
-
-	if raw, found := object["ssh_public_key"]; found {
-		err = json.Unmarshal(raw, &a.SshPublicKey)
-		if err != nil {
-			return fmt.Errorf("error reading 'ssh_public_key': %w", err)
-		}
-		delete(object, "ssh_public_key")
-	}
-
-	if len(object) != 0 {
-		a.AdditionalProperties = make(map[string]interface{})
-		for fieldName, fieldBuf := range object {
-			var fieldVal interface{}
-			err := json.Unmarshal(fieldBuf, &fieldVal)
-			if err != nil {
-				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
-			}
-			a.AdditionalProperties[fieldName] = fieldVal
-		}
-	}
-	return nil
-}
-
-// Override default JSON handling for Access to handle AdditionalProperties
-func (a Access) MarshalJSON() ([]byte, error) {
-	var err error
-	object := make(map[string]json.RawMessage)
-
-	if a.SshPublicKey != nil {
-		object["ssh_public_key"], err = json.Marshal(a.SshPublicKey)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'ssh_public_key': %w", err)
-		}
-	}
-
-	for fieldName, field := range a.AdditionalProperties {
-		object[fieldName], err = json.Marshal(field)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
-		}
-	}
-	return json.Marshal(object)
 }
 
 // Getter for additional properties for Disk. Returns the specified
@@ -234,20 +192,20 @@ func (a *Disk) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	if raw, found := object["capacity"]; found {
-		err = json.Unmarshal(raw, &a.Capacity)
+	if raw, found := object["size"]; found {
+		err = json.Unmarshal(raw, &a.Size)
 		if err != nil {
-			return fmt.Errorf("error reading 'capacity': %w", err)
+			return fmt.Errorf("error reading 'size': %w", err)
 		}
-		delete(object, "capacity")
+		delete(object, "size")
 	}
 
-	if raw, found := object["name"]; found {
-		err = json.Unmarshal(raw, &a.Name)
+	if raw, found := object["storage_class"]; found {
+		err = json.Unmarshal(raw, &a.StorageClass)
 		if err != nil {
-			return fmt.Errorf("error reading 'name': %w", err)
+			return fmt.Errorf("error reading 'storage_class': %w", err)
 		}
-		delete(object, "name")
+		delete(object, "storage_class")
 	}
 
 	if len(object) != 0 {
@@ -269,14 +227,16 @@ func (a Disk) MarshalJSON() ([]byte, error) {
 	var err error
 	object := make(map[string]json.RawMessage)
 
-	object["capacity"], err = json.Marshal(a.Capacity)
+	object["size"], err = json.Marshal(a.Size)
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'capacity': %w", err)
+		return nil, fmt.Errorf("error marshaling 'size': %w", err)
 	}
 
-	object["name"], err = json.Marshal(a.Name)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'name': %w", err)
+	if a.StorageClass != nil {
+		object["storage_class"], err = json.Marshal(a.StorageClass)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'storage_class': %w", err)
+		}
 	}
 
 	for fieldName, field := range a.AdditionalProperties {
@@ -420,37 +380,45 @@ func (a Memory) MarshalJSON() ([]byte, error) {
 	return json.Marshal(object)
 }
 
-// Getter for additional properties for Storage. Returns the specified
+// Getter for additional properties for NetworkAttachment. Returns the specified
 // element and whether it was found
-func (a Storage) Get(fieldName string) (value interface{}, found bool) {
+func (a NetworkAttachment) Get(fieldName string) (value interface{}, found bool) {
 	if a.AdditionalProperties != nil {
 		value, found = a.AdditionalProperties[fieldName]
 	}
 	return
 }
 
-// Setter for additional properties for Storage
-func (a *Storage) Set(fieldName string, value interface{}) {
+// Setter for additional properties for NetworkAttachment
+func (a *NetworkAttachment) Set(fieldName string, value interface{}) {
 	if a.AdditionalProperties == nil {
 		a.AdditionalProperties = make(map[string]interface{})
 	}
 	a.AdditionalProperties[fieldName] = value
 }
 
-// Override default JSON handling for Storage to handle AdditionalProperties
-func (a *Storage) UnmarshalJSON(b []byte) error {
+// Override default JSON handling for NetworkAttachment to handle AdditionalProperties
+func (a *NetworkAttachment) UnmarshalJSON(b []byte) error {
 	object := make(map[string]json.RawMessage)
 	err := json.Unmarshal(b, &object)
 	if err != nil {
 		return err
 	}
 
-	if raw, found := object["disks"]; found {
-		err = json.Unmarshal(raw, &a.Disks)
+	if raw, found := object["name"]; found {
+		err = json.Unmarshal(raw, &a.Name)
 		if err != nil {
-			return fmt.Errorf("error reading 'disks': %w", err)
+			return fmt.Errorf("error reading 'name': %w", err)
 		}
-		delete(object, "disks")
+		delete(object, "name")
+	}
+
+	if raw, found := object["network_ref"]; found {
+		err = json.Unmarshal(raw, &a.NetworkRef)
+		if err != nil {
+			return fmt.Errorf("error reading 'network_ref': %w", err)
+		}
+		delete(object, "network_ref")
 	}
 
 	if len(object) != 0 {
@@ -467,15 +435,156 @@ func (a *Storage) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Override default JSON handling for Storage to handle AdditionalProperties
-func (a Storage) MarshalJSON() ([]byte, error) {
+// Override default JSON handling for NetworkAttachment to handle AdditionalProperties
+func (a NetworkAttachment) MarshalJSON() ([]byte, error) {
 	var err error
 	object := make(map[string]json.RawMessage)
 
-	if a.Disks != nil {
-		object["disks"], err = json.Marshal(a.Disks)
+	if a.Name != nil {
+		object["name"], err = json.Marshal(a.Name)
 		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'disks': %w", err)
+			return nil, fmt.Errorf("error marshaling 'name': %w", err)
+		}
+	}
+
+	object["network_ref"], err = json.Marshal(a.NetworkRef)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'network_ref': %w", err)
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
+
+// Getter for additional properties for Placement. Returns the specified
+// element and whether it was found
+func (a Placement) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for Placement
+func (a *Placement) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for Placement to handle AdditionalProperties
+func (a *Placement) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["location_ref"]; found {
+		err = json.Unmarshal(raw, &a.LocationRef)
+		if err != nil {
+			return fmt.Errorf("error reading 'location_ref': %w", err)
+		}
+		delete(object, "location_ref")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for Placement to handle AdditionalProperties
+func (a Placement) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.LocationRef != nil {
+		object["location_ref"], err = json.Marshal(a.LocationRef)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'location_ref': %w", err)
+		}
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
+
+// Getter for additional properties for Power. Returns the specified
+// element and whether it was found
+func (a Power) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for Power
+func (a *Power) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for Power to handle AdditionalProperties
+func (a *Power) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["desired_state"]; found {
+		err = json.Unmarshal(raw, &a.DesiredState)
+		if err != nil {
+			return fmt.Errorf("error reading 'desired_state': %w", err)
+		}
+		delete(object, "desired_state")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for Power to handle AdditionalProperties
+func (a Power) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.DesiredState != nil {
+		object["desired_state"], err = json.Marshal(a.DesiredState)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'desired_state': %w", err)
 		}
 	}
 
@@ -513,20 +622,20 @@ func (a *VMSpec) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	if raw, found := object["access"]; found {
-		err = json.Unmarshal(raw, &a.Access)
-		if err != nil {
-			return fmt.Errorf("error reading 'access': %w", err)
-		}
-		delete(object, "access")
-	}
-
 	if raw, found := object["create_time"]; found {
 		err = json.Unmarshal(raw, &a.CreateTime)
 		if err != nil {
 			return fmt.Errorf("error reading 'create_time': %w", err)
 		}
 		delete(object, "create_time")
+	}
+
+	if raw, found := object["disks"]; found {
+		err = json.Unmarshal(raw, &a.Disks)
+		if err != nil {
+			return fmt.Errorf("error reading 'disks': %w", err)
+		}
+		delete(object, "disks")
 	}
 
 	if raw, found := object["guest_os"]; found {
@@ -545,6 +654,14 @@ func (a *VMSpec) UnmarshalJSON(b []byte) error {
 		delete(object, "id")
 	}
 
+	if raw, found := object["instance_size"]; found {
+		err = json.Unmarshal(raw, &a.InstanceSize)
+		if err != nil {
+			return fmt.Errorf("error reading 'instance_size': %w", err)
+		}
+		delete(object, "instance_size")
+	}
+
 	if raw, found := object["memory"]; found {
 		err = json.Unmarshal(raw, &a.Memory)
 		if err != nil {
@@ -561,12 +678,36 @@ func (a *VMSpec) UnmarshalJSON(b []byte) error {
 		delete(object, "metadata")
 	}
 
+	if raw, found := object["networks"]; found {
+		err = json.Unmarshal(raw, &a.Networks)
+		if err != nil {
+			return fmt.Errorf("error reading 'networks': %w", err)
+		}
+		delete(object, "networks")
+	}
+
 	if raw, found := object["path"]; found {
 		err = json.Unmarshal(raw, &a.Path)
 		if err != nil {
 			return fmt.Errorf("error reading 'path': %w", err)
 		}
 		delete(object, "path")
+	}
+
+	if raw, found := object["placement"]; found {
+		err = json.Unmarshal(raw, &a.Placement)
+		if err != nil {
+			return fmt.Errorf("error reading 'placement': %w", err)
+		}
+		delete(object, "placement")
+	}
+
+	if raw, found := object["power"]; found {
+		err = json.Unmarshal(raw, &a.Power)
+		if err != nil {
+			return fmt.Errorf("error reading 'power': %w", err)
+		}
+		delete(object, "power")
 	}
 
 	if raw, found := object["provider_hints"]; found {
@@ -599,14 +740,6 @@ func (a *VMSpec) UnmarshalJSON(b []byte) error {
 			return fmt.Errorf("error reading 'status_message': %w", err)
 		}
 		delete(object, "status_message")
-	}
-
-	if raw, found := object["storage"]; found {
-		err = json.Unmarshal(raw, &a.Storage)
-		if err != nil {
-			return fmt.Errorf("error reading 'storage': %w", err)
-		}
-		delete(object, "storage")
 	}
 
 	if raw, found := object["update_time"]; found {
@@ -644,17 +777,17 @@ func (a VMSpec) MarshalJSON() ([]byte, error) {
 	var err error
 	object := make(map[string]json.RawMessage)
 
-	if a.Access != nil {
-		object["access"], err = json.Marshal(a.Access)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'access': %w", err)
-		}
-	}
-
 	if a.CreateTime != nil {
 		object["create_time"], err = json.Marshal(a.CreateTime)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'create_time': %w", err)
+		}
+	}
+
+	if a.Disks != nil {
+		object["disks"], err = json.Marshal(a.Disks)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'disks': %w", err)
 		}
 	}
 
@@ -670,9 +803,18 @@ func (a VMSpec) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	object["memory"], err = json.Marshal(a.Memory)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'memory': %w", err)
+	if a.InstanceSize != nil {
+		object["instance_size"], err = json.Marshal(a.InstanceSize)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'instance_size': %w", err)
+		}
+	}
+
+	if a.Memory != nil {
+		object["memory"], err = json.Marshal(a.Memory)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'memory': %w", err)
+		}
 	}
 
 	object["metadata"], err = json.Marshal(a.Metadata)
@@ -680,10 +822,31 @@ func (a VMSpec) MarshalJSON() ([]byte, error) {
 		return nil, fmt.Errorf("error marshaling 'metadata': %w", err)
 	}
 
+	if a.Networks != nil {
+		object["networks"], err = json.Marshal(a.Networks)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'networks': %w", err)
+		}
+	}
+
 	if a.Path != nil {
 		object["path"], err = json.Marshal(a.Path)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'path': %w", err)
+		}
+	}
+
+	if a.Placement != nil {
+		object["placement"], err = json.Marshal(a.Placement)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'placement': %w", err)
+		}
+	}
+
+	if a.Power != nil {
+		object["power"], err = json.Marshal(a.Power)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'power': %w", err)
 		}
 	}
 
@@ -713,11 +876,6 @@ func (a VMSpec) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	object["storage"], err = json.Marshal(a.Storage)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'storage': %w", err)
-	}
-
 	if a.UpdateTime != nil {
 		object["update_time"], err = json.Marshal(a.UpdateTime)
 		if err != nil {
@@ -725,9 +883,11 @@ func (a VMSpec) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	object["vcpu"], err = json.Marshal(a.Vcpu)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'vcpu': %w", err)
+	if a.Vcpu != nil {
+		object["vcpu"], err = json.Marshal(a.Vcpu)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'vcpu': %w", err)
+		}
 	}
 
 	for fieldName, field := range a.AdditionalProperties {

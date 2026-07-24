@@ -11,27 +11,6 @@ import (
 	externalRef0 "github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes"
 )
 
-// Defines values for ControlPlaneNodesCount.
-const (
-	N1 ControlPlaneNodesCount = 1
-	N3 ControlPlaneNodesCount = 3
-	N5 ControlPlaneNodesCount = 5
-)
-
-// Valid indicates whether the value is a known member of the ControlPlaneNodesCount enum.
-func (e ControlPlaneNodesCount) Valid() bool {
-	switch e {
-	case N1:
-		return true
-	case N3:
-		return true
-	case N5:
-		return true
-	default:
-		return false
-	}
-}
-
 // ClusterSpec defines model for ClusterSpec.
 type ClusterSpec struct {
 	// CreateTime Timestamp when the resource was created (RFC 3339)
@@ -42,10 +21,9 @@ type ClusterSpec struct {
 
 	// Metadata Resource metadata for identification and governance.
 	// Used by all service type specifications.
-	Metadata externalRef0.ServiceMetadata `json:"metadata"`
-
-	// Nodes Node configuration
-	Nodes *Nodes `json:"nodes,omitempty"`
+	Metadata  externalRef0.ServiceMetadata `json:"metadata"`
+	Network   *Network                     `json:"network,omitempty"`
+	NodePools []NodePool                   `json:"node_pools"`
 
 	// Path Resource path or location within the system hierarchy.
 	Path *string `json:"path,omitempty"`
@@ -59,6 +37,9 @@ type ClusterSpec struct {
 	// Values are provider-specific configuration objects.
 	ProviderHints *externalRef0.ProviderHints `json:"provider_hints,omitempty"`
 
+	// Release Platform release, e.g. 4.16 (OpenShift).
+	Release string `json:"release"`
+
 	// ServiceType Service type identifier.
 	// Makes the payload self-describing and enables routing/validation.
 	ServiceType externalRef0.ServiceType `json:"service_type"`
@@ -70,61 +51,27 @@ type ClusterSpec struct {
 	StatusMessage *string `json:"status_message,omitempty"`
 
 	// UpdateTime Timestamp when the resource was last updated (RFC 3339)
-	UpdateTime *time.Time `json:"update_time,omitempty"`
-
-	// Version Kubernetes version (e.g., "1.29", "1.30", "1.31").
-	//
-	// Use standard Kubernetes version numbers. Providers translate
-	// to their distribution's version if needed (e.g., OpenShift
-	// providers map K8s 1.27 to OCP 4.14).
-	Version              string                 `json:"version"`
+	UpdateTime           *time.Time             `json:"update_time,omitempty"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// ControlPlaneNodes Control plane nodes configuration.
-// Managed services (ACM (with Hypershift),EKS, GKE, AKS) may ignore these fields.
-type ControlPlaneNodes struct {
-	// Count Number of control plane nodes (1, 3, or 5)
-	Count *ControlPlaneNodesCount `json:"count,omitempty"`
-
-	// Cpu CPU cores per control plane node
-	Cpu *int `json:"cpu,omitempty"`
-
-	// Memory Memory per control plane node with unit suffix
-	Memory *string `json:"memory,omitempty"`
-
-	// Storage Storage per control plane node with unit suffix
-	Storage              *string                `json:"storage,omitempty"`
+// Network defines model for Network.
+type Network struct {
+	PodCidr              *string                `json:"pod_cidr,omitempty"`
+	ServiceCidr          *string                `json:"service_cidr,omitempty"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// ControlPlaneNodesCount Number of control plane nodes (1, 3, or 5)
-type ControlPlaneNodesCount int
+// NodePool defines model for NodePool.
+type NodePool struct {
+	Count int `json:"count"`
 
-// Nodes Node configuration
-type Nodes struct {
-	// ControlPlane Control plane nodes configuration.
-	// Managed services (ACM (with Hypershift),EKS, GKE, AKS) may ignore these fields.
-	ControlPlane *ControlPlaneNodes `json:"control_plane,omitempty"`
+	// HostType Resource Type name of the node shape (Compute.HostType — forthcoming).
+	HostType string `json:"host_type"`
 
-	// Workers Worker nodes configuration
-	Workers              *WorkerNodes           `json:"workers,omitempty"`
-	AdditionalProperties map[string]interface{} `json:"-"`
-}
-
-// WorkerNodes Worker nodes configuration
-type WorkerNodes struct {
-	// Count Number of worker nodes
-	Count *int `json:"count,omitempty"`
-
-	// Cpu CPU cores per worker node
-	Cpu *int `json:"cpu,omitempty"`
-
-	// Memory Memory per worker node with unit suffix
-	Memory *string `json:"memory,omitempty"`
-
-	// Storage Storage per worker node with unit suffix
-	Storage              *string                `json:"storage,omitempty"`
+	// InstanceSize Provider-neutral node size class (small|medium|large) — sizes each node in the pool; the provider maps it to a concrete node shape at naturalization (common-elements §2.2, ADR-014).
+	InstanceSize         *string                `json:"instance_size,omitempty"`
+	Name                 string                 `json:"name"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
@@ -177,12 +124,20 @@ func (a *ClusterSpec) UnmarshalJSON(b []byte) error {
 		delete(object, "metadata")
 	}
 
-	if raw, found := object["nodes"]; found {
-		err = json.Unmarshal(raw, &a.Nodes)
+	if raw, found := object["network"]; found {
+		err = json.Unmarshal(raw, &a.Network)
 		if err != nil {
-			return fmt.Errorf("error reading 'nodes': %w", err)
+			return fmt.Errorf("error reading 'network': %w", err)
 		}
-		delete(object, "nodes")
+		delete(object, "network")
+	}
+
+	if raw, found := object["node_pools"]; found {
+		err = json.Unmarshal(raw, &a.NodePools)
+		if err != nil {
+			return fmt.Errorf("error reading 'node_pools': %w", err)
+		}
+		delete(object, "node_pools")
 	}
 
 	if raw, found := object["path"]; found {
@@ -199,6 +154,14 @@ func (a *ClusterSpec) UnmarshalJSON(b []byte) error {
 			return fmt.Errorf("error reading 'provider_hints': %w", err)
 		}
 		delete(object, "provider_hints")
+	}
+
+	if raw, found := object["release"]; found {
+		err = json.Unmarshal(raw, &a.Release)
+		if err != nil {
+			return fmt.Errorf("error reading 'release': %w", err)
+		}
+		delete(object, "release")
 	}
 
 	if raw, found := object["service_type"]; found {
@@ -231,14 +194,6 @@ func (a *ClusterSpec) UnmarshalJSON(b []byte) error {
 			return fmt.Errorf("error reading 'update_time': %w", err)
 		}
 		delete(object, "update_time")
-	}
-
-	if raw, found := object["version"]; found {
-		err = json.Unmarshal(raw, &a.Version)
-		if err != nil {
-			return fmt.Errorf("error reading 'version': %w", err)
-		}
-		delete(object, "version")
 	}
 
 	if len(object) != 0 {
@@ -279,10 +234,17 @@ func (a ClusterSpec) MarshalJSON() ([]byte, error) {
 		return nil, fmt.Errorf("error marshaling 'metadata': %w", err)
 	}
 
-	if a.Nodes != nil {
-		object["nodes"], err = json.Marshal(a.Nodes)
+	if a.Network != nil {
+		object["network"], err = json.Marshal(a.Network)
 		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'nodes': %w", err)
+			return nil, fmt.Errorf("error marshaling 'network': %w", err)
+		}
+	}
+
+	if a.NodePools != nil {
+		object["node_pools"], err = json.Marshal(a.NodePools)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'node_pools': %w", err)
 		}
 	}
 
@@ -298,6 +260,11 @@ func (a ClusterSpec) MarshalJSON() ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'provider_hints': %w", err)
 		}
+	}
+
+	object["release"], err = json.Marshal(a.Release)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'release': %w", err)
 	}
 
 	object["service_type"], err = json.Marshal(a.ServiceType)
@@ -326,9 +293,87 @@ func (a ClusterSpec) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	object["version"], err = json.Marshal(a.Version)
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
+
+// Getter for additional properties for Network. Returns the specified
+// element and whether it was found
+func (a Network) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for Network
+func (a *Network) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for Network to handle AdditionalProperties
+func (a *Network) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'version': %w", err)
+		return err
+	}
+
+	if raw, found := object["pod_cidr"]; found {
+		err = json.Unmarshal(raw, &a.PodCidr)
+		if err != nil {
+			return fmt.Errorf("error reading 'pod_cidr': %w", err)
+		}
+		delete(object, "pod_cidr")
+	}
+
+	if raw, found := object["service_cidr"]; found {
+		err = json.Unmarshal(raw, &a.ServiceCidr)
+		if err != nil {
+			return fmt.Errorf("error reading 'service_cidr': %w", err)
+		}
+		delete(object, "service_cidr")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for Network to handle AdditionalProperties
+func (a Network) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.PodCidr != nil {
+		object["pod_cidr"], err = json.Marshal(a.PodCidr)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'pod_cidr': %w", err)
+		}
+	}
+
+	if a.ServiceCidr != nil {
+		object["service_cidr"], err = json.Marshal(a.ServiceCidr)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'service_cidr': %w", err)
+		}
 	}
 
 	for fieldName, field := range a.AdditionalProperties {
@@ -340,25 +385,25 @@ func (a ClusterSpec) MarshalJSON() ([]byte, error) {
 	return json.Marshal(object)
 }
 
-// Getter for additional properties for ControlPlaneNodes. Returns the specified
+// Getter for additional properties for NodePool. Returns the specified
 // element and whether it was found
-func (a ControlPlaneNodes) Get(fieldName string) (value interface{}, found bool) {
+func (a NodePool) Get(fieldName string) (value interface{}, found bool) {
 	if a.AdditionalProperties != nil {
 		value, found = a.AdditionalProperties[fieldName]
 	}
 	return
 }
 
-// Setter for additional properties for ControlPlaneNodes
-func (a *ControlPlaneNodes) Set(fieldName string, value interface{}) {
+// Setter for additional properties for NodePool
+func (a *NodePool) Set(fieldName string, value interface{}) {
 	if a.AdditionalProperties == nil {
 		a.AdditionalProperties = make(map[string]interface{})
 	}
 	a.AdditionalProperties[fieldName] = value
 }
 
-// Override default JSON handling for ControlPlaneNodes to handle AdditionalProperties
-func (a *ControlPlaneNodes) UnmarshalJSON(b []byte) error {
+// Override default JSON handling for NodePool to handle AdditionalProperties
+func (a *NodePool) UnmarshalJSON(b []byte) error {
 	object := make(map[string]json.RawMessage)
 	err := json.Unmarshal(b, &object)
 	if err != nil {
@@ -373,28 +418,28 @@ func (a *ControlPlaneNodes) UnmarshalJSON(b []byte) error {
 		delete(object, "count")
 	}
 
-	if raw, found := object["cpu"]; found {
-		err = json.Unmarshal(raw, &a.Cpu)
+	if raw, found := object["host_type"]; found {
+		err = json.Unmarshal(raw, &a.HostType)
 		if err != nil {
-			return fmt.Errorf("error reading 'cpu': %w", err)
+			return fmt.Errorf("error reading 'host_type': %w", err)
 		}
-		delete(object, "cpu")
+		delete(object, "host_type")
 	}
 
-	if raw, found := object["memory"]; found {
-		err = json.Unmarshal(raw, &a.Memory)
+	if raw, found := object["instance_size"]; found {
+		err = json.Unmarshal(raw, &a.InstanceSize)
 		if err != nil {
-			return fmt.Errorf("error reading 'memory': %w", err)
+			return fmt.Errorf("error reading 'instance_size': %w", err)
 		}
-		delete(object, "memory")
+		delete(object, "instance_size")
 	}
 
-	if raw, found := object["storage"]; found {
-		err = json.Unmarshal(raw, &a.Storage)
+	if raw, found := object["name"]; found {
+		err = json.Unmarshal(raw, &a.Name)
 		if err != nil {
-			return fmt.Errorf("error reading 'storage': %w", err)
+			return fmt.Errorf("error reading 'name': %w", err)
 		}
-		delete(object, "storage")
+		delete(object, "name")
 	}
 
 	if len(object) != 0 {
@@ -411,233 +456,31 @@ func (a *ControlPlaneNodes) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Override default JSON handling for ControlPlaneNodes to handle AdditionalProperties
-func (a ControlPlaneNodes) MarshalJSON() ([]byte, error) {
+// Override default JSON handling for NodePool to handle AdditionalProperties
+func (a NodePool) MarshalJSON() ([]byte, error) {
 	var err error
 	object := make(map[string]json.RawMessage)
 
-	if a.Count != nil {
-		object["count"], err = json.Marshal(a.Count)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'count': %w", err)
-		}
-	}
-
-	if a.Cpu != nil {
-		object["cpu"], err = json.Marshal(a.Cpu)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'cpu': %w", err)
-		}
-	}
-
-	if a.Memory != nil {
-		object["memory"], err = json.Marshal(a.Memory)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'memory': %w", err)
-		}
-	}
-
-	if a.Storage != nil {
-		object["storage"], err = json.Marshal(a.Storage)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'storage': %w", err)
-		}
-	}
-
-	for fieldName, field := range a.AdditionalProperties {
-		object[fieldName], err = json.Marshal(field)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
-		}
-	}
-	return json.Marshal(object)
-}
-
-// Getter for additional properties for Nodes. Returns the specified
-// element and whether it was found
-func (a Nodes) Get(fieldName string) (value interface{}, found bool) {
-	if a.AdditionalProperties != nil {
-		value, found = a.AdditionalProperties[fieldName]
-	}
-	return
-}
-
-// Setter for additional properties for Nodes
-func (a *Nodes) Set(fieldName string, value interface{}) {
-	if a.AdditionalProperties == nil {
-		a.AdditionalProperties = make(map[string]interface{})
-	}
-	a.AdditionalProperties[fieldName] = value
-}
-
-// Override default JSON handling for Nodes to handle AdditionalProperties
-func (a *Nodes) UnmarshalJSON(b []byte) error {
-	object := make(map[string]json.RawMessage)
-	err := json.Unmarshal(b, &object)
+	object["count"], err = json.Marshal(a.Count)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("error marshaling 'count': %w", err)
 	}
 
-	if raw, found := object["control_plane"]; found {
-		err = json.Unmarshal(raw, &a.ControlPlane)
-		if err != nil {
-			return fmt.Errorf("error reading 'control_plane': %w", err)
-		}
-		delete(object, "control_plane")
-	}
-
-	if raw, found := object["workers"]; found {
-		err = json.Unmarshal(raw, &a.Workers)
-		if err != nil {
-			return fmt.Errorf("error reading 'workers': %w", err)
-		}
-		delete(object, "workers")
-	}
-
-	if len(object) != 0 {
-		a.AdditionalProperties = make(map[string]interface{})
-		for fieldName, fieldBuf := range object {
-			var fieldVal interface{}
-			err := json.Unmarshal(fieldBuf, &fieldVal)
-			if err != nil {
-				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
-			}
-			a.AdditionalProperties[fieldName] = fieldVal
-		}
-	}
-	return nil
-}
-
-// Override default JSON handling for Nodes to handle AdditionalProperties
-func (a Nodes) MarshalJSON() ([]byte, error) {
-	var err error
-	object := make(map[string]json.RawMessage)
-
-	if a.ControlPlane != nil {
-		object["control_plane"], err = json.Marshal(a.ControlPlane)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'control_plane': %w", err)
-		}
-	}
-
-	if a.Workers != nil {
-		object["workers"], err = json.Marshal(a.Workers)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'workers': %w", err)
-		}
-	}
-
-	for fieldName, field := range a.AdditionalProperties {
-		object[fieldName], err = json.Marshal(field)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
-		}
-	}
-	return json.Marshal(object)
-}
-
-// Getter for additional properties for WorkerNodes. Returns the specified
-// element and whether it was found
-func (a WorkerNodes) Get(fieldName string) (value interface{}, found bool) {
-	if a.AdditionalProperties != nil {
-		value, found = a.AdditionalProperties[fieldName]
-	}
-	return
-}
-
-// Setter for additional properties for WorkerNodes
-func (a *WorkerNodes) Set(fieldName string, value interface{}) {
-	if a.AdditionalProperties == nil {
-		a.AdditionalProperties = make(map[string]interface{})
-	}
-	a.AdditionalProperties[fieldName] = value
-}
-
-// Override default JSON handling for WorkerNodes to handle AdditionalProperties
-func (a *WorkerNodes) UnmarshalJSON(b []byte) error {
-	object := make(map[string]json.RawMessage)
-	err := json.Unmarshal(b, &object)
+	object["host_type"], err = json.Marshal(a.HostType)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("error marshaling 'host_type': %w", err)
 	}
 
-	if raw, found := object["count"]; found {
-		err = json.Unmarshal(raw, &a.Count)
+	if a.InstanceSize != nil {
+		object["instance_size"], err = json.Marshal(a.InstanceSize)
 		if err != nil {
-			return fmt.Errorf("error reading 'count': %w", err)
-		}
-		delete(object, "count")
-	}
-
-	if raw, found := object["cpu"]; found {
-		err = json.Unmarshal(raw, &a.Cpu)
-		if err != nil {
-			return fmt.Errorf("error reading 'cpu': %w", err)
-		}
-		delete(object, "cpu")
-	}
-
-	if raw, found := object["memory"]; found {
-		err = json.Unmarshal(raw, &a.Memory)
-		if err != nil {
-			return fmt.Errorf("error reading 'memory': %w", err)
-		}
-		delete(object, "memory")
-	}
-
-	if raw, found := object["storage"]; found {
-		err = json.Unmarshal(raw, &a.Storage)
-		if err != nil {
-			return fmt.Errorf("error reading 'storage': %w", err)
-		}
-		delete(object, "storage")
-	}
-
-	if len(object) != 0 {
-		a.AdditionalProperties = make(map[string]interface{})
-		for fieldName, fieldBuf := range object {
-			var fieldVal interface{}
-			err := json.Unmarshal(fieldBuf, &fieldVal)
-			if err != nil {
-				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
-			}
-			a.AdditionalProperties[fieldName] = fieldVal
-		}
-	}
-	return nil
-}
-
-// Override default JSON handling for WorkerNodes to handle AdditionalProperties
-func (a WorkerNodes) MarshalJSON() ([]byte, error) {
-	var err error
-	object := make(map[string]json.RawMessage)
-
-	if a.Count != nil {
-		object["count"], err = json.Marshal(a.Count)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'count': %w", err)
+			return nil, fmt.Errorf("error marshaling 'instance_size': %w", err)
 		}
 	}
 
-	if a.Cpu != nil {
-		object["cpu"], err = json.Marshal(a.Cpu)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'cpu': %w", err)
-		}
-	}
-
-	if a.Memory != nil {
-		object["memory"], err = json.Marshal(a.Memory)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'memory': %w", err)
-		}
-	}
-
-	if a.Storage != nil {
-		object["storage"], err = json.Marshal(a.Storage)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'storage': %w", err)
-		}
+	object["name"], err = json.Marshal(a.Name)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'name': %w", err)
 	}
 
 	for fieldName, field := range a.AdditionalProperties {

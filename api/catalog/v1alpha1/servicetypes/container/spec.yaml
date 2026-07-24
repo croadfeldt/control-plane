@@ -1,211 +1,160 @@
 openapi: 3.0.4
-
 info:
   title: DCM Container Specification
-  description: |
-    Provider-agnostic container specification based on OCI standards.
-
-    This schema defines minimal portable fields common across all container
-    platforms (Kubernetes, Docker, Podman, OpenShift, CRI-O, containerd).
-
-    Platform-specific configuration (security contexts, probes, volumes)
-    should be specified via provider_hints.
+  description: |-
+    Generated from the UDLM registry by cmd/udlm-servicetype-gen — DO NOT hand-edit.
+    Provider-agnostic container workload specification; the UDLM resource type is the source of truth.
   version: v1alpha1
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
-
 paths: {}
-
 components:
   schemas:
     ContainerSpec:
       type: object
-      description: |
-        Provider-agnostic container specification.
+      description: |-
+        A container workload — image, resources, environment, mounts, and exposed ports — realized and managed by a *resource* provider (OCP, podman) under the four-state lifecycle (DCM ADR-023). Models the service/workload layer of the estate: MCP servers, the media stack, mail, etc. Secret material is never inline — env/mounts reference a Security.CredentialRef.
 
-        Includes common fields (service_type, metadata, provider_hints)
-        plus container-specific fields for image, resources, process, and network.
-
-        Providers translate this abstract specification to their native format.
+        Provider-agnostic container workload specification, generated from the UDLM Compute.Container (v0.3.0) resource type — the UDLM registry is the source of truth. Non-portable provider settings go under provider_hints (CommonFields). Regenerate with cmd/udlm-servicetype-gen; do not hand-edit.
       allOf:
-        - $ref: '../common.yaml#/components/schemas/CommonFields'
+        - $ref: ../common.yaml#/components/schemas/CommonFields
         - type: object
           required:
             - image
-            - resources
           properties:
             image:
-              $ref: '#/components/schemas/Image'
-
+              type: string
+              description: The container image — either the inline OCI reference (first branch) OR a data_reference to a governed container_image reference-data layer. The reference form lets DCM compute the change-impact blast radius when a base image or embedded library is bumped (UDLM ADR-012; DCM ADR-024) — an inline OCI string cannot be cascaded.
+            command:
+              type: array
+              description: Entrypoint override.
+              items:
+                type: string
+            args:
+              type: array
+              items:
+                type: string
             resources:
-              $ref: '#/components/schemas/ContainerResources'
-
+              $ref: '#/components/schemas/Resources'
             process:
               $ref: '#/components/schemas/Process'
-
             network:
               $ref: '#/components/schemas/Network'
-
+            runtime:
+              $ref: '#/components/schemas/Runtime'
           additionalProperties: true
-
-    Image:
+    Resources:
       type: object
-      description: |
-        Container image specification.
-        Based on OCI Image Specification for portable image references.
-      required:
-        - reference
       properties:
-        reference:
+        instance_size:
           type: string
-          description: |
-            Complete OCI image reference.
-
-            Format: [REGISTRY/]REPOSITORY[:TAG|@DIGEST]
-            Examples:
-            - quay.io/organization/app:v1.2.3 (registry + tag)
-            - docker.io/library/nginx:latest (Docker Hub)
-            - gcr.io/project/image@sha256:abc123... (digest)
-          example: quay.io/app/webserver:v1.2.3
-      additionalProperties: true
-
-    ContainerResources:
-      type: object
-      description: Resource allocation (CPU and memory)
-      required:
-        - cpu
-        - memory
-      properties:
+          description: Provider-neutral size class (small|medium|large) — size by class in place of cpu/memory; the provider maps it at naturalization (common-elements §2.2, ADR-014).
         cpu:
-          $ref: '#/components/schemas/CpuResources'
+          type: number
+          description: vCPU request in cores.
+          minimum: 0.1
         memory:
-          $ref: '#/components/schemas/MemoryResources'
-      additionalProperties: true
-
-    CpuResources:
-      type: object
-      description: CPU allocation (in cores)
-      required:
-        - min
-        - max
-      properties:
-        min:
-          type: integer
-          description: Minimum guaranteed CPU cores
-          minimum: 1
-          example: 1
-        max:
-          type: integer
-          description: Maximum allowed CPU cores
-          minimum: 1
-          example: 2
-      additionalProperties: true
-
-    MemoryResources:
-      type: object
-      description: Memory allocation
-      required:
-        - min
-        - max
-      properties:
-        min:
           type: string
-          description: Minimum guaranteed memory with unit suffix
-          pattern: '^[0-9]+(MB|GB|TB)$'
-          example: 1GB
-        max:
-          type: string
-          description: Maximum allowed memory with unit suffix
-          pattern: '^[0-9]+(MB|GB|TB)$'
-          example: 2GB
+          pattern: ^[0-9]+(Mi|Gi|MB|GB)$
       additionalProperties: true
-
     Process:
       type: object
-      description: Container process configuration (optional)
       properties:
-        command:
-          type: array
-          description: |
-            Entrypoint override.
-            Replaces the container image's default entrypoint.
-          items:
-            type: string
-          example:
-            - /bin/sh
-            - -c
-        args:
-          type: array
-          description: |
-            Arguments to the entrypoint.
-            Passed to the command or the container's default entrypoint.
-          items:
-            type: string
-          example:
-            - --config
-            - /etc/app/config.yaml
         env:
           type: array
-          description: Environment variables
           items:
-            $ref: '#/components/schemas/EnvVar'
+            $ref: '#/components/schemas/Env'
+        mounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Mount'
       additionalProperties: true
-
-    EnvVar:
+    Env:
       type: object
-      description: Environment variable definition
       required:
         - name
-        - value
       properties:
         name:
           type: string
-          description: Variable name
-          example: PORT
         value:
           type: string
-          description: Variable value
-          example: "8080"
+          description: Literal value — non-secret only.
+        value_from:
+          $ref: '#/components/schemas/ValueFrom'
       additionalProperties: true
-
+    ValueFrom:
+      type: object
+      description: Reference to a Security.CredentialRef or config source. Secret material is NEVER inline (DCM ADR-023).
+      properties:
+        credential_ref:
+          type: string
+          description: handle or uuid of a Security.CredentialRef
+        key:
+          type: string
+      additionalProperties: true
+    Mount:
+      type: object
+      required:
+        - mount_path
+        - source_ref
+      properties:
+        mount_path:
+          type: string
+        source_ref:
+          type: string
+          description: handle/uuid of the mounted source (config/model snapshot
+        read_only:
+          type: boolean
+          default: true
+      additionalProperties: true
     Network:
       type: object
-      description: Network and port configuration (optional)
       properties:
         ports:
           type: array
-          description: Container ports to expose
           items:
-            $ref: '#/components/schemas/ContainerPort'
+            $ref: '#/components/schemas/Port'
       additionalProperties: true
-
-    ContainerPort:
+    Port:
       type: object
-      description: Container port specification
       required:
         - container_port
-        - visibility
       properties:
         container_port:
           type: integer
-          description: Port number inside container
           minimum: 1
           maximum: 65535
-          example: 8080
+        published_port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        protocol:
+          type: string
+          enum:
+            - tcp
+            - udp
+          default: tcp
         visibility:
           type: string
-          description: |
-            How this port is exposed to consumers.
-
-            - none: Port is not exposed outside the container process
-            - internal: Exposed to the host or cluster network
-              (e.g., Docker -p, Kubernetes ClusterIP Service)
-            - external: Reachable from outside the host/cluster
-              (e.g., OpenShift Route, Kubernetes Ingress/LoadBalancer)
           enum:
-            - none
+            - loopback
             - internal
             - external
-          example: internal
+          default: internal
+      additionalProperties: true
+    Runtime:
+      type: object
+      properties:
+        restart_policy:
+          type: string
+          enum:
+            - always
+            - on-failure
+            - never
+          default: always
+        replicas:
+          type: integer
+          minimum: 0
+          default: 1
       additionalProperties: true

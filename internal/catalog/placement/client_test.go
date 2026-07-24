@@ -137,7 +137,7 @@ var _ = Describe("Placement Client", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusNotAcceptable)
-					_, _ = w.Write([]byte(`{"title": "policy rejected", "type": "FAILED_PRECONDITION"}`))
+					_, _ = w.Write([]byte(`{"title": "policy rejected", "type": "https://dcm.example.com/errors/failed-precondition"}`))
 				}))
 				client = newTestClient(server.URL)
 			})
@@ -161,7 +161,7 @@ var _ = Describe("Placement Client", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusUnprocessableEntity)
-					_, _ = w.Write([]byte(`{"title": "provider error", "type": "FAILED_PRECONDITION"}`))
+					_, _ = w.Write([]byte(`{"title": "provider error", "type": "https://dcm.example.com/errors/failed-precondition"}`))
 				}))
 				client = newTestClient(server.URL)
 			})
@@ -213,7 +213,7 @@ var _ = Describe("Placement Client", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusNotAcceptable)
-					_, _ = w.Write([]byte(`{"title": "policy rejected", "type": "FAILED_PRECONDITION"}`))
+					_, _ = w.Write([]byte(`{"title": "policy rejected", "type": "https://dcm.example.com/errors/failed-precondition"}`))
 				}))
 				client = newTestClient(server.URL)
 			})
@@ -234,7 +234,7 @@ var _ = Describe("Placement Client", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusUnprocessableEntity)
-					_, _ = w.Write([]byte(`{"title": "provider error", "type": "FAILED_PRECONDITION"}`))
+					_, _ = w.Write([]byte(`{"title": "provider error", "type": "https://dcm.example.com/errors/failed-precondition"}`))
 				}))
 				client = newTestClient(server.URL)
 			})

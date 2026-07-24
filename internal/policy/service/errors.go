@@ -15,13 +15,13 @@ import (
 type ErrorType string
 
 const (
-	ErrorTypeInvalidArgument    ErrorType = "INVALID_ARGUMENT"
-	ErrorTypeNotFound           ErrorType = "NOT_FOUND"
-	ErrorTypeAlreadyExists      ErrorType = "ALREADY_EXISTS"
-	ErrorTypeInternal           ErrorType = "INTERNAL"
-	ErrorTypeFailedPrecondition ErrorType = "FAILED_PRECONDITION"
-	ErrorTypeRejected           ErrorType = "REJECTED"        // Policy evaluation rejected
-	ErrorTypePolicyConflict     ErrorType = "POLICY_CONFLICT" // Policy constraint conflict
+	ErrorTypeInvalidArgument    ErrorType = "https://dcm.example.com/errors/invalid-argument"
+	ErrorTypeNotFound           ErrorType = "https://dcm.example.com/errors/not-found"
+	ErrorTypeAlreadyExists      ErrorType = "https://dcm.example.com/errors/already-exists"
+	ErrorTypeInternal           ErrorType = "https://dcm.example.com/errors/internal"
+	ErrorTypeFailedPrecondition ErrorType = "https://dcm.example.com/errors/failed-precondition"
+	ErrorTypeRejected           ErrorType = "https://dcm.example.com/errors/rejected"        // Policy evaluation rejected
+	ErrorTypePolicyConflict     ErrorType = "https://dcm.example.com/errors/policy-conflict" // Policy constraint conflict
 )
 
 // ServiceError represents a structured error from the service layer

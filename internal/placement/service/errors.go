@@ -11,16 +11,16 @@ import (
 
 // Error codes returned by service operations.
 const (
-	ErrCodeNotFound            = "NOT_FOUND"
-	ErrCodeConflict            = "CONFLICT"
-	ErrCodeValidation          = "VALIDATION"
-	ErrCodeProviderError       = "PROVIDER_ERROR"
-	ErrCodeInternal            = "INTERNAL_ERROR"
-	ErrCodePolicyError         = "POLICY_ERROR"
-	ErrCodePolicyInternalError = "POLICY_INTERNAL_ERROR"
-	ErrCodePolicyRejected      = "POLICY_REJECTED"
-	ErrCodePolicyConflict      = "POLICY_CONFLICT"
-	ErrCodeSPRMError           = "SPRM_ERROR"
+	ErrCodeNotFound            = "https://dcm.example.com/errors/not-found"
+	ErrCodeConflict            = "https://dcm.example.com/errors/conflict"
+	ErrCodeValidation          = "https://dcm.example.com/errors/validation"
+	ErrCodeProviderError       = "https://dcm.example.com/errors/provider-error"
+	ErrCodeInternal            = "https://dcm.example.com/errors/internal-error"
+	ErrCodePolicyError         = "https://dcm.example.com/errors/policy-error"
+	ErrCodePolicyInternalError = "https://dcm.example.com/errors/policy-internal-error"
+	ErrCodePolicyRejected      = "https://dcm.example.com/errors/policy-rejected"
+	ErrCodePolicyConflict      = "https://dcm.example.com/errors/policy-conflict"
+	ErrCodeSPRMError           = "https://dcm.example.com/errors/sprm-error"
 )
 
 // ServiceError represents a business logic error with a code for HTTP mapping.

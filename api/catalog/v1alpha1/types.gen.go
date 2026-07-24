@@ -7,21 +7,25 @@ import (
 	"time"
 )
 
+const (
+	BearerAuthScopes bearerAuthContextKey = "bearerAuth.Scopes"
+)
+
 // Defines values for ErrorType.
 const (
-	ABORTED            ErrorType = "ABORTED"
-	ALREADYEXISTS      ErrorType = "ALREADY_EXISTS"
-	DEADLINEEXCEEDED   ErrorType = "DEADLINE_EXCEEDED"
-	FAILEDPRECONDITION ErrorType = "FAILED_PRECONDITION"
-	INTERNAL           ErrorType = "INTERNAL"
-	INVALIDARGUMENT    ErrorType = "INVALID_ARGUMENT"
-	NOTFOUND           ErrorType = "NOT_FOUND"
-	OUTOFRANGE         ErrorType = "OUT_OF_RANGE"
-	PERMISSIONDENIED   ErrorType = "PERMISSION_DENIED"
-	RESOURCEEXHAUSTED  ErrorType = "RESOURCE_EXHAUSTED"
-	UNAUTHENTICATED    ErrorType = "UNAUTHENTICATED"
-	UNAVAILABLE        ErrorType = "UNAVAILABLE"
-	UNIMPLEMENTED      ErrorType = "UNIMPLEMENTED"
+	ABORTED            ErrorType = "https://dcm.example.com/errors/aborted"
+	ALREADYEXISTS      ErrorType = "https://dcm.example.com/errors/already-exists"
+	DEADLINEEXCEEDED   ErrorType = "https://dcm.example.com/errors/deadline-exceeded"
+	FAILEDPRECONDITION ErrorType = "https://dcm.example.com/errors/failed-precondition"
+	INTERNAL           ErrorType = "https://dcm.example.com/errors/internal"
+	INVALIDARGUMENT    ErrorType = "https://dcm.example.com/errors/invalid-argument"
+	NOTFOUND           ErrorType = "https://dcm.example.com/errors/not-found"
+	OUTOFRANGE         ErrorType = "https://dcm.example.com/errors/out-of-range"
+	PERMISSIONDENIED   ErrorType = "https://dcm.example.com/errors/permission-denied"
+	RESOURCEEXHAUSTED  ErrorType = "https://dcm.example.com/errors/resource-exhausted"
+	UNAUTHENTICATED    ErrorType = "https://dcm.example.com/errors/unauthenticated"
+	UNAVAILABLE        ErrorType = "https://dcm.example.com/errors/unavailable"
+	UNIMPLEMENTED      ErrorType = "https://dcm.example.com/errors/unimplemented"
 )
 
 // Valid indicates whether the value is a known member of the ErrorType enum.
@@ -193,8 +197,7 @@ type Error struct {
 	// May contain request-specific details to help debug the issue.
 	Detail *string `json:"detail,omitempty"`
 
-	// Instance Unique identifier for this specific error occurrence.
-	// Can be used for tracking and debugging.
+	// Instance URI reference for this specific error occurrence
 	Instance *string `json:"instance,omitempty"`
 
 	// Status HTTP status code (matches the response status)
@@ -204,11 +207,11 @@ type Error struct {
 	// Should be consistent across occurrences of the same error type.
 	Title string `json:"title"`
 
-	// Type Machine-readable error code. Uses AEP standard error codes.
+	// Type URI reference identifying the error type
 	Type ErrorType `json:"type"`
 }
 
-// ErrorType Machine-readable error code. Uses AEP standard error codes.
+// ErrorType URI reference identifying the error type
 type ErrorType string
 
 // FieldConfiguration defines model for FieldConfiguration.
@@ -381,6 +384,9 @@ type ProviderError = Error
 // Unauthorized Error response following RFC 7807 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type Unauthorized = Error
+
+// bearerAuthContextKey is the context key for bearerAuth security scheme
+type bearerAuthContextKey string
 
 // ListCatalogItemInstancesParams defines parameters for ListCatalogItemInstances.
 type ListCatalogItemInstancesParams struct {

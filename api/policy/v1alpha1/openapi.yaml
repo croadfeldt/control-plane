@@ -23,6 +23,9 @@ info:
 servers:
   - url: /api/v1alpha1
 
+security:
+  - bearerAuth: []
+
 tags:
   - name: Policies
     description: Operations for managing OPA policies
@@ -501,23 +504,36 @@ components:
           type: string
           format: uri-reference
           description: |
-            URI reference identifying the problem type. This is the canonical
-            error code.
+            URI reference identifying the error type
           enum:
-            - INVALID_ARGUMENT
-            - NOT_FOUND
-            - ALREADY_EXISTS
-            - RESOURCE_EXHAUSTED
-            - FAILED_PRECONDITION
+            - https://dcm.example.com/errors/invalid-argument
+            - https://dcm.example.com/errors/not-found
+            - https://dcm.example.com/errors/already-exists
+            - https://dcm.example.com/errors/resource-exhausted
+            - https://dcm.example.com/errors/failed-precondition
+            - https://dcm.example.com/errors/aborted
+            - https://dcm.example.com/errors/out-of-range
+            - https://dcm.example.com/errors/unimplemented
+            - https://dcm.example.com/errors/internal
+            - https://dcm.example.com/errors/unavailable
+            - https://dcm.example.com/errors/deadline-exceeded
+            - https://dcm.example.com/errors/unauthenticated
+            - https://dcm.example.com/errors/permission-denied
+          x-enum-varnames:
+            - INVALIDARGUMENT
+            - NOTFOUND
+            - ALREADYEXISTS
+            - RESOURCEEXHAUSTED
+            - FAILEDPRECONDITION
             - ABORTED
-            - OUT_OF_RANGE
+            - OUTOFRANGE
             - UNIMPLEMENTED
             - INTERNAL
             - UNAVAILABLE
-            - DEADLINE_EXCEEDED
+            - DEADLINEEXCEEDED
             - UNAUTHENTICATED
-            - PERMISSION_DENIED
-          example: INVALID_ARGUMENT
+            - PERMISSIONDENIED
+          example: https://dcm.example.com/errors/invalid-argument
         status:
           type: integer
           format: int32
@@ -537,9 +553,15 @@ components:
           type: string
           format: uri-reference
           description: |
-            Unique identifier for this specific error occurrence. Useful for
-            tracking and debugging.
-          example: 7934df3e-4b63-429b-b0f5-b8d350ec165e
+            URI reference for this specific error occurrence
+          example: /errors/7934df3e-4b63-429b-b0f5-b8d350ec165e
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from the configured Auth Provider
 
   responses:
     BadRequest:
@@ -549,11 +571,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: INVALID_ARGUMENT
+            type: https://dcm.example.com/errors/invalid-argument
             status: 400
             title: Invalid request parameters
             detail: Field 'rego_code' must not be empty
-            instance: '7934df3e-4b63-429b-b0f5-b8d350ec165e'
+            instance: '/errors/7934df3e-4b63-429b-b0f5-b8d350ec165e'
 
     Unauthorized:
       description: Authentication is required but was not provided or is invalid
@@ -562,11 +584,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: UNAUTHENTICATED
+            type: https://dcm.example.com/errors/unauthenticated
             status: 401
             title: Authentication required
             detail: Valid authentication credentials are required to access this resource
-            instance: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+            instance: '/errors/a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 
     Forbidden:
       description: The authenticated user does not have permission to perform this operation
@@ -575,11 +597,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: PERMISSION_DENIED
+            type: https://dcm.example.com/errors/permission-denied
             status: 403
             title: Permission denied
             detail: You do not have sufficient permissions to perform this operation
-            instance: 'b2c3d4e5-f6a7-8901-bcde-f12345678901'
+            instance: '/errors/b2c3d4e5-f6a7-8901-bcde-f12345678901'
 
     NotFound:
       description: Resource not found
@@ -588,11 +610,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: NOT_FOUND
+            type: https://dcm.example.com/errors/not-found
             status: 404
             title: Resource not found
             detail: Policy 'global-auth-policy' does not exist
-            instance: 9b56f05a-6d85-54bd-d7a7-d0f572ae387a
+            instance: /errors/9b56f05a-6d85-54bd-d7a7-d0f572ae387a
 
     AlreadyExists:
       description: Resource already exists
@@ -601,11 +623,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: ALREADY_EXISTS
+            type: https://dcm.example.com/errors/already-exists
             status: 409
             title: Resource already exists
             detail: Policy with ID 'global-auth-policy' already exists
-            instance: 0c676060-7e96-65ce-e808-e1a683bf498b
+            instance: /errors/0c676060-7e96-65ce-e808-e1a683bf498b
 
     ValidationError:
       description: Validation error
@@ -614,11 +636,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: FAILED_PRECONDITION
+            type: https://dcm.example.com/errors/failed-precondition
             status: 422
             title: Validation error
             detail: Invalid Rego syntax in 'rego_code' field
-            instance: 2e891171-9fa8-87f0-0a1a-2c9905cb609d
+            instance: /errors/2e891171-9fa8-87f0-0a1a-2c9905cb609d
 
     InternalServerError:
       description: Internal server error
@@ -627,8 +649,8 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: INTERNAL
+            type: https://dcm.example.com/errors/internal
             status: 500
             title: Internal server error
             detail: An unexpected error occurred while processing the request
-            instance: 1d780070-8fa7-76df-f909-f2b794ca509c
+            instance: /errors/1d780070-8fa7-76df-f909-f2b794ca509c

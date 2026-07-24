@@ -24,6 +24,9 @@ info:
 servers:
   - url: /api/v1alpha1
 
+security:
+  - bearerAuth: []
+
 paths:
   /service-types:
     get:
@@ -1127,22 +1130,36 @@ components:
           type: string
           format: uri-reference
           description: |
-            Machine-readable error code. Uses AEP standard error codes.
+            URI reference identifying the error type
           enum:
-            - INVALID_ARGUMENT
+            - https://dcm.example.com/errors/invalid-argument
+            - https://dcm.example.com/errors/unauthenticated
+            - https://dcm.example.com/errors/not-found
+            - https://dcm.example.com/errors/already-exists
+            - https://dcm.example.com/errors/permission-denied
+            - https://dcm.example.com/errors/resource-exhausted
+            - https://dcm.example.com/errors/failed-precondition
+            - https://dcm.example.com/errors/aborted
+            - https://dcm.example.com/errors/out-of-range
+            - https://dcm.example.com/errors/unimplemented
+            - https://dcm.example.com/errors/internal
+            - https://dcm.example.com/errors/unavailable
+            - https://dcm.example.com/errors/deadline-exceeded
+          x-enum-varnames:
+            - INVALIDARGUMENT
             - UNAUTHENTICATED
-            - NOT_FOUND
-            - ALREADY_EXISTS
-            - PERMISSION_DENIED
-            - RESOURCE_EXHAUSTED
-            - FAILED_PRECONDITION
+            - NOTFOUND
+            - ALREADYEXISTS
+            - PERMISSIONDENIED
+            - RESOURCEEXHAUSTED
+            - FAILEDPRECONDITION
             - ABORTED
-            - OUT_OF_RANGE
+            - OUTOFRANGE
             - UNIMPLEMENTED
             - INTERNAL
             - UNAVAILABLE
-            - DEADLINE_EXCEEDED
-          example: INVALID_ARGUMENT
+            - DEADLINEEXCEEDED
+          example: https://dcm.example.com/errors/invalid-argument
 
         status:
           type: integer
@@ -1168,9 +1185,15 @@ components:
           type: string
           format: uri-reference
           description: |
-            Unique identifier for this specific error occurrence.
-            Can be used for tracking and debugging.
-          example: 7934df3e-4b63-429b-b0f5-b8d350ec165e
+            URI reference for this specific error occurrence
+          example: /errors/7934df3e-4b63-429b-b0f5-b8d350ec165e
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from the configured Auth Provider
 
   responses:
     BadRequest:
@@ -1180,11 +1203,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: INVALID_ARGUMENT
+            type: https://dcm.example.com/errors/invalid-argument
             status: 400
             title: Invalid request parameters
             detail: Field 'service_type' must not be empty
-            instance: 7934df3e-4b63-429b-b0f5-b8d350ec165e
+            instance: /errors/7934df3e-4b63-429b-b0f5-b8d350ec165e
 
     Unauthorized:
       description: Unauthorized
@@ -1193,11 +1216,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: UNAUTHENTICATED
+            type: https://dcm.example.com/errors/unauthenticated
             status: 401
             title: Authentication required
             detail: Valid authentication credentials are required to access this resource
-            instance: 6c23de2d-3a52-428a-a605-a7d240db054d
+            instance: /errors/6c23de2d-3a52-428a-a605-a7d240db054d
 
     Forbidden:
       description: Forbidden
@@ -1206,11 +1229,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: PERMISSION_DENIED
+            type: https://dcm.example.com/errors/permission-denied
             status: 403
             title: Access forbidden
             detail: User does not have permission to access this resource
-            instance: 8a45ef4f-5c74-53ac-c1f6-c9e461fd276f
+            instance: /errors/8a45ef4f-5c74-53ac-c1f6-c9e461fd276f
 
     NotFound:
       description: Not Found
@@ -1219,11 +1242,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: NOT_FOUND
+            type: https://dcm.example.com/errors/not-found
             status: 404
             title: Resource not found
             detail: ServiceType 'vm-standard' does not exist
-            instance: 9b56fg5g-6d85-64bd-d2g7-d0f572ge387g
+            instance: /errors/9b56fg5g-6d85-64bd-d2g7-d0f572ge387g
 
     AlreadyExists:
       description: Already Exists
@@ -1232,11 +1255,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: ALREADY_EXISTS
+            type: https://dcm.example.com/errors/already-exists
             status: 409
             title: Resource already exists
             detail: ServiceType with id 'vm-standard' already exists
-            instance: 0c67gh6h-7e96-75ce-e3h8-e1g683hf498h
+            instance: /errors/0c67gh6h-7e96-75ce-e3h8-e1g683hf498h
 
     HasInstances:
       description: Has Instances
@@ -1245,11 +1268,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: FAILED_PRECONDITION
+            type: https://dcm.example.com/errors/failed-precondition
             status: 409
             title: Resource has instances
             detail: CatalogItem 'vm-standard' has instances
-            instance: 0c67gh6h-7e96-75ce-e3h8-e1g683hf498h
+            instance: /errors/0c67gh6h-7e96-75ce-e3h8-e1g683hf498h
 
     PolicyRejected:
       description: Policy Rejected
@@ -1258,11 +1281,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: FAILED_PRECONDITION
+            type: https://dcm.example.com/errors/failed-precondition
             status: 406
             title: Policy rejected
             detail: Request rejected by Policy Engine
-            instance: 1a23bc4d-5e67-89fg-h012-i3j456kl789m
+            instance: /errors/1a23bc4d-5e67-89fg-h012-i3j456kl789m
 
     PolicyDependency:
       description: Policy Dependency
@@ -1271,11 +1294,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: FAILED_PRECONDITION
+            type: https://dcm.example.com/errors/failed-precondition
             status: 424
             title: Policy dependency
             detail: Policy evaluation succeeded but a required dependency was not satisfied
-            instance: 3c45de6f-7g89-01hi-j234-k5l678mn901o
+            instance: /errors/3c45de6f-7g89-01hi-j234-k5l678mn901o
 
     ProviderError:
       description: Provider Error
@@ -1284,11 +1307,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: FAILED_PRECONDITION
+            type: https://dcm.example.com/errors/failed-precondition
             status: 422
             title: Provider error
             detail: SPRM provider error
-            instance: 2b34cd5e-6f78-90gh-i123-j4k567lm890n
+            instance: /errors/2b34cd5e-6f78-90gh-i123-j4k567lm890n
 
     InternalServerError:
       description: Internal Server Error
@@ -1297,8 +1320,8 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: INTERNAL
+            type: https://dcm.example.com/errors/internal
             status: 500
             title: Internal server error
             detail: An unexpected error occurred while processing the request
-            instance: 2e89ij8j-9g18-97eg-g5j0-g3i805jh610j
+            instance: /errors/2e89ij8j-9g18-97eg-g5j0-g3i805jh610j

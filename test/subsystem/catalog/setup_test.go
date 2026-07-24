@@ -81,7 +81,7 @@ func stubPMRehydrateResourceFailure() {
 				"Content-Type": "application/json",
 			},
 			"jsonBody": map[string]any{
-				"type":   "INTERNAL",
+				"type":   string(v1alpha1.INTERNAL),
 				"title":  "Internal Server Error",
 				"status": 500,
 			},
@@ -115,7 +115,7 @@ func stubPMCreateResourcePolicyRejected() {
 				"Content-Type": "application/json",
 			},
 			"jsonBody": map[string]any{
-				"type":   "FAILED_PRECONDITION",
+				"type":   string(v1alpha1.FAILEDPRECONDITION),
 				"title":  "Policy rejected",
 				"status": 406,
 				"detail": "Request rejected by Policy Engine",
@@ -137,7 +137,7 @@ func stubPMCreateResourceProviderError() {
 				"Content-Type": "application/json",
 			},
 			"jsonBody": map[string]any{
-				"type":   "FAILED_PRECONDITION",
+				"type":   string(v1alpha1.FAILEDPRECONDITION),
 				"title":  "Provider error",
 				"status": 422,
 				"detail": "SPRM provider error",
@@ -159,7 +159,7 @@ func stubPMRehydrateResourcePolicyRejected() {
 				"Content-Type": "application/json",
 			},
 			"jsonBody": map[string]any{
-				"type":   "FAILED_PRECONDITION",
+				"type":   string(v1alpha1.FAILEDPRECONDITION),
 				"title":  "Policy rejected",
 				"status": 406,
 				"detail": "Request rejected by Policy Engine",
@@ -181,7 +181,7 @@ func stubPMRehydrateResourceProviderError() {
 				"Content-Type": "application/json",
 			},
 			"jsonBody": map[string]any{
-				"type":   "FAILED_PRECONDITION",
+				"type":   string(v1alpha1.FAILEDPRECONDITION),
 				"title":  "Provider error",
 				"status": 422,
 				"detail": "SPRM provider error",
@@ -203,7 +203,7 @@ func stubPMCreateResourceFailure() {
 				"Content-Type": "application/json",
 			},
 			"jsonBody": map[string]any{
-				"type":   "INTERNAL",
+				"type":   string(v1alpha1.INTERNAL),
 				"title":  "Internal Server Error",
 				"status": 500,
 			},
@@ -224,7 +224,7 @@ func stubPMDeleteResourceFailure() {
 				"Content-Type": "application/json",
 			},
 			"jsonBody": map[string]any{
-				"type":   "INTERNAL",
+				"type":   string(v1alpha1.INTERNAL),
 				"title":  "Internal Server Error",
 				"status": 500,
 			},

@@ -5,11 +5,11 @@ import "errors"
 
 // Error codes returned by service operations.
 const (
-	ErrCodeNotFound      = "NOT_FOUND"
-	ErrCodeConflict      = "CONFLICT"
-	ErrCodeValidation    = "VALIDATION"
-	ErrCodeProviderError = "PROVIDER_ERROR"
-	ErrCodeInternal      = "INTERNAL_ERROR"
+	ErrCodeNotFound      = "https://dcm.example.com/errors/not-found"
+	ErrCodeConflict      = "https://dcm.example.com/errors/conflict"
+	ErrCodeValidation    = "https://dcm.example.com/errors/validation"
+	ErrCodeProviderError = "https://dcm.example.com/errors/provider-error"
+	ErrCodeInternal      = "https://dcm.example.com/errors/internal-error"
 )
 
 // ServiceError represents a business logic error with a code for HTTP mapping.

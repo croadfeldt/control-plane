@@ -123,11 +123,11 @@ var _ = Describe("Seed", func() {
 						Expect(st.Spec).To(HaveKey(key))
 					}
 				},
-				Entry("vm", "vm", []string{"vcpu", "memory", "storage", "guest_os", "access", "ip"}),
-				Entry("container", "container", []string{"image", "resources", "process", "network", "endpoints"}),
-				Entry("database", "database", []string{"engine", "version", "resources", "connection_string"}),
-				Entry("cluster", "cluster", []string{"version", "api_endpoint", "console_url", "kubeconfig"}),
-				Entry("storage", "storage", []string{"capacity", "volume_name"}),
+				Entry("vm", "vm", []string{"instance_size", "cpu", "memory", "storage", "storage_tier", "guest_os", "firmware", "boot_order", "layout_ref", "networks", "placement", "run_state", "provider_handle", "primary_ip", "hostname", "ip_addresses", "mac_addresses", "observed_run_state", "target_segment"}),
+				Entry("container", "container", []string{"image", "command", "args", "resources", "process", "network", "runtime", "endpoint", "internal_dns"}),
+				Entry("database", "database", []string{"engine", "version", "resources", "applied_version", "connection_string", "host", "port", "username"}),
+				Entry("cluster", "cluster", []string{"release", "network", "api_url", "console_url", "kubeconfig", "cluster_id"}),
+				Entry("storage", "storage", []string{"capacity", "access_mode", "volume_mode", "storage_class", "retain_on_release", "layout_entry", "volume_handle", "attached"}),
 				Entry("network", "network", []string{"ports", "routing_level", "endpoints"}),
 			)
 		})

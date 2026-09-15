@@ -21,15 +21,6 @@ var _ = Describe("Store", func() {
 	})
 
 	Describe("NewStore", func() {
-		It("creates a store with provider access", func() {
-			s := store.NewStore(db)
-
-			Expect(s).NotTo(BeNil())
-			Expect(s.Provider()).NotTo(BeNil())
-		})
-	})
-
-	Describe("NewStore", func() {
 		It("creates a store with service type instance access", func() {
 			s := store.NewStore(db)
 

@@ -108,7 +108,7 @@ var _ = Describe("EvaluationService", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(response.Status).To(Equal(EvaluationStatusApproved))
 				Expect(response.EvaluatedServiceInstance).To(Equal(map[string]any{}))
-				Expect(response.SelectedProvider).To(Equal(""))
+				Expect(response.SelectedAgent).To(Equal(""))
 			})
 		})
 
@@ -153,12 +153,12 @@ var _ = Describe("EvaluationService", func() {
 						"patch": map[string]any{
 							"region": "us-east-1",
 						},
-						"selected_provider": "aws",
+						"selected_agent": "aws-agent",
 					},
 				}
 			})
 
-			It("returns modified with updated spec", func() {
+			It("returns modified with updated spec and selected agent", func() {
 				response, err := service.EvaluateRequest(ctx, baseRequest)
 
 				Expect(err).NotTo(HaveOccurred())
@@ -166,7 +166,7 @@ var _ = Describe("EvaluationService", func() {
 				Expect(response.EvaluatedServiceInstance).To(Equal(map[string]any{
 					"region": "us-east-1",
 				}))
-				Expect(response.SelectedProvider).To(Equal("aws"))
+				Expect(response.SelectedAgent).To(Equal("aws-agent"))
 			})
 		})
 
@@ -595,7 +595,7 @@ var _ = Describe("EvaluationService", func() {
 			})
 		})
 
-		Context("when service provider constraints are enforced", func() {
+		Context("when agent constraints are enforced via allow_list", func() {
 			BeforeEach(func() {
 				mockStore.policies = []model.Policy{
 					{
@@ -612,28 +612,26 @@ var _ = Describe("EvaluationService", func() {
 					},
 				}
 
-				// First policy sets SP constraint allow list
 				mockOPA.evaluations["policy-1"] = &opa.EvaluationResult{
 					Defined: true,
 					Result: map[string]any{
 						"rejected": false,
-						"service_provider_constraints": map[string]any{
-							"allow_list": []any{"aws", "gcp"},
+						"agent_constraints": map[string]any{
+							"allow_list": []any{"aws-agent", "gcp-agent"},
 						},
 					},
 				}
 
-				// Second policy selects a provider not in allow list
 				mockOPA.evaluations["policy-2"] = &opa.EvaluationResult{
 					Defined: true,
 					Result: map[string]any{
-						"rejected":          false,
-						"selected_provider": "azure",
+						"rejected":       false,
+						"selected_agent": "azure-agent",
 					},
 				}
 			})
 
-			It("returns SP constraint error", func() {
+			It("returns agent constraint error", func() {
 				_, err := service.EvaluateRequest(ctx, baseRequest)
 
 				Expect(err).To(HaveOccurred())
@@ -641,11 +639,467 @@ var _ = Describe("EvaluationService", func() {
 				Expect(ok).To(BeTrue())
 				Expect(serviceErr.Type).To(Equal(ErrorTypePolicyConflict))
 				Expect(serviceErr.Message).To(ContainSubstring("policy-2"))
-				Expect(serviceErr.Detail).To(ContainSubstring("not in the allowed list"))
 			})
 		})
 	})
 })
+
+var _ = Describe("EvaluateRequest with agents", func() {
+	var (
+		ctx         context.Context
+		mockStore   *mockPolicyStore
+		mockOPA     *mockEngine
+		svc         EvaluationService
+		baseRequest *EvaluationRequest
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		mockStore = &mockPolicyStore{policies: []model.Policy{}}
+		mockOPA = &mockEngine{evaluations: make(map[string]*opa.EvaluationResult)}
+		svc = NewEvaluationService(mockStore, mockOPA)
+		baseRequest = &EvaluationRequest{
+			ServiceInstance: map[string]any{},
+			RequestLabels:   map[string]string{},
+		}
+	})
+
+	It("passes available_agents to OPA input", func() {
+		baseRequest.AvailableAgents = agentInfosForVM("agent-a", "agent-b")
+		baseRequest.ServiceInstance["service_type"] = "vm"
+
+		var capturedInput map[string]any
+		captureOPA := &mockEngineWithCapture{
+			evaluations: make(map[string]*opa.EvaluationResult),
+			captureFunc: func(input map[string]any) { capturedInput = input },
+		}
+		svc = NewEvaluationService(mockStore, captureOPA)
+
+		mockStore.policies = []model.Policy{
+			{ID: "p1", PolicyType: "routing", Priority: 1, Enabled: true},
+		}
+		captureOPA.evaluations["p1"] = &opa.EvaluationResult{Defined: true, Result: map[string]any{}}
+
+		_, err := svc.EvaluateRequest(ctx, baseRequest)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(capturedInput).To(HaveKey("available_agents"))
+	})
+
+	It("pre-filters exclude_agents before evaluation", func() {
+		baseRequest.AvailableAgents = agentInfosForVM("agent-a", "agent-b", "agent-c")
+		baseRequest.ExcludeAgents = []string{"agent-b"}
+		baseRequest.ServiceInstance["service_type"] = "vm"
+
+		var capturedInput map[string]any
+		captureOPA := &mockEngineWithCapture{
+			evaluations: make(map[string]*opa.EvaluationResult),
+			captureFunc: func(input map[string]any) { capturedInput = input },
+		}
+		svc = NewEvaluationService(mockStore, captureOPA)
+
+		mockStore.policies = []model.Policy{
+			{ID: "p1", PolicyType: "routing", Priority: 1, Enabled: true},
+		}
+		captureOPA.evaluations["p1"] = &opa.EvaluationResult{Defined: true, Result: map[string]any{}}
+
+		_, err := svc.EvaluateRequest(ctx, baseRequest)
+		Expect(err).NotTo(HaveOccurred())
+
+		agents, ok := capturedInput["available_agents"].([]map[string]any)
+		Expect(ok).To(BeTrue())
+		names := make([]string, 0, len(agents))
+		for _, a := range agents {
+			names = append(names, a["name"].(string))
+		}
+		Expect(names).NotTo(ContainElement("agent-b"))
+	})
+
+	It("includes exclude_agents in the OPA input for policy transparency", func() {
+		baseRequest.AvailableAgents = agentInfosForVM("agent-a", "agent-b", "agent-c")
+		baseRequest.ExcludeAgents = []string{"agent-b"}
+		baseRequest.ServiceInstance["service_type"] = "vm"
+
+		var capturedInput map[string]any
+		captureOPA := &mockEngineWithCapture{
+			evaluations: make(map[string]*opa.EvaluationResult),
+			captureFunc: func(input map[string]any) { capturedInput = input },
+		}
+		svc = NewEvaluationService(mockStore, captureOPA)
+
+		mockStore.policies = []model.Policy{
+			{ID: "p1", PolicyType: "routing", Priority: 1, Enabled: true},
+		}
+		captureOPA.evaluations["p1"] = &opa.EvaluationResult{Defined: true, Result: map[string]any{}}
+
+		_, err := svc.EvaluateRequest(ctx, baseRequest)
+		Expect(err).NotTo(HaveOccurred())
+
+		excluded, ok := capturedInput["exclude_agents"].([]string)
+		Expect(ok).To(BeTrue())
+		Expect(excluded).To(ConsistOf("agent-b"))
+	})
+
+	It("omits exclude_agents from the OPA input when nothing was excluded", func() {
+		baseRequest.AvailableAgents = agentInfosForVM("agent-a")
+		baseRequest.ServiceInstance["service_type"] = "vm"
+
+		var capturedInput map[string]any
+		captureOPA := &mockEngineWithCapture{
+			evaluations: make(map[string]*opa.EvaluationResult),
+			captureFunc: func(input map[string]any) { capturedInput = input },
+		}
+		svc = NewEvaluationService(mockStore, captureOPA)
+
+		mockStore.policies = []model.Policy{
+			{ID: "p1", PolicyType: "routing", Priority: 1, Enabled: true},
+		}
+		captureOPA.evaluations["p1"] = &opa.EvaluationResult{Defined: true, Result: map[string]any{}}
+
+		_, err := svc.EvaluateRequest(ctx, baseRequest)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(capturedInput).NotTo(HaveKey("exclude_agents"))
+	})
+
+	It("returns selected_agent in response", func() {
+		mockStore.policies = []model.Policy{
+			{ID: "agent-policy", PolicyType: "routing", Priority: 1, Enabled: true},
+		}
+		mockOPA.evaluations["agent-policy"] = &opa.EvaluationResult{
+			Defined: true,
+			Result: map[string]any{
+				"selected_agent": "my-agent",
+			},
+		}
+
+		resp, err := svc.EvaluateRequest(ctx, baseRequest)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp.SelectedAgent).To(Equal("my-agent"))
+	})
+
+	It("validates selected_agent against agent_constraints", func() {
+		mockStore.policies = []model.Policy{
+			{ID: "constraint-policy", PolicyType: "constraint", Priority: 1, Enabled: true},
+			{ID: "routing-policy", PolicyType: "routing", Priority: 2, Enabled: true},
+		}
+		mockOPA.evaluations["constraint-policy"] = &opa.EvaluationResult{
+			Defined: true,
+			Result: map[string]any{
+				"agent_constraints": map[string]any{
+					"allow_list": []any{"allowed-agent"},
+				},
+			},
+		}
+		mockOPA.evaluations["routing-policy"] = &opa.EvaluationResult{
+			Defined: true,
+			Result: map[string]any{
+				"selected_agent": "denied-agent",
+			},
+		}
+
+		_, err := svc.EvaluateRequest(ctx, baseRequest)
+		Expect(err).To(HaveOccurred())
+	})
+
+	// A misconfigured policy with no agent_constraints must still be
+	// rejected if it selects an agent outside available_agents.
+	It("rejects a selected_agent absent from AvailableAgents even when no agent_constraints policy ran", func() {
+		baseRequest.AvailableAgents = agentInfos("agent-a", "agent-b")
+		mockStore.policies = []model.Policy{
+			{ID: "routing-policy", PolicyType: "routing", Priority: 1, Enabled: true},
+		}
+		mockOPA.evaluations["routing-policy"] = &opa.EvaluationResult{
+			Defined: true,
+			Result: map[string]any{
+				"selected_agent": "rogue-agent",
+			},
+		}
+
+		_, err := svc.EvaluateRequest(ctx, baseRequest)
+
+		Expect(err).To(HaveOccurred())
+		serviceErr, ok := err.(*ServiceError)
+		Expect(ok).To(BeTrue())
+		Expect(serviceErr.Detail).To(ContainSubstring("rogue-agent"))
+	})
+
+	It("accepts a selected_agent present in AvailableAgents when no agent_constraints policy ran", func() {
+		baseRequest.AvailableAgents = agentInfos("agent-a", "agent-b")
+		mockStore.policies = []model.Policy{
+			{ID: "routing-policy", PolicyType: "routing", Priority: 1, Enabled: true},
+		}
+		mockOPA.evaluations["routing-policy"] = &opa.EvaluationResult{
+			Defined: true,
+			Result: map[string]any{
+				"selected_agent": "agent-b",
+			},
+		}
+
+		resp, err := svc.EvaluateRequest(ctx, baseRequest)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp.SelectedAgent).To(Equal("agent-b"))
+	})
+})
+
+var _ = Describe("EvaluateRequest service-type capability filtering", func() {
+	var (
+		ctx         context.Context
+		mockStore   *mockPolicyStore
+		mockOPA     *mockEngine
+		svc         EvaluationService
+		baseRequest *EvaluationRequest
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		mockStore = &mockPolicyStore{policies: []model.Policy{
+			{ID: "routing-policy", PolicyType: "routing", Priority: 1, Enabled: true},
+		}}
+		mockOPA = &mockEngine{evaluations: map[string]*opa.EvaluationResult{
+			"routing-policy": {Defined: true, Result: map[string]any{"selected_agent": "db-agent"}},
+		}}
+		svc = NewEvaluationService(mockStore, mockOPA)
+		baseRequest = &EvaluationRequest{
+			ServiceInstance: map[string]any{"service_type": "database"},
+			RequestLabels:   map[string]string{},
+			AvailableAgents: []AgentInfo{
+				{Name: "vm-agent", ServiceTypes: []string{"vm"}},
+				{Name: "db-agent", ServiceTypes: []string{"database"}},
+			},
+		}
+	})
+
+	It("excludes agents that don't support the requested service type from evaluation", func() {
+		captured := map[string]any{}
+		captureOPA := &mockEngineWithCapture{
+			evaluations: mockOPA.evaluations,
+			captureFunc: func(input map[string]any) { captured = input },
+		}
+		svc = NewEvaluationService(mockStore, captureOPA)
+
+		resp, err := svc.EvaluateRequest(ctx, baseRequest)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp.SelectedAgent).To(Equal("db-agent"))
+
+		agents, ok := captured["available_agents"].([]map[string]any)
+		Expect(ok).To(BeTrue())
+		names := make([]string, 0, len(agents))
+		for _, a := range agents {
+			names = append(names, a["name"].(string))
+		}
+		Expect(names).To(ConsistOf("db-agent"))
+	})
+
+	It("exposes each agent's service_types in the OPA input", func() {
+		var captured map[string]any
+		captureOPA := &mockEngineWithCapture{
+			evaluations: mockOPA.evaluations,
+			captureFunc: func(input map[string]any) { captured = input },
+		}
+		svc = NewEvaluationService(mockStore, captureOPA)
+
+		_, err := svc.EvaluateRequest(ctx, baseRequest)
+		Expect(err).NotTo(HaveOccurred())
+
+		agents, ok := captured["available_agents"].([]map[string]any)
+		Expect(ok).To(BeTrue())
+		// Only db-agent survives the capability filter (vm-agent is
+		// dropped), so assert unconditionally rather than inside a
+		// name-matching loop that would pass vacuously if filtering
+		// silently returned zero agents.
+		Expect(agents).To(HaveLen(1))
+		Expect(agents[0]["name"]).To(Equal("db-agent"))
+		Expect(agents[0]["service_types"]).To(Equal([]string{"database"}))
+	})
+
+	It("exposes an empty array (not null) for an agent with nil ServiceTypes when no capability filter runs", func() {
+		baseRequest.ServiceInstance = map[string]any{}
+		baseRequest.AvailableAgents = []AgentInfo{{Name: "no-types-agent"}}
+		mockOPA.evaluations["routing-policy"] = &opa.EvaluationResult{
+			Defined: true,
+			Result:  map[string]any{"selected_agent": "no-types-agent"},
+		}
+
+		var captured map[string]any
+		captureOPA := &mockEngineWithCapture{
+			evaluations: mockOPA.evaluations,
+			captureFunc: func(input map[string]any) { captured = input },
+		}
+		svc = NewEvaluationService(mockStore, captureOPA)
+
+		_, err := svc.EvaluateRequest(ctx, baseRequest)
+		Expect(err).NotTo(HaveOccurred())
+
+		agents, ok := captured["available_agents"].([]map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(agents).To(HaveLen(1))
+		Expect(agents[0]["service_types"]).To(Equal([]string{}))
+	})
+
+	It("matches when an agent supports the requested type among several", func() {
+		baseRequest.AvailableAgents = []AgentInfo{
+			{Name: "multi-agent", ServiceTypes: []string{"vm", "database", "storage"}},
+		}
+		mockOPA.evaluations["routing-policy"] = &opa.EvaluationResult{
+			Defined: true,
+			Result:  map[string]any{"selected_agent": "multi-agent"},
+		}
+
+		resp, err := svc.EvaluateRequest(ctx, baseRequest)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp.SelectedAgent).To(Equal("multi-agent"))
+	})
+
+	It("rejects with a clear error when excluding the only capable agent leaves none, even though other (incapable) agents remain", func() {
+		baseRequest.ExcludeAgents = []string{"db-agent"}
+
+		_, err := svc.EvaluateRequest(ctx, baseRequest)
+
+		Expect(err).To(HaveOccurred())
+		serviceErr, ok := err.(*ServiceError)
+		Expect(ok).To(BeTrue())
+		Expect(serviceErr.Type).To(Equal(ErrorTypeRejected))
+		Expect(serviceErr.Detail).To(ContainSubstring("database"))
+		Expect(serviceErr.Detail).To(ContainSubstring("1 agent"))
+	})
+
+	It("rejects with a validation error when service_type is present but not a string", func() {
+		baseRequest.ServiceInstance["service_type"] = 42
+
+		_, err := svc.EvaluateRequest(ctx, baseRequest)
+
+		Expect(err).To(HaveOccurred())
+		serviceErr, ok := err.(*ServiceError)
+		Expect(ok).To(BeTrue())
+		Expect(serviceErr.Type).To(Equal(ErrorTypeInvalidArgument))
+	})
+
+	It("rejects with a validation error when service_type is an empty or whitespace-only string", func() {
+		baseRequest.ServiceInstance["service_type"] = "   "
+
+		_, err := svc.EvaluateRequest(ctx, baseRequest)
+
+		Expect(err).To(HaveOccurred())
+		serviceErr, ok := err.(*ServiceError)
+		Expect(ok).To(BeTrue())
+		Expect(serviceErr.Type).To(Equal(ErrorTypeInvalidArgument))
+	})
+
+	It("rejects with a clear error when no available agent supports the requested service type", func() {
+		baseRequest.ServiceInstance["service_type"] = "storage"
+
+		_, err := svc.EvaluateRequest(ctx, baseRequest)
+
+		Expect(err).To(HaveOccurred())
+		serviceErr, ok := err.(*ServiceError)
+		Expect(ok).To(BeTrue())
+		Expect(serviceErr.Type).To(Equal(ErrorTypeRejected))
+		Expect(serviceErr.Message).To(ContainSubstring("storage"))
+	})
+
+	It("does not filter when the service instance has no service_type", func() {
+		baseRequest.ServiceInstance = map[string]any{}
+
+		captured := map[string]any{}
+		captureOPA := &mockEngineWithCapture{
+			evaluations: mockOPA.evaluations,
+			captureFunc: func(input map[string]any) { captured = input },
+		}
+		svc = NewEvaluationService(mockStore, captureOPA)
+
+		_, err := svc.EvaluateRequest(ctx, baseRequest)
+		Expect(err).NotTo(HaveOccurred())
+
+		agents, ok := captured["available_agents"].([]map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(agents).To(HaveLen(2))
+	})
+
+	It("does not filter agents that were already excluded via exclude_agents", func() {
+		// Both remaining candidates support "database", so exclusion alone
+		// (not capability) determines what's left.
+		baseRequest.AvailableAgents = []AgentInfo{
+			{Name: "db-agent-1", ServiceTypes: []string{"database"}},
+			{Name: "db-agent-2", ServiceTypes: []string{"database"}},
+		}
+		baseRequest.ExcludeAgents = []string{"db-agent-1"}
+		mockOPA.evaluations["routing-policy"] = &opa.EvaluationResult{
+			Defined: true,
+			Result:  map[string]any{"selected_agent": "db-agent-2"},
+		}
+
+		resp, err := svc.EvaluateRequest(ctx, baseRequest)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp.SelectedAgent).To(Equal("db-agent-2"))
+	})
+})
+
+var _ = Describe("EvaluateRequest all-agents-excluded guard", func() {
+	var (
+		ctx         context.Context
+		mockStore   *mockPolicyStore
+		mockOPA     *mockEngine
+		svc         EvaluationService
+		baseRequest *EvaluationRequest
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		mockStore = &mockPolicyStore{policies: []model.Policy{}}
+		mockOPA = &mockEngine{evaluations: make(map[string]*opa.EvaluationResult)}
+		svc = NewEvaluationService(mockStore, mockOPA)
+		baseRequest = &EvaluationRequest{
+			ServiceInstance: map[string]any{},
+			RequestLabels:   map[string]string{},
+			AvailableAgents: agentInfos("only-agent"),
+			ExcludeAgents:   []string{"only-agent"},
+		}
+	})
+
+	It("rejects when exclusion removes every available agent, instead of falling through to Rego with none", func() {
+		_, err := svc.EvaluateRequest(ctx, baseRequest)
+
+		Expect(err).To(HaveOccurred())
+		serviceErr, ok := err.(*ServiceError)
+		Expect(ok).To(BeTrue())
+		Expect(serviceErr.Type).To(Equal(ErrorTypeRejected))
+		Expect(serviceErr.Detail).To(ContainSubstring("1"))
+	})
+
+	It("does not reject when there were no available agents to begin with (no agent client configured)", func() {
+		baseRequest.AvailableAgents = nil
+		baseRequest.ExcludeAgents = nil
+		mockStore.policies = []model.Policy{
+			{ID: "p1", PolicyType: "routing", Priority: 1, Enabled: true},
+		}
+		mockOPA.evaluations["p1"] = &opa.EvaluationResult{Defined: true, Result: map[string]any{}}
+
+		_, err := svc.EvaluateRequest(ctx, baseRequest)
+		Expect(err).NotTo(HaveOccurred())
+	})
+})
+
+// agentInfos builds []AgentInfo from bare names (Environment left blank)
+// for tests that only care about name-based membership/filtering.
+func agentInfos(names ...string) []AgentInfo {
+	infos := make([]AgentInfo, len(names))
+	for i, n := range names {
+		infos[i] = AgentInfo{Name: n}
+	}
+	return infos
+}
+
+// agentInfosForVM builds []AgentInfo from bare names, each declaring "vm"
+// as a supported service type, for tests that set
+// ServiceInstance["service_type"] = "vm" but only care about name-based
+// membership/filtering (not capability filtering itself).
+func agentInfosForVM(names ...string) []AgentInfo {
+	infos := make([]AgentInfo, len(names))
+	for i, n := range names {
+		infos[i] = AgentInfo{Name: n, ServiceTypes: []string{"vm"}}
+	}
+	return infos
+}
 
 // mockEngineWithCapture wraps mockEngine and captures inputs
 type mockEngineWithCapture struct {

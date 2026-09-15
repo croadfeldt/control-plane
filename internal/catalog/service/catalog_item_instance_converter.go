@@ -9,7 +9,7 @@ import (
 )
 
 // catalogItemInstanceToStoreModel converts a CreateCatalogItemInstanceRequest to a store model
-func catalogItemInstanceToStoreModel(id, path string, req *CreateCatalogItemInstanceRequest, resourceIDs []string) model.CatalogItemInstance {
+func catalogItemInstanceToStoreModel(id, path string, req *CreateCatalogItemInstanceRequest, runID string) model.CatalogItemInstance {
 	userValues := make([]model.UserValue, len(req.Spec.UserValues))
 	for i, uv := range req.Spec.UserValues {
 		userValues[i] = userValueAPIToModel(uv)
@@ -18,7 +18,6 @@ func catalogItemInstanceToStoreModel(id, path string, req *CreateCatalogItemInst
 	spec := model.CatalogItemInstanceSpec{
 		CatalogItemId: req.Spec.CatalogItemId,
 		UserValues:    userValues,
-		ResourceIDs:   append([]string(nil), resourceIDs...),
 	}
 
 	return model.CatalogItemInstance{
@@ -27,6 +26,7 @@ func catalogItemInstanceToStoreModel(id, path string, req *CreateCatalogItemInst
 		DisplayName:       req.DisplayName,
 		Spec:              spec,
 		Path:              path,
+		RunID:             runID,
 		SpecCatalogItemId: req.Spec.CatalogItemId,
 	}
 }
@@ -54,24 +54,23 @@ func catalogItemInstanceToAPIType(m *model.CatalogItemInstance) v1alpha1.Catalog
 		userValues[i] = userValueModelToAPI(uv)
 	}
 
-	spec := v1alpha1.CatalogItemInstanceSpec{
-		CatalogItemId: m.Spec.CatalogItemId,
-		UserValues:    userValues,
-	}
-	if len(m.Spec.ResourceIDs) > 0 {
-		ids := append([]string(nil), m.Spec.ResourceIDs...)
-		spec.ResourceIds = &ids
-	}
-
-	return v1alpha1.CatalogItemInstance{
+	out := v1alpha1.CatalogItemInstance{
 		ApiVersion:  m.ApiVersion,
 		DisplayName: m.DisplayName,
-		Spec:        spec,
-		Path:        &m.Path,
-		Uid:         &m.ID,
-		CreateTime:  &m.CreateTime,
-		UpdateTime:  &m.UpdateTime,
+		Spec: v1alpha1.CatalogItemInstanceSpec{
+			CatalogItemId: m.Spec.CatalogItemId,
+			UserValues:    userValues,
+		},
+		Path:       &m.Path,
+		Uid:        &m.ID,
+		CreateTime: &m.CreateTime,
+		UpdateTime: &m.UpdateTime,
 	}
+	if m.RunID != "" {
+		runID := m.RunID
+		out.RunId = &runID
+	}
+	return out
 }
 
 // mapCatalogItemInstanceStoreError converts store errors to service domain errors

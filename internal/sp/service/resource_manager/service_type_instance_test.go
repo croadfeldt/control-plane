@@ -2,19 +2,18 @@ package resource_manager_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"net/http"
-	"net/http/httptest"
-	"time"
 
 	"github.com/dcm-project/control-plane/api/sp/v1alpha1/resource_manager"
+	agentStoreImpl "github.com/dcm-project/control-plane/internal/agent/store/agent"
+	agentmodel "github.com/dcm-project/control-plane/internal/agent/store/model"
+	"github.com/dcm-project/control-plane/internal/sp/messaging"
 	"github.com/dcm-project/control-plane/internal/sp/service"
 	rmsvc "github.com/dcm-project/control-plane/internal/sp/service/resource_manager"
 	"github.com/dcm-project/control-plane/internal/sp/store"
 	"github.com/dcm-project/control-plane/internal/sp/store/model"
-	"github.com/go-resty/resty/v2"
 	"github.com/google/uuid"
+	"github.com/nats-io/nats.go/jetstream"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gorm.io/driver/sqlite"
@@ -22,15 +21,24 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+// stubJetStream acknowledges every publish so tests can exercise the
+// agent-routed CreateInstance/ReassignAgent paths without a real NATS server.
+type stubJetStream struct {
+	jetstream.JetStream
+}
+
+func (s *stubJetStream) Publish(_ context.Context, _ string, _ []byte, _ ...jetstream.PublishOpt) (*jetstream.PubAck, error) {
+	return &jetstream.PubAck{}, nil
+}
+
+func ptrString(s string) *string { return &s }
+
 var _ = Describe("InstanceService", func() {
 	var (
 		db              *gorm.DB
 		dataStore       store.Store
 		instanceService *rmsvc.InstanceService
 		ctx             context.Context
-		mockProvider    *httptest.Server
-		providerCalled  bool
-		deleteRequested bool
 	)
 
 	BeforeEach(func() {
@@ -39,71 +47,42 @@ var _ = Describe("InstanceService", func() {
 			Logger: logger.Default.LogMode(logger.Silent),
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(db.AutoMigrate(&model.Provider{}, &model.ServiceTypeInstance{})).To(Succeed())
-
-		// Create a mock provider server
-		providerCalled = false
-		deleteRequested = false
-		mockProvider = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodDelete {
-				deleteRequested = true
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
-			providerCalled = true
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"id":     uuid.New().String(),
-				"status": "PROVISIONING",
-			})
-		}))
-
-		// Create a provider in the database
-		provider := model.Provider{
-			ID:           uuid.New().String(),
-			Name:         "test-provider",
-			ServiceType:  "vm",
-			Endpoint:     mockProvider.URL,
-			HealthStatus: model.HealthStatusReady,
-		}
-		Expect(db.Create(&provider).Error).NotTo(HaveOccurred())
+		Expect(db.AutoMigrate(&agentmodel.Agent{}, &model.ServiceTypeInstance{})).To(Succeed())
+		Expect(db.Create(&agentmodel.Agent{ID: uuid.New().String(), Name: "test-agent", TopicName: "dcm.agent.test-agent", HealthStatus: agentmodel.AgentHealthStatusReady, ServiceTypes: []string{"vm", "container"}}).Error).NotTo(HaveOccurred())
 
 		dataStore = store.NewStore(db)
-		instanceService = rmsvc.NewInstanceService(dataStore, resty.New().
-			SetTimeout(5*time.Second).
-			SetRetryCount(0))
+		pub := messaging.NewPublisher(&stubJetStream{})
+		instanceService = rmsvc.NewInstanceService(dataStore, pub, agentStoreImpl.NewAgent(db))
 		ctx = context.Background()
 	})
 
 	AfterEach(func() {
-		mockProvider.Close()
 		_ = dataStore.Close()
 	})
 
-	Describe("CreateInstance", func() {
-		It("creates a new instance", func() {
+	Describe("CreateInstance (agent-routed provisioning)", func() {
+		It("creates instance with pending status via agent NATS", func() {
 			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "test-provider",
-				Spec:         map[string]interface{}{"cpu": 2, "memory": "4GB", "service_type": "vm"},
+				Spec: map[string]interface{}{"cpu": 2, "memory": "4GB", "service_type": "vm"},
 			}
 
-			result, err := instanceService.CreateInstance(ctx, req, nil)
+			result, err := instanceService.CreateInstance(ctx, req, nil, "test-agent")
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.Id).NotTo(BeNil())
-			Expect(result.ProviderName).To(Equal("test-provider"))
-			Expect(providerCalled).To(BeTrue())
+
+			var stored model.ServiceTypeInstance
+			Expect(db.First(&stored, "id = ?", *result.Id).Error).NotTo(HaveOccurred())
+			Expect(stored.Status).To(Equal("pending"))
 		})
 
 		It("sets service_type from spec", func() {
 			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "test-provider",
-				Spec:         map[string]interface{}{"cpu": 2, "service_type": "vm"},
+				Spec: map[string]interface{}{"cpu": 2, "service_type": "vm"},
 			}
 
-			result, err := instanceService.CreateInstance(ctx, req, nil)
+			result, err := instanceService.CreateInstance(ctx, req, nil, "test-agent")
 
 			Expect(err).NotTo(HaveOccurred())
 			var dbInstance model.ServiceTypeInstance
@@ -114,11 +93,10 @@ var _ = Describe("InstanceService", func() {
 		It("creates instance with specified ID", func() {
 			specifiedID := uuid.New().String()
 			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "test-provider",
-				Spec:         map[string]interface{}{"cpu": 1, "service_type": "vm"},
+				Spec: map[string]interface{}{"cpu": 1, "service_type": "vm"},
 			}
 
-			result, err := instanceService.CreateInstance(ctx, req, &specifiedID)
+			result, err := instanceService.CreateInstance(ctx, req, &specifiedID, "test-agent")
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(*result.Id).To(Equal(specifiedID))
@@ -127,16 +105,13 @@ var _ = Describe("InstanceService", func() {
 		It("returns conflict error for duplicate ID", func() {
 			specifiedID := uuid.New().String()
 			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "test-provider",
-				Spec:         map[string]interface{}{"cpu": 1, "service_type": "vm"},
+				Spec: map[string]interface{}{"cpu": 1, "service_type": "vm"},
 			}
 
-			// First creation should succeed
-			_, err := instanceService.CreateInstance(ctx, req, &specifiedID)
+			_, err := instanceService.CreateInstance(ctx, req, &specifiedID, "test-agent")
 			Expect(err).NotTo(HaveOccurred())
 
-			// Second creation with same ID should fail
-			_, err = instanceService.CreateInstance(ctx, req, &specifiedID)
+			_, err = instanceService.CreateInstance(ctx, req, &specifiedID, "test-agent")
 
 			Expect(err).To(HaveOccurred())
 			var svcErr *service.ServiceError
@@ -145,13 +120,119 @@ var _ = Describe("InstanceService", func() {
 			Expect(svcErr.Code).To(Equal(service.ErrCodeConflict))
 		})
 
-		It("returns not found error for non-existent provider", func() {
+		It("returns validation error when spec is missing service_type", func() {
 			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "non-existent-provider",
-				Spec:         map[string]interface{}{"cpu": 1, "service_type": "vm"},
+				Spec: map[string]interface{}{"cpu": 2},
 			}
 
-			_, err := instanceService.CreateInstance(ctx, req, nil)
+			_, err := instanceService.CreateInstance(ctx, req, nil, "test-agent")
+
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(err).To(BeAssignableToTypeOf(svcErr))
+			errors.As(err, &svcErr)
+			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
+			Expect(svcErr.Message).To(ContainSubstring("spec.service_type is required"))
+		})
+
+		It("returns validation error when spec.service_type is not a string", func() {
+			req := &resource_manager.ServiceTypeInstance{
+				Spec: map[string]interface{}{"cpu": 2, "service_type": 42},
+			}
+
+			_, err := instanceService.CreateInstance(ctx, req, nil, "test-agent")
+
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(err).To(BeAssignableToTypeOf(svcErr))
+			errors.As(err, &svcErr)
+			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
+		})
+
+		It("returns validation error when spec.service_type is empty", func() {
+			req := &resource_manager.ServiceTypeInstance{
+				Spec: map[string]interface{}{"cpu": 2, "service_type": ""},
+			}
+
+			_, err := instanceService.CreateInstance(ctx, req, nil, "test-agent")
+
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(err).To(BeAssignableToTypeOf(svcErr))
+			errors.As(err, &svcErr)
+			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
+			Expect(svcErr.Message).To(ContainSubstring("must not be empty"))
+		})
+
+		It("returns validation error when spec.service_type is whitespace only", func() {
+			req := &resource_manager.ServiceTypeInstance{
+				Spec: map[string]interface{}{"cpu": 2, "service_type": " "},
+			}
+
+			_, err := instanceService.CreateInstance(ctx, req, nil, "test-agent")
+
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(err).To(BeAssignableToTypeOf(svcErr))
+			errors.As(err, &svcErr)
+			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
+			Expect(svcErr.Message).To(ContainSubstring("must not be empty"))
+		})
+
+		It("returns validation error when agentName is empty instead of creating an orphan pending row", func() {
+			req := &resource_manager.ServiceTypeInstance{
+				Spec: map[string]interface{}{"cpu": 2, "service_type": "vm"},
+			}
+
+			_, err := instanceService.CreateInstance(ctx, req, nil, "")
+
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(err).To(BeAssignableToTypeOf(svcErr))
+			errors.As(err, &svcErr)
+			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
+			Expect(svcErr.Message).To(ContainSubstring("agent_name"))
+
+			var count int64
+			Expect(db.Model(&model.ServiceTypeInstance{}).Count(&count).Error).NotTo(HaveOccurred())
+			Expect(count).To(BeZero(), "no instance row should have been created")
+		})
+
+		It("returns validation error when agentName is whitespace only", func() {
+			req := &resource_manager.ServiceTypeInstance{
+				Spec: map[string]interface{}{"cpu": 2, "service_type": "vm"},
+			}
+
+			_, err := instanceService.CreateInstance(ctx, req, nil, "   ")
+
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(err).To(BeAssignableToTypeOf(svcErr))
+			errors.As(err, &svcErr)
+			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
+		})
+	})
+
+	Describe("GetInstance", func() {
+		It("returns an instance", func() {
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "pending",
+				InstanceName: "get-inst",
+				Spec:         map[string]any{"cpu": 2},
+			}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+
+			result, err := instanceService.GetInstance(ctx, inst.ID, false)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(*result.Id).To(Equal(inst.ID))
+		})
+
+		It("returns not found error for non-existent instance", func() {
+			_, err := instanceService.GetInstance(ctx, uuid.New().String(), false)
 
 			Expect(err).To(HaveOccurred())
 			var svcErr *service.ServiceError
@@ -159,255 +240,27 @@ var _ = Describe("InstanceService", func() {
 			errors.As(err, &svcErr)
 			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
 		})
-
-		It("returns provider error when provider exists but is not ready", func() {
-			// Create a provider with HealthStatus = NotReady
-			notReadyProvider := model.Provider{
-				ID:           uuid.New().String(),
-				Name:         "not-ready-provider",
-				ServiceType:  "vm",
-				Endpoint:     mockProvider.URL,
-				HealthStatus: model.HealthStatusUnavailable,
-			}
-			Expect(db.Create(&notReadyProvider).Error).NotTo(HaveOccurred())
-
-			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "not-ready-provider",
-				Spec:         map[string]interface{}{"cpu": 1, "service_type": "vm"},
-			}
-
-			_, err := instanceService.CreateInstance(ctx, req, nil)
-
-			Expect(err).To(HaveOccurred())
-			var svcErr *service.ServiceError
-			Expect(err).To(BeAssignableToTypeOf(svcErr))
-			errors.As(err, &svcErr)
-			Expect(svcErr.Code).To(Equal(service.ErrCodeProviderError))
-			Expect(svcErr.Message).To(ContainSubstring("not in ready state"))
-		})
-
-		It("returns provider error when provider endpoint fails", func() {
-			// Create a provider with a bad endpoint
-			badProvider := model.Provider{
-				ID:          uuid.New().String(),
-				Name:        "bad-provider",
-				ServiceType: "vm",
-				Endpoint:    "http://localhost:1", // Invalid port
-			}
-			Expect(db.Create(&badProvider).Error).NotTo(HaveOccurred())
-
-			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "bad-provider",
-				Spec:         map[string]interface{}{"cpu": 1, "service_type": "vm"},
-			}
-
-			_, err := instanceService.CreateInstance(ctx, req, nil)
-
-			Expect(err).To(HaveOccurred())
-			var svcErr *service.ServiceError
-			Expect(err).To(BeAssignableToTypeOf(svcErr))
-			errors.As(err, &svcErr)
-			Expect(svcErr.Code).To(Equal(service.ErrCodeProviderError))
-		})
-
-		It("returns provider error when provider responds with 4xx HTTP error", func() {
-			// Create a mock server that returns 400
-			mockProvider4xx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte(`{"error": "bad request"}`))
-			}))
-			defer mockProvider4xx.Close()
-
-			provider4xx := model.Provider{
-				ID:           uuid.New().String(),
-				Name:         "provider-4xx",
-				ServiceType:  "vm",
-				Endpoint:     mockProvider4xx.URL,
-				HealthStatus: model.HealthStatusReady,
-			}
-			Expect(db.Create(&provider4xx).Error).NotTo(HaveOccurred())
-
-			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "provider-4xx",
-				Spec:         map[string]interface{}{"cpu": 1, "service_type": "vm"},
-			}
-
-			_, err := instanceService.CreateInstance(ctx, req, nil)
-
-			Expect(err).To(HaveOccurred())
-			var svcErr *service.ServiceError
-			Expect(err).To(BeAssignableToTypeOf(svcErr))
-			errors.As(err, &svcErr)
-			Expect(svcErr.Code).To(Equal(service.ErrCodeProviderError))
-			Expect(svcErr.Message).To(ContainSubstring("provider returned error"))
-		})
-
-		It("returns provider error when provider responds with 5xx HTTP error", func() {
-			// Create a mock server that returns 500
-			mockProvider5xx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(http.StatusInternalServerError)
-				_, _ = w.Write([]byte(`{"error": "internal server error"}`))
-			}))
-			defer mockProvider5xx.Close()
-
-			provider5xx := model.Provider{
-				ID:           uuid.New().String(),
-				Name:         "provider-5xx",
-				ServiceType:  "vm",
-				Endpoint:     mockProvider5xx.URL,
-				HealthStatus: model.HealthStatusReady,
-			}
-			Expect(db.Create(&provider5xx).Error).NotTo(HaveOccurred())
-
-			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "provider-5xx",
-				Spec:         map[string]interface{}{"cpu": 1, "service_type": "vm"},
-			}
-
-			_, err := instanceService.CreateInstance(ctx, req, nil)
-
-			Expect(err).To(HaveOccurred())
-			var svcErr *service.ServiceError
-			Expect(err).To(BeAssignableToTypeOf(svcErr))
-			errors.As(err, &svcErr)
-			Expect(svcErr.Code).To(Equal(service.ErrCodeProviderError))
-			Expect(svcErr.Message).To(ContainSubstring("provider returned error"))
-		})
-
-		It("returns validation error when spec is missing service_type", func() {
-			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "test-provider",
-				Spec:         map[string]interface{}{"cpu": 2},
-			}
-
-			_, err := instanceService.CreateInstance(ctx, req, nil)
-
-			Expect(err).To(HaveOccurred())
-			var svcErr *service.ServiceError
-			Expect(err).To(BeAssignableToTypeOf(svcErr))
-			errors.As(err, &svcErr)
-			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
-			Expect(svcErr.Message).To(ContainSubstring("spec.service_type is required"))
-			Expect(providerCalled).To(BeFalse())
-		})
-
-		It("returns validation error when spec.service_type is not a string", func() {
-			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "test-provider",
-				Spec:         map[string]interface{}{"cpu": 2, "service_type": 42},
-			}
-
-			_, err := instanceService.CreateInstance(ctx, req, nil)
-
-			Expect(err).To(HaveOccurred())
-			var svcErr *service.ServiceError
-			Expect(err).To(BeAssignableToTypeOf(svcErr))
-			errors.As(err, &svcErr)
-			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
-			Expect(svcErr.Message).To(ContainSubstring("spec.service_type is required"))
-			Expect(providerCalled).To(BeFalse())
-		})
-
-		It("returns validation error when spec.service_type is an empty string", func() {
-			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "test-provider",
-				Spec:         map[string]interface{}{"cpu": 2, "service_type": ""},
-			}
-
-			_, err := instanceService.CreateInstance(ctx, req, nil)
-
-			Expect(err).To(HaveOccurred())
-			var svcErr *service.ServiceError
-			Expect(err).To(BeAssignableToTypeOf(svcErr))
-			errors.As(err, &svcErr)
-			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
-			Expect(svcErr.Message).To(ContainSubstring("must not be empty"))
-			Expect(providerCalled).To(BeFalse())
-		})
-
-		It("returns validation error when spec.service_type is whitespace only", func() {
-			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "test-provider",
-				Spec:         map[string]interface{}{"cpu": 2, "service_type": " "},
-			}
-
-			_, err := instanceService.CreateInstance(ctx, req, nil)
-
-			Expect(err).To(HaveOccurred())
-			var svcErr *service.ServiceError
-			Expect(err).To(BeAssignableToTypeOf(svcErr))
-			errors.As(err, &svcErr)
-			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
-			Expect(svcErr.Message).To(ContainSubstring("must not be empty"))
-			Expect(providerCalled).To(BeFalse())
-		})
-
-		It("returns internal error with instance ID when DB insert fails", func() {
-			var instanceID string
-			var providerCallCount int
-			mockProviderWithID := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				providerCallCount++
-				instanceID = uuid.New().String()
-
-				if providerCallCount == 1 {
-					sqlDB, _ := db.DB()
-					_ = sqlDB.Close()
-				}
-
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				_ = json.NewEncoder(w).Encode(map[string]string{
-					"id":     instanceID,
-					"status": "PROVISIONING",
-				})
-			}))
-			defer mockProviderWithID.Close()
-
-			providerWithID := model.Provider{
-				ID:           uuid.New().String(),
-				Name:         "provider-db-fail",
-				ServiceType:  "vm",
-				Endpoint:     mockProviderWithID.URL,
-				HealthStatus: model.HealthStatusReady,
-			}
-			Expect(db.Create(&providerWithID).Error).NotTo(HaveOccurred())
-
-			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "provider-db-fail",
-				Spec:         map[string]interface{}{"cpu": 2, "service_type": "vm"},
-			}
-
-			_, err := instanceService.CreateInstance(ctx, req, nil)
-
-			Expect(err).To(HaveOccurred())
-			var svcErr *service.ServiceError
-			Expect(err).To(BeAssignableToTypeOf(svcErr))
-			errors.As(err, &svcErr)
-			Expect(svcErr.Code).To(Equal(service.ErrCodeInternal))
-			Expect(svcErr.Message).To(ContainSubstring("failed to create database record"))
-			Expect(svcErr.Message).To(ContainSubstring(instanceID))
-		})
 	})
 
-	Describe("GetInstance", func() {
-		It("returns an instance", func() {
-			// Create an instance first
+	Describe("GetOutputSpec", func() {
+		It("returns persisted output_spec", func() {
 			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "test-provider",
-				Spec:         map[string]interface{}{"cpu": 2, "service_type": "vm"},
+				Spec: map[string]interface{}{"cpu": 2, "service_type": "vm"},
 			}
-			created, _ := instanceService.CreateInstance(ctx, req, nil)
-
-			result, err := instanceService.GetInstance(ctx, *created.Id, false)
-
+			created, err := instanceService.CreateInstance(ctx, req, nil, "test-agent")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
-			Expect(*result.Id).To(Equal(*created.Id))
-			Expect(result.ProviderName).To(Equal("test-provider"))
+
+			outputSpec := map[string]any{"connection_string": "postgres://db:5432/orders"}
+			err = dataStore.ServiceTypeInstance().UpdateStatus(ctx, *created.Id, "RUNNING", "ready", outputSpec)
+			Expect(err).NotTo(HaveOccurred())
+
+			got, err := instanceService.GetOutputSpec(ctx, *created.Id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got).To(Equal(outputSpec))
 		})
 
 		It("returns not found error for non-existent instance", func() {
-			_, err := instanceService.GetInstance(ctx, uuid.New().String(), false)
+			_, err := instanceService.GetOutputSpec(ctx, uuid.New().String())
 
 			Expect(err).To(HaveOccurred())
 			var svcErr *service.ServiceError
@@ -427,14 +280,15 @@ var _ = Describe("InstanceService", func() {
 		})
 
 		It("returns all instances", func() {
-			// Create instances
 			for i := 0; i < 3; i++ {
-				req := &resource_manager.ServiceTypeInstance{
-					ProviderName: "test-provider",
-					Spec:         map[string]interface{}{"cpu": i + 1, "service_type": "vm"},
+				inst := model.ServiceTypeInstance{
+					ID:           uuid.New().String(),
+					ServiceType:  "vm",
+					Status:       "pending",
+					InstanceName: uuid.New().String(),
+					Spec:         map[string]any{"cpu": i + 1},
 				}
-				_, err := instanceService.CreateInstance(ctx, req, nil)
-				Expect(err).NotTo(HaveOccurred())
+				Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
 			}
 
 			result, err := instanceService.ListInstances(ctx, nil, nil, false, nil, nil)
@@ -443,160 +297,146 @@ var _ = Describe("InstanceService", func() {
 			Expect(*result.Instances).To(HaveLen(3))
 		})
 
-		It("respects max page size and returns next page token", func() {
-			// Create 5 instances
-			for i := 0; i < 5; i++ {
-				req := &resource_manager.ServiceTypeInstance{
-					ProviderName: "test-provider",
-					Spec:         map[string]interface{}{"cpu": i + 1, "service_type": "vm"},
-				}
-				_, err := instanceService.CreateInstance(ctx, req, nil)
-				Expect(err).NotTo(HaveOccurred())
-			}
-
-			maxPageSize := 2
-			result, err := instanceService.ListInstances(ctx, nil, nil, false, &maxPageSize, nil)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(*result.Instances).To(HaveLen(2))
-			Expect(result.NextPageToken).NotTo(BeNil())
-			Expect(*result.NextPageToken).NotTo(BeEmpty())
-
-			// Get second page using token
-			secondPage, err := instanceService.ListInstances(ctx, nil, nil, false, &maxPageSize, result.NextPageToken)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(*secondPage.Instances).To(HaveLen(2))
-			Expect(secondPage.NextPageToken).NotTo(BeNil())
-
-			// Verify instances are different between pages
-			firstIDs := make(map[string]bool)
-			for _, inst := range *result.Instances {
-				firstIDs[*inst.Id] = true
-			}
-			for _, inst := range *secondPage.Instances {
-				Expect(firstIDs[*inst.Id]).To(BeFalse(), "Instance should not appear in both pages")
-			}
-
-			// Get third page (last page with 1 item)
-			thirdPage, err := instanceService.ListInstances(ctx, nil, nil, false, &maxPageSize, secondPage.NextPageToken)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(*thirdPage.Instances).To(HaveLen(1))
-			Expect(thirdPage.NextPageToken).To(BeNil())
-		})
-
 		It("filters instances by service type", func() {
-			containerProvider := model.Provider{
-				ID:           uuid.New().String(),
-				Name:         "container-provider",
-				ServiceType:  "container",
-				Endpoint:     mockProvider.URL,
-				HealthStatus: model.HealthStatusReady,
-			}
-			Expect(db.Create(&containerProvider).Error).NotTo(HaveOccurred())
-
-			// Create vm instances with service_type in spec
 			for i := 0; i < 2; i++ {
-				req := &resource_manager.ServiceTypeInstance{
-					ProviderName: "test-provider",
-					Spec:         map[string]interface{}{"cpu": i + 1, "service_type": "vm"},
+				inst := model.ServiceTypeInstance{
+					ID:           uuid.New().String(),
+					ServiceType:  "vm",
+					Status:       "pending",
+					InstanceName: uuid.New().String(),
+					Spec:         map[string]any{"cpu": i + 1},
 				}
-				_, err := instanceService.CreateInstance(ctx, req, nil)
-				Expect(err).NotTo(HaveOccurred())
+				Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
 			}
-
-			// Create container instances with service_type in spec
 			for i := 0; i < 3; i++ {
-				req := &resource_manager.ServiceTypeInstance{
-					ProviderName: "container-provider",
-					Spec:         map[string]interface{}{"image": "nginx", "service_type": "container"},
+				inst := model.ServiceTypeInstance{
+					ID:           uuid.New().String(),
+					ServiceType:  "container",
+					Status:       "pending",
+					InstanceName: uuid.New().String(),
+					Spec:         map[string]any{"image": "nginx"},
 				}
-				_, err := instanceService.CreateInstance(ctx, req, nil)
-				Expect(err).NotTo(HaveOccurred())
+				Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
 			}
 
 			vmType := "vm"
-			result, err := instanceService.ListInstances(ctx, nil, &vmType, false, nil, nil)
+			result, err := instanceService.ListInstances(ctx, &vmType, nil, false, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(*result.Instances).To(HaveLen(2))
 
 			containerType := "container"
-			result, err = instanceService.ListInstances(ctx, nil, &containerType, false, nil, nil)
+			result, err = instanceService.ListInstances(ctx, &containerType, nil, false, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(*result.Instances).To(HaveLen(3))
 		})
 
-		It("filters instances by provider name", func() {
-			// Create a second provider
-			secondProvider := model.Provider{
-				ID:           uuid.New().String(),
-				Name:         "second-provider",
-				ServiceType:  "vm",
-				Endpoint:     mockProvider.URL,
-				HealthStatus: model.HealthStatusReady,
-			}
-			Expect(db.Create(&secondProvider).Error).NotTo(HaveOccurred())
-
-			// Create instances for different providers
+		It("filters instances by agent name", func() {
+			agentA, agentB := "agent-a", "agent-b"
 			for i := 0; i < 2; i++ {
-				req := &resource_manager.ServiceTypeInstance{
-					ProviderName: "test-provider",
-					Spec:         map[string]interface{}{"cpu": i + 1, "service_type": "vm"},
+				inst := model.ServiceTypeInstance{
+					ID:           uuid.New().String(),
+					ServiceType:  "vm",
+					Status:       "pending",
+					InstanceName: uuid.New().String(),
+					Spec:         map[string]any{"cpu": i + 1},
+					AgentName:    &agentA,
 				}
-				_, err := instanceService.CreateInstance(ctx, req, nil)
-				Expect(err).NotTo(HaveOccurred())
+				Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
 			}
-
-			for i := 0; i < 3; i++ {
-				req := &resource_manager.ServiceTypeInstance{
-					ProviderName: "second-provider",
-					Spec:         map[string]interface{}{"cpu": i + 1, "service_type": "vm"},
-				}
-				_, err := instanceService.CreateInstance(ctx, req, nil)
-				Expect(err).NotTo(HaveOccurred())
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "pending",
+				InstanceName: uuid.New().String(),
+				Spec:         map[string]any{"cpu": 3},
+				AgentName:    &agentB,
 			}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
 
-			// Filter by first provider
-			filterProvider := "test-provider"
-			result, err := instanceService.ListInstances(ctx, &filterProvider, nil, false, nil, nil)
-
+			result, err := instanceService.ListInstances(ctx, nil, &agentA, false, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(*result.Instances).To(HaveLen(2))
-			for _, inst := range *result.Instances {
-				Expect(inst.ProviderName).To(Equal("test-provider"))
-			}
 
-			// Filter by second provider
-			filterProvider = "second-provider"
-			result, err = instanceService.ListInstances(ctx, &filterProvider, nil, false, nil, nil)
-
+			result, err = instanceService.ListInstances(ctx, nil, &agentB, false, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(*result.Instances).To(HaveLen(3))
-			for _, inst := range *result.Instances {
-				Expect(inst.ProviderName).To(Equal("second-provider"))
-			}
+			Expect(*result.Instances).To(HaveLen(1))
 		})
 	})
 
-	Describe("DeleteInstance", func() {
-		It("deletes an instance", func() {
-			// Create an instance first
-			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "test-provider",
-				Spec:         map[string]interface{}{"cpu": 2, "service_type": "vm"},
+	Describe("DeleteInstance (agent-routed)", func() {
+		It("publishes delete event and marks deleting, awaiting agent acknowledgement, for non-deferred deletion", func() {
+			agentName := "test-agent"
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "running",
+				InstanceName: "del-inst",
+				Spec:         map[string]any{"cpu": 2},
+				AgentName:    &agentName,
 			}
-			created, _ := instanceService.CreateInstance(ctx, req, nil)
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
 
-			err := instanceService.DeleteInstance(ctx, *created.Id, false)
-
+			err := instanceService.DeleteInstance(ctx, inst.ID, false)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(deleteRequested).To(BeTrue())
 
-			// Verify it's deleted
-			_, err = instanceService.GetInstance(ctx, *created.Id, false)
+			// The record must still exist as "deleting" until the agent's
+			// deletion-acknowledged event confirms the physical resource is
+			// gone, and be enrolled in retry tracking like a deferred delete.
+			got, getErr := instanceService.GetInstance(ctx, inst.ID, true)
+			Expect(getErr).NotTo(HaveOccurred())
+			Expect(got.Status).NotTo(BeNil())
+			Expect(*got.Status).To(Equal("deleting"))
+
+			_, hiddenErr := instanceService.GetInstance(ctx, inst.ID, false)
 			var svcErr *service.ServiceError
-			Expect(err).To(BeAssignableToTypeOf(svcErr))
-			errors.As(err, &svcErr)
+			Expect(hiddenErr).To(BeAssignableToTypeOf(svcErr))
+			errors.As(hiddenErr, &svcErr)
+			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
+		})
+
+		It("hard-deletes immediately when the instance has no agent", func() {
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "running",
+				InstanceName: "del-inst-no-agent",
+				Spec:         map[string]any{"cpu": 2},
+			}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+
+			err := instanceService.DeleteInstance(ctx, inst.ID, false)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, getErr := instanceService.GetInstance(ctx, inst.ID, false)
+			var svcErr *service.ServiceError
+			Expect(getErr).To(BeAssignableToTypeOf(svcErr))
+			errors.As(getErr, &svcErr)
+			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
+		})
+
+		It("hard-deletes immediately when the assigned agent no longer exists (C)", func() {
+			// Without this, publishDeleteToAgent's old behavior (silently
+			// treating ErrAgentNotFound as a successful publish) would leave
+			// this instance stuck in "deleting" forever: no agent will ever
+			// send a "deletion-acknowledged" for a nonexistent agent.
+			gone := "nonexistent-agent"
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "running",
+				InstanceName: "del-inst-gone-agent",
+				Spec:         map[string]any{"cpu": 2},
+				AgentName:    &gone,
+			}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+
+			err := instanceService.DeleteInstance(ctx, inst.ID, false)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, getErr := instanceService.GetInstance(ctx, inst.ID, true)
+			var svcErr *service.ServiceError
+			Expect(getErr).To(BeAssignableToTypeOf(svcErr))
+			errors.As(getErr, &svcErr)
 			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
 		})
 
@@ -610,121 +450,289 @@ var _ = Describe("InstanceService", func() {
 			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
 		})
 
-		It("returns error when provider is missing and deferred is false", func() {
-			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "test-provider",
-				Spec:         map[string]interface{}{"cpu": 2, "service_type": "vm"},
-			}
-			created, _ := instanceService.CreateInstance(ctx, req, nil)
-
-			// Delete the provider from the database
-			Expect(db.Delete(&model.Provider{}, "name = ?", "test-provider").Error).NotTo(HaveOccurred())
-
-			err := instanceService.DeleteInstance(ctx, *created.Id, false)
-
-			Expect(err).To(HaveOccurred())
-			var svcErr *service.ServiceError
-			Expect(err).To(BeAssignableToTypeOf(svcErr))
-			errors.As(err, &svcErr)
-			Expect(svcErr.Code).To(Equal(service.ErrCodeProviderError))
-		})
-
 		It("defers deletion without contacting provider", func() {
-			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "test-provider",
-				Spec:         map[string]interface{}{"cpu": 2, "service_type": "vm"},
+			agentName := "test-agent"
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "running",
+				InstanceName: "defer-del-inst",
+				Spec:         map[string]any{"cpu": 2},
+				AgentName:    &agentName,
 			}
-			created, _ := instanceService.CreateInstance(ctx, req, nil)
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
 
-			// Deferred delete should succeed without calling the provider
-			err := instanceService.DeleteInstance(ctx, *created.Id, true)
+			err := instanceService.DeleteInstance(ctx, inst.ID, true)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(deleteRequested).To(BeFalse())
 
-			// Instance should be marked for deletion, not visible in default list
 			result, err := instanceService.ListInstances(ctx, nil, nil, false, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(*result.Instances).To(BeEmpty())
 
-			// But visible with show_deleted
 			result, err = instanceService.ListInstances(ctx, nil, nil, true, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(*result.Instances).To(HaveLen(1))
 			Expect(string(*(*result.Instances)[0].DeletionStatus)).To(Equal("SCHEDULED"))
 		})
 
-		It("defers deletion without contacting provider even when provider is missing", func() {
-			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "test-provider",
-				Spec:         map[string]interface{}{"cpu": 2, "service_type": "vm"},
+		It("surfaces deletion_status DELETED on the API struct after cleanup completes", func() {
+			agentName := "test-agent"
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "running",
+				InstanceName: "deleted-api-inst",
+				Spec:         map[string]any{"cpu": 2},
+				AgentName:    &agentName,
 			}
-			created, _ := instanceService.CreateInstance(ctx, req, nil)
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+			Expect(dataStore.ServiceTypeInstance().MarkForDeletion(ctx, inst.ID)).To(Succeed())
+			Expect(dataStore.ServiceTypeInstance().MarkDeletionComplete(ctx, inst.ID)).To(Succeed())
 
-			// Delete the provider from the database
-			Expect(db.Delete(&model.Provider{}, "name = ?", "test-provider").Error).NotTo(HaveOccurred())
-
-			// Deferred delete should succeed without attempting provider call
-			err := instanceService.DeleteInstance(ctx, *created.Id, true)
+			got, err := instanceService.GetInstance(ctx, inst.ID, true)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(deleteRequested).To(BeFalse())
+			Expect(got.DeletionStatus).NotTo(BeNil())
+			Expect(string(*got.DeletionStatus)).To(Equal("DELETED"))
 
-			// Verify marked as SCHEDULED
 			result, err := instanceService.ListInstances(ctx, nil, nil, true, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(*result.Instances).To(HaveLen(1))
-			Expect(string(*(*result.Instances)[0].DeletionStatus)).To(Equal("SCHEDULED"))
+			Expect(string(*(*result.Instances)[0].DeletionStatus)).To(Equal("DELETED"))
 		})
 
-		It("resets retry count when deleting a FAILED instance with deferred=true", func() {
-			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "test-provider",
-				Spec:         map[string]interface{}{"cpu": 2, "service_type": "vm"},
+		It("surfaces deletion_status FAILED on the API struct after cleanup gives up", func() {
+			agentName := "test-agent"
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "running",
+				InstanceName: "failed-api-inst",
+				Spec:         map[string]any{"cpu": 2},
+				AgentName:    &agentName,
 			}
-			created, _ := instanceService.CreateInstance(ctx, req, nil)
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+			Expect(dataStore.ServiceTypeInstance().MarkForDeletion(ctx, inst.ID)).To(Succeed())
+			Expect(dataStore.ServiceTypeInstance().MarkDeletionFailed(ctx, inst.ID)).To(Succeed())
 
-			// Manually mark instance as FAILED with high retry count
-			failed := "FAILED"
-			Expect(db.Model(&model.ServiceTypeInstance{}).Where("id = ?", *created.Id).Updates(map[string]interface{}{
-				"deletion_status": failed,
-				"retry_count":     10,
-			}).Error).NotTo(HaveOccurred())
-
-			// Deferred delete should succeed and reset retry count without contacting provider
-			err := instanceService.DeleteInstance(ctx, *created.Id, true)
+			got, err := instanceService.GetInstance(ctx, inst.ID, true)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(deleteRequested).To(BeFalse())
-
-			// Verify retry count was reset and status is SCHEDULED
-			var instance model.ServiceTypeInstance
-			Expect(db.Where("id = ?", *created.Id).First(&instance).Error).NotTo(HaveOccurred())
-			Expect(instance.RetryCount).To(Equal(0))
-			Expect(*instance.DeletionStatus).To(Equal("SCHEDULED"))
+			Expect(got.DeletionStatus).NotTo(BeNil())
+			Expect(string(*got.DeletionStatus)).To(Equal("FAILED"))
 		})
+	})
 
-		It("returns 204 when deleting an already-pending instance and SP succeeds", func() {
-			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "test-provider",
-				Spec:         map[string]interface{}{"cpu": 2, "service_type": "vm"},
+	Describe("InstanceService agent fields", func() {
+		It("stores agent_name on instance record and surfaces it on the API struct (F19)", func() {
+			agentName := "test-agent"
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "pending",
+				InstanceName: "agent-inst",
+				Spec:         map[string]any{"cpu": 2},
+				AgentName:    &agentName,
 			}
-			created, _ := instanceService.CreateInstance(ctx, req, nil)
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
 
-			// Manually mark instance as SCHEDULED
-			scheduled := "SCHEDULED"
-			Expect(db.Model(&model.ServiceTypeInstance{}).Where("id = ?", *created.Id).Updates(map[string]interface{}{
-				"deletion_status": scheduled,
-			}).Error).NotTo(HaveOccurred())
+			var stored model.ServiceTypeInstance
+			Expect(db.First(&stored, "id = ?", inst.ID).Error).NotTo(HaveOccurred())
+			Expect(stored.AgentName).NotTo(BeNil())
+			Expect(*stored.AgentName).To(Equal("test-agent"))
 
-			// Delete should succeed (SP is available) and hard-delete the record
-			err := instanceService.DeleteInstance(ctx, *created.Id, false)
+			// ModelToAPI must populate AgentName on the returned API struct
+			// too, not just the DB row.
+			got, err := instanceService.GetInstance(ctx, inst.ID, false)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(deleteRequested).To(BeTrue())
+			Expect(got.AgentName).NotTo(BeNil())
+			Expect(*got.AgentName).To(Equal("test-agent"))
+		})
+	})
 
-			// Verify it's fully gone
-			_, err = instanceService.GetInstance(ctx, *created.Id, false)
+	Describe("Agent validation", func() {
+		It("rejects creation when agent is not found", func() {
+			req := &resource_manager.ServiceTypeInstance{
+				Spec: map[string]interface{}{"cpu": 2, "service_type": "vm"},
+			}
+
+			_, err := instanceService.CreateInstance(ctx, req, nil, "nonexistent-agent")
+
+			Expect(err).To(HaveOccurred())
 			var svcErr *service.ServiceError
-			Expect(err).To(BeAssignableToTypeOf(svcErr))
-			errors.As(err, &svcErr)
+			Expect(errors.As(err, &svcErr)).To(BeTrue())
 			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
+		})
+
+		It("rejects creation when agent is unavailable", func() {
+			Expect(db.Create(&agentmodel.Agent{
+				ID:           uuid.New().String(),
+				Name:         "unavailable-agent",
+				TopicName:    "dcm.agent.unavailable-agent",
+				HealthStatus: agentmodel.AgentHealthStatusUnavailable,
+				ServiceTypes: []string{"vm"},
+			}).Error).NotTo(HaveOccurred())
+
+			req := &resource_manager.ServiceTypeInstance{
+				Spec: map[string]interface{}{"cpu": 2, "service_type": "vm"},
+			}
+
+			_, err := instanceService.CreateInstance(ctx, req, nil, "unavailable-agent")
+
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(errors.As(err, &svcErr)).To(BeTrue())
+			Expect(svcErr.Code).To(Equal(service.ErrCodeUnavailable))
+		})
+
+		It("rejects creation when agent is congested", func() {
+			Expect(db.Create(&agentmodel.Agent{
+				ID:           uuid.New().String(),
+				Name:         "congested-agent",
+				TopicName:    "dcm.agent.congested-agent",
+				HealthStatus: agentmodel.AgentHealthStatusCongested,
+				ServiceTypes: []string{"vm"},
+			}).Error).NotTo(HaveOccurred())
+
+			req := &resource_manager.ServiceTypeInstance{
+				Spec: map[string]interface{}{"cpu": 2, "service_type": "vm"},
+			}
+
+			_, err := instanceService.CreateInstance(ctx, req, nil, "congested-agent")
+
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(errors.As(err, &svcErr)).To(BeTrue())
+			Expect(svcErr.Code).To(Equal(service.ErrCodeUnavailable))
+		})
+
+		It("rejects creation when agent does not serve the requested service type", func() {
+			Expect(db.Create(&agentmodel.Agent{
+				ID:           uuid.New().String(),
+				Name:         "container-only-agent",
+				TopicName:    "dcm.agent.container-only-agent",
+				HealthStatus: agentmodel.AgentHealthStatusReady,
+				ServiceTypes: []string{"container"},
+			}).Error).NotTo(HaveOccurred())
+
+			req := &resource_manager.ServiceTypeInstance{
+				Spec: map[string]interface{}{"cpu": 2, "service_type": "vm"},
+			}
+
+			_, err := instanceService.CreateInstance(ctx, req, nil, "container-only-agent")
+
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(errors.As(err, &svcErr)).To(BeTrue())
+			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
+			Expect(svcErr.Message).To(ContainSubstring("does not serve service type"))
+		})
+
+		It("accepts creation when agent is ready and serves the service type", func() {
+			req := &resource_manager.ServiceTypeInstance{
+				Spec: map[string]interface{}{"cpu": 2, "service_type": "vm"},
+			}
+
+			result, err := instanceService.CreateInstance(ctx, req, nil, "test-agent")
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+		})
+	})
+
+	Describe("ReassignAgent", func() {
+		BeforeEach(func() {
+			Expect(db.Create(&agentmodel.Agent{ID: uuid.New().String(), Name: "fallback-agent", TopicName: "dcm.agent.fallback-agent", HealthStatus: agentmodel.AgentHealthStatusReady, ServiceTypes: []string{"vm"}}).Error).NotTo(HaveOccurred())
+		})
+
+		It("reassigns when expectedCurrentAgent matches the instance's current agent", func() {
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "pending",
+				InstanceName: "reassign-cas-match",
+				Spec:         map[string]any{"cpu": 2},
+				AgentName:    ptrString("test-agent"),
+			}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+
+			err := instanceService.ReassignAgent(ctx, inst.ID, "fallback-agent", "test-agent")
+
+			Expect(err).NotTo(HaveOccurred())
+			var stored model.ServiceTypeInstance
+			Expect(db.First(&stored, "id = ?", inst.ID).Error).NotTo(HaveOccurred())
+			Expect(*stored.AgentName).To(Equal("fallback-agent"))
+		})
+
+		It("rejects the reassignment when expectedCurrentAgent is stale (R2 T1: CAS parameter must be threaded end-to-end, not re-derived from a fresh read)", func() {
+			// Proves expectedCurrentAgent actually reaches ReassignAndReset's
+			// CAS rather than being silently overridden by a fresh Get()
+			// inside ReassignAgent, which would defeat the whole guard: a
+			// caller passing a stale/excluded agent it observed earlier
+			// must be rejected here even though the DB's current agent_name
+			// ("test-agent") looks otherwise eligible (pending, not deleted).
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "pending",
+				InstanceName: "reassign-cas-stale",
+				Spec:         map[string]any{"cpu": 2},
+				AgentName:    ptrString("test-agent"),
+			}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+
+			err := instanceService.ReassignAgent(ctx, inst.ID, "fallback-agent", "some-other-agent-the-caller-thinks-is-current")
+
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(errors.As(err, &svcErr)).To(BeTrue())
+			Expect(svcErr.Code).To(Equal(service.ErrCodeConflict))
+
+			var stored model.ServiceTypeInstance
+			Expect(db.First(&stored, "id = ?", inst.ID).Error).NotTo(HaveOccurred())
+			Expect(*stored.AgentName).To(Equal("test-agent"))
+		})
+
+		It("returns validation error when agentName is empty", func() {
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "pending",
+				InstanceName: "reassign-empty-agent",
+				Spec:         map[string]any{"cpu": 2},
+			}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+
+			err := instanceService.ReassignAgent(ctx, inst.ID, "", "")
+
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(errors.As(err, &svcErr)).To(BeTrue())
+			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
+		})
+
+		It("returns unavailable error when agent store is not configured", func() {
+			// Regression test: ReassignAgent previously had no guard of its
+			// own before calling validateAgent (unlike CreateInstance), and
+			// validateAgent's nil-agentStore check used to silently skip
+			// validation (return nil) instead of erroring. A nil agentStore
+			// must fail fast here, not be treated as "agent is valid".
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "pending",
+				InstanceName: "reassign-no-agent-store",
+				Spec:         map[string]any{"cpu": 2},
+			}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+
+			pub := messaging.NewPublisher(&stubJetStream{})
+			noAgentStoreService := rmsvc.NewInstanceService(dataStore, pub, nil)
+
+			err := noAgentStoreService.ReassignAgent(ctx, inst.ID, "test-agent", "")
+
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(errors.As(err, &svcErr)).To(BeTrue())
+			Expect(svcErr.Code).To(Equal(service.ErrCodeUnavailable))
 		})
 	})
 })

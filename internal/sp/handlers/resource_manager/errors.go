@@ -32,6 +32,13 @@ func newError(errType, title, detail string, status int) server.Error {
 	}
 }
 
+// internalErrorDetail is the fixed 5xx response detail used across this
+// file. The real error (which may contain DB/NATS/internal detail) is
+// always logged server-side by logServiceError before these functions are
+// called, so the client-facing body never echoes it back (F37/P: 5xx bodies
+// must not leak internal error strings).
+const internalErrorDetail = "an internal error occurred"
+
 // handleListInstancesError converts a service error to a ListInstances response.
 func handleListInstancesError(err error) server.ListInstancesResponseObject {
 	var svcErr *service.ServiceError
@@ -39,7 +46,7 @@ func handleListInstancesError(err error) server.ListInstancesResponseObject {
 		return server.ListInstances400ApplicationProblemPlusJSONResponse(newError("validation-error", "Invalid request", svcErr.Message, 400))
 	}
 	return server.ListInstancesdefaultApplicationProblemPlusJSONResponse{
-		Body:       newError("list-error", "Failed to list instances", err.Error(), 500),
+		Body:       newError("list-error", "Failed to list instances", internalErrorDetail, 500),
 		StatusCode: 500,
 	}
 }
@@ -55,17 +62,19 @@ func handleCreateInstanceError(err error) server.CreateInstanceResponseObject {
 			return server.CreateInstance404ApplicationProblemPlusJSONResponse(newError("not-found", "Resource not found", svcErr.Message, 404))
 		case service.ErrCodeConflict:
 			return server.CreateInstance409ApplicationProblemPlusJSONResponse(newError("conflict", "Resource conflict", svcErr.Message, 409))
-		case service.ErrCodeProviderError:
-			return server.CreateInstance422ApplicationProblemPlusJSONResponse(newError("provider-error", "Provider error", svcErr.Message, 422))
+		case service.ErrCodeProvisioningError:
+			return server.CreateInstance422ApplicationProblemPlusJSONResponse(newError("provisioning-error", "Provisioning error", svcErr.Message, 422))
 		case service.ErrCodeInternal:
 			return server.CreateInstancedefaultApplicationProblemPlusJSONResponse{
-				Body:       newError("internal-error", "Internal error", svcErr.Message, 500),
+				Body:       newError("internal-error", "Internal error", internalErrorDetail, 500),
 				StatusCode: 500,
 			}
+		case service.ErrCodeUnavailable:
+			return server.CreateInstance503ApplicationProblemPlusJSONResponse(newError("unavailable", "Service unavailable", "service temporarily unavailable", 503))
 		}
 	}
 	return server.CreateInstancedefaultApplicationProblemPlusJSONResponse{
-		Body:       newError("create-error", "Failed to create instance", err.Error(), 500),
+		Body:       newError("create-error", "Failed to create instance", internalErrorDetail, 500),
 		StatusCode: 500,
 	}
 }
@@ -82,7 +91,7 @@ func handleGetInstanceError(err error) server.GetInstanceResponseObject {
 		}
 	}
 	return server.GetInstancedefaultApplicationProblemPlusJSONResponse{
-		Body:       newError("get-error", "Failed to get instance", err.Error(), 500),
+		Body:       newError("get-error", "Failed to get instance", internalErrorDetail, 500),
 		StatusCode: 500,
 	}
 }
@@ -96,10 +105,14 @@ func handleDeleteInstanceError(err error) server.DeleteInstanceResponseObject {
 			return server.DeleteInstance400ApplicationProblemPlusJSONResponse(newError("validation-error", "Invalid request", svcErr.Message, 400))
 		case service.ErrCodeNotFound:
 			return server.DeleteInstance404ApplicationProblemPlusJSONResponse(newError("not-found", "Instance not found", svcErr.Message, 404))
+		case service.ErrCodeProvisioningError:
+			// A transient, client-actionable failure to publish the delete,
+			// not an internal server bug - map to 422 like CreateInstance.
+			return server.DeleteInstance422ApplicationProblemPlusJSONResponse(newError("provisioning-error", "Provisioning error", svcErr.Message, 422))
 		}
 	}
 	return server.DeleteInstancedefaultApplicationProblemPlusJSONResponse{
-		Body:       newError("delete-error", "Failed to delete instance", err.Error(), 500),
+		Body:       newError("delete-error", "Failed to delete instance", internalErrorDetail, 500),
 		StatusCode: 500,
 	}
 }

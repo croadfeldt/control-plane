@@ -18,15 +18,6 @@ import (
 	"github.com/dcm-project/control-plane/internal/catalog/store/model"
 )
 
-func serviceTypeSpecWithOutputs(base map[string]any, outputs map[string]any) map[string]any {
-	spec := make(map[string]any, len(base)+1)
-	for k, v := range base {
-		spec[k] = v
-	}
-	spec["outputs"] = outputs
-	return spec
-}
-
 func devAppCatalogItemSpecWithCEL() v1alpha1.CatalogItemSpec {
 	requiresOrdersDb := []string{"ordersDb"}
 	return v1alpha1.CatalogItemSpec{
@@ -43,7 +34,7 @@ func devAppCatalogItemSpecWithCEL() v1alpha1.CatalogItemSpec {
 				ServiceType:       "container",
 				RequiresResources: &requiresOrdersDb,
 				Fields: &[]v1alpha1.FieldConfiguration{
-					{Path: "database_url", Default: "${ordersDb.connectionString}"},
+					{Path: "database_url", Default: "${ordersDb.connection_string}"},
 				},
 			},
 		},
@@ -69,14 +60,7 @@ var _ = Describe("CEL validation", func() {
 		svc, err = service.NewService(str, &mockPMClient{}, config.DefaultSeedConfig(), slog.Default())
 		Expect(err).ToNot(HaveOccurred())
 
-		ensureServiceTypeWithSpec(ctx, str, "db-cel", "database", serviceTypeSpecWithOutputs(
-			map[string]any{"engine": "postgres"},
-			map[string]any{"connectionString": map[string]any{"type": "string"}},
-		))
-		ensureServiceTypeWithSpec(ctx, str, "ctr-cel", "container", map[string]any{
-			"image":        map[string]any{"reference": "nginx"},
-			"database_url": "",
-		})
+		Expect(svc.Seed(ctx)).To(Succeed())
 	})
 
 	AfterEach(func() {
@@ -110,7 +94,7 @@ var _ = Describe("CEL validation", func() {
 	Describe("catalog item create", func() {
 		It("accepts field defaults containing CEL without validating references", func() {
 			spec := devAppCatalogItemSpecWithCEL()
-			(*spec.Resources[1].Fields)[0].Default = "${missingDb.connectionString}"
+			(*spec.Resources[1].Fields)[0].Default = "${missingDb.connection_string}"
 			req := &service.CreateCatalogItemRequest{
 				ApiVersion:  "v1alpha1",
 				DisplayName: "Deferred CEL",
@@ -132,7 +116,7 @@ var _ = Describe("CEL validation", func() {
 
 		It("rejects malformed CEL expressions during merge", func() {
 			spec := devAppCatalogItemSpecWithCEL()
-			(*spec.Resources[1].Fields)[0].Default = "prefix-${ordersDb.connectionString}"
+			(*spec.Resources[1].Fields)[0].Default = "prefix-${ordersDb.connection_string}"
 			catalogItemID := createCatalogItemWithSpec(spec)
 			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
 			Expect(err).To(HaveOccurred())
@@ -141,7 +125,7 @@ var _ = Describe("CEL validation", func() {
 
 		It("rejects CEL referencing unknown catalog resource during merge", func() {
 			spec := devAppCatalogItemSpecWithCEL()
-			(*spec.Resources[1].Fields)[0].Default = "${missingDb.connectionString}"
+			(*spec.Resources[1].Fields)[0].Default = "${missingDb.connection_string}"
 			catalogItemID := createCatalogItemWithSpec(spec)
 			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
 			Expect(err).To(HaveOccurred())
@@ -155,11 +139,13 @@ var _ = Describe("CEL validation", func() {
 			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, service.ErrCELServiceTypeOutputNotFound)).To(BeTrue())
+			Expect(err.Error()).To(ContainSubstring(`service type "database"`))
+			Expect(err.Error()).To(ContainSubstring(`connectionStrng`))
 		})
 
 		It("rejects CEL self-reference during merge", func() {
 			spec := devAppCatalogItemSpecWithCEL()
-			(*spec.Resources[0].Fields)[0].Default = "${ordersDb.connectionString}"
+			(*spec.Resources[0].Fields)[0].Default = "${ordersDb.connection_string}"
 			catalogItemID := createCatalogItemWithSpec(spec)
 			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
 			Expect(err).To(HaveOccurred())
@@ -170,14 +156,16 @@ var _ = Describe("CEL validation", func() {
 			ensureServiceTypeWithSpec(ctx, str, "db-no-out", "database-no-outputs", map[string]any{
 				"engine": "postgres",
 			})
+			requiresOrdersDb := []string{"ordersDb"}
 			spec := v1alpha1.CatalogItemSpec{
 				Resources: []v1alpha1.CatalogResource{
 					{Name: "ordersDb", ServiceType: "database-no-outputs"},
 					{
-						Name:        "app",
-						ServiceType: "container",
+						Name:              "app",
+						ServiceType:       "container",
+						RequiresResources: &requiresOrdersDb,
 						Fields: &[]v1alpha1.FieldConfiguration{
-							{Path: "database_url", Default: "${ordersDb.connectionString}"},
+							{Path: "database_url", Default: "${ordersDb.connection_string}"},
 						},
 					},
 				},
@@ -186,6 +174,27 @@ var _ = Describe("CEL validation", func() {
 			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, service.ErrCELServiceTypeOutputNotFound)).To(BeTrue())
+		})
+
+		It("rejects CEL referencing a resource not listed in requires_resources", func() {
+			spec := v1alpha1.CatalogItemSpec{
+				Resources: []v1alpha1.CatalogResource{
+					{Name: "ordersDb", ServiceType: "database", Fields: &[]v1alpha1.FieldConfiguration{
+						{Path: "engine", Default: "postgres"},
+					}},
+					{
+						Name:        "app",
+						ServiceType: "container",
+						Fields: &[]v1alpha1.FieldConfiguration{
+							{Path: "database_url", Default: "${ordersDb.connection_string}"},
+						},
+					},
+				},
+			}
+			catalogItemID := createCatalogItemWithSpec(spec)
+			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrCELRequiresResourceMissing)).To(BeTrue())
 		})
 
 		It("accepts CEL user_values on editable fields and overrides the default", func() {
@@ -199,7 +208,7 @@ var _ = Describe("CEL validation", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: catalogItemID,
 					UserValues: []v1alpha1.UserValue{
-						{Resource: "app", Path: "database_url", Value: "${ordersDb.connectionString}"},
+						{Resource: "app", Path: "database_url", Value: "${ordersDb.connection_string}"},
 					},
 				},
 			}
@@ -210,6 +219,7 @@ var _ = Describe("CEL validation", func() {
 
 		It("accepts CEL user_values referencing another catalog resource", func() {
 			editable := true
+			requiresDBs := []string{"ordersDb", "myOrdersDb"}
 			spec := v1alpha1.CatalogItemSpec{
 				Resources: []v1alpha1.CatalogResource{
 					{Name: "ordersDb", ServiceType: "database", Fields: &[]v1alpha1.FieldConfiguration{
@@ -219,10 +229,11 @@ var _ = Describe("CEL validation", func() {
 						{Path: "engine", Default: "postgres"},
 					}},
 					{
-						Name:        "app",
-						ServiceType: "container",
+						Name:              "app",
+						ServiceType:       "container",
+						RequiresResources: &requiresDBs,
 						Fields: &[]v1alpha1.FieldConfiguration{
-							{Path: "database_url", Default: "${ordersDb.connectionString}", Editable: &editable},
+							{Path: "database_url", Default: "${ordersDb.connection_string}", Editable: &editable},
 						},
 					},
 				},
@@ -234,7 +245,7 @@ var _ = Describe("CEL validation", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: catalogItemID,
 					UserValues: []v1alpha1.UserValue{
-						{Resource: "app", Path: "database_url", Value: "${myOrdersDb.connectionString}"},
+						{Resource: "app", Path: "database_url", Value: "${myOrdersDb.connection_string}"},
 					},
 				},
 			}
@@ -246,7 +257,7 @@ var _ = Describe("CEL validation", func() {
 			graph, err := builder.BuildResourceGraph(ctx, catalogItemID, req.Spec.UserValues)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(graph).To(HaveLen(3))
-			Expect(graph[2].Spec["database_url"]).To(Equal("${myOrdersDb.connectionString}"))
+			Expect(graph[2].Spec["database_url"]).To(Equal("${myOrdersDb.connection_string}"))
 		})
 
 		It("rejects CEL user_values on non-editable fields", func() {
@@ -257,7 +268,7 @@ var _ = Describe("CEL validation", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: catalogItemID,
 					UserValues: []v1alpha1.UserValue{
-						{Resource: "app", Path: "database_url", Value: "${ordersDb.connectionString}"},
+						{Resource: "app", Path: "database_url", Value: "${ordersDb.connection_string}"},
 					},
 				},
 			}
@@ -277,13 +288,65 @@ var _ = Describe("CEL validation", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: catalogItemID,
 					UserValues: []v1alpha1.UserValue{
-						{Resource: "app", Path: "database_url", Value: "${missingDb.connectionString}"},
+						{Resource: "app", Path: "database_url", Value: "${missingDb.connection_string}"},
 					},
 				},
 			}
 			_, err := svc.CatalogItemInstance().Create(ctx, req)
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, service.ErrCELResourceNotFound)).To(BeTrue())
+		})
+
+		It("accepts nested and indexed CEL output paths during merge", func() {
+			ensureServiceTypeWithSpec(ctx, str, "vm-ip-st", "vm-with-ip", map[string]any{
+				"ip": []any{
+					map[string]any{"address": "", "port": 0, "scope": ""},
+				},
+			})
+			requiresVM := []string{"myVm"}
+			spec := v1alpha1.CatalogItemSpec{
+				Resources: []v1alpha1.CatalogResource{
+					{Name: "myVm", ServiceType: "vm-with-ip"},
+					{
+						Name:              "app",
+						ServiceType:       "container",
+						RequiresResources: &requiresVM,
+						Fields: &[]v1alpha1.FieldConfiguration{
+							{Path: "host", Default: "${myVm.ip[0].address}"},
+						},
+					},
+				},
+			}
+			catalogItemID := createCatalogItemWithSpec(spec)
+			result, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).ToNot(BeNil())
+		})
+
+		It("rejects indexed CEL paths that do not exist on the service type template", func() {
+			ensureServiceTypeWithSpec(ctx, str, "vm-ip-st-missing", "vm-with-ip-missing", map[string]any{
+				"ip": []any{
+					map[string]any{"address": "", "port": 0, "scope": ""},
+				},
+			})
+			requiresVM := []string{"myVm"}
+			spec := v1alpha1.CatalogItemSpec{
+				Resources: []v1alpha1.CatalogResource{
+					{Name: "myVm", ServiceType: "vm-with-ip-missing"},
+					{
+						Name:              "app",
+						ServiceType:       "container",
+						RequiresResources: &requiresVM,
+						Fields: &[]v1alpha1.FieldConfiguration{
+							{Path: "host", Default: "${myVm.ip[0].missing}"},
+						},
+					},
+				},
+			}
+			catalogItemID := createCatalogItemWithSpec(spec)
+			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrCELServiceTypeOutputNotFound)).To(BeTrue())
 		})
 	})
 
@@ -304,7 +367,7 @@ var _ = Describe("CEL validation", func() {
 							ServiceType:       "container",
 							RequiresResources: []string{"ordersDb"},
 							Fields: []model.FieldConfiguration{
-								{Path: "database_url", Default: "${ordersDb.connectionString}"},
+								{Path: "database_url", Default: "${ordersDb.connection_string}"},
 							},
 						},
 					},
@@ -317,7 +380,7 @@ var _ = Describe("CEL validation", func() {
 			graph, err := builder.BuildResourceGraph(ctx, "graph-cel", nil)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(graph).To(HaveLen(2))
-			Expect(graph[1].Spec["database_url"]).To(Equal("${ordersDb.connectionString}"))
+			Expect(graph[1].Spec["database_url"]).To(Equal("${ordersDb.connection_string}"))
 		})
 	})
 })

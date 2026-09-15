@@ -13,11 +13,26 @@ import (
 
 // ClusterSpec defines model for ClusterSpec.
 type ClusterSpec struct {
+	// ApiEndpoint Kubernetes API server endpoint for the provisioned cluster.
+	// Empty until the cluster is ready.
+	ApiEndpoint *string `json:"api_endpoint,omitempty"`
+
+	// ConsoleUrl Web console URL for the provisioned cluster.
+	// Empty until the cluster is ready.
+	ConsoleUrl *string `json:"console_url,omitempty"`
+
 	// CreateTime Timestamp when the resource was created (RFC 3339)
 	CreateTime *time.Time `json:"create_time,omitempty"`
 
 	// Id Unique identifier for the resource.
 	Id *string `json:"id,omitempty"`
+
+	// Kubeconfig Base64-encoded kubeconfig granting admin access to the
+	// provisioned cluster.
+	//
+	// Empty while the cluster is provisioning or has failed.
+	// Populated when the cluster reaches a ready state.
+	Kubeconfig *string `json:"kubeconfig,omitempty"`
 
 	// Metadata Resource metadata for identification and governance.
 	// Used by all service type specifications.
@@ -100,6 +115,22 @@ func (a *ClusterSpec) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
+	if raw, found := object["api_endpoint"]; found {
+		err = json.Unmarshal(raw, &a.ApiEndpoint)
+		if err != nil {
+			return fmt.Errorf("error reading 'api_endpoint': %w", err)
+		}
+		delete(object, "api_endpoint")
+	}
+
+	if raw, found := object["console_url"]; found {
+		err = json.Unmarshal(raw, &a.ConsoleUrl)
+		if err != nil {
+			return fmt.Errorf("error reading 'console_url': %w", err)
+		}
+		delete(object, "console_url")
+	}
+
 	if raw, found := object["create_time"]; found {
 		err = json.Unmarshal(raw, &a.CreateTime)
 		if err != nil {
@@ -114,6 +145,14 @@ func (a *ClusterSpec) UnmarshalJSON(b []byte) error {
 			return fmt.Errorf("error reading 'id': %w", err)
 		}
 		delete(object, "id")
+	}
+
+	if raw, found := object["kubeconfig"]; found {
+		err = json.Unmarshal(raw, &a.Kubeconfig)
+		if err != nil {
+			return fmt.Errorf("error reading 'kubeconfig': %w", err)
+		}
+		delete(object, "kubeconfig")
 	}
 
 	if raw, found := object["metadata"]; found {
@@ -215,6 +254,20 @@ func (a ClusterSpec) MarshalJSON() ([]byte, error) {
 	var err error
 	object := make(map[string]json.RawMessage)
 
+	if a.ApiEndpoint != nil {
+		object["api_endpoint"], err = json.Marshal(a.ApiEndpoint)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'api_endpoint': %w", err)
+		}
+	}
+
+	if a.ConsoleUrl != nil {
+		object["console_url"], err = json.Marshal(a.ConsoleUrl)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'console_url': %w", err)
+		}
+	}
+
 	if a.CreateTime != nil {
 		object["create_time"], err = json.Marshal(a.CreateTime)
 		if err != nil {
@@ -226,6 +279,13 @@ func (a ClusterSpec) MarshalJSON() ([]byte, error) {
 		object["id"], err = json.Marshal(a.Id)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'id': %w", err)
+		}
+	}
+
+	if a.Kubeconfig != nil {
+		object["kubeconfig"], err = json.Marshal(a.Kubeconfig)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'kubeconfig': %w", err)
 		}
 	}
 

@@ -9,7 +9,6 @@ import (
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1"
 	"github.com/dcm-project/control-plane/internal/catalog/store"
 	"github.com/dcm-project/control-plane/internal/catalog/store/model"
-	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -22,7 +21,6 @@ type ResolvedResource struct {
 	ServiceType       string
 	RequiresResources []string
 	Spec              map[string]any
-	ResourceId        string
 }
 
 // specBuilder resolves the reference chain and constructs the final resource spec
@@ -37,8 +35,6 @@ func newSpecBuilder(store store.Store) *specBuilder {
 
 // BuildResourceGraph resolves a catalog item to an effective resource graph.
 // Each node includes merged specs and requires_resources edges for placement.
-// Resource order matches catalog item order; DAG sort and level-by-level provisioning
-// are placement's responsibility.
 func (b *specBuilder) BuildResourceGraph(ctx context.Context, catalogItemId string, userValues []v1alpha1.UserValue) ([]ResolvedResource, error) {
 	// 1. Look up CatalogItem
 	catalogItem, err := b.store.CatalogItem().Get(ctx, catalogItemId)
@@ -68,7 +64,6 @@ func (b *specBuilder) BuildResourceGraph(ctx context.Context, catalogItemId stri
 			ServiceType:       resource.ServiceType,
 			RequiresResources: append([]string(nil), resource.RequiresResources...),
 			Spec:              specMap,
-			ResourceId:        uuid.New().String(),
 		})
 	}
 	return out, nil

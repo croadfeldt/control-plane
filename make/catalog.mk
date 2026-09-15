@@ -70,6 +70,12 @@ generate-catalog-service-types:
 		--import-mapping=../common.yaml:$(CATALOG_SERVICETYPES_MODULE) \
 		-o $(CATALOG_API)/servicetypes/storage/types.gen.go \
 		$(CATALOG_API)/servicetypes/storage/spec.yaml
+	@echo "Generating Network types..."
+	go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
+		--config=$(CATALOG_API)/servicetypes/network/spec.gen.cfg \
+		--import-mapping=../common.yaml:$(CATALOG_SERVICETYPES_MODULE) \
+		-o $(CATALOG_API)/servicetypes/network/types.gen.go \
+		$(CATALOG_API)/servicetypes/network/spec.yaml
 	@echo "Generating Three-Tier App Demo types..."
 	go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
 		--config=$(CATALOG_API)/servicetypes/three_tier_app_demo/spec.gen.cfg \

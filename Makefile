@@ -13,9 +13,12 @@ $(error No supported container engine found. Please install podman or docker, or
 endif
 
 COMPOSE_FILE := deploy/compose.yaml
+COMPOSE_ENV_FILE := deploy/.env
+COMPOSE_DEPLOY := $(COMPOSE) --env-file $(COMPOSE_ENV_FILE) -f $(COMPOSE_FILE)
 COMPOSE_PROJECT_NAME ?= control-plane
 COMPOSE_NETWORK := $(COMPOSE_PROJECT_NAME)_default
-PROFILES ?= providers
+PROFILES ?=
+AUTH ?=
 
 COMPOSE ?= $(shell command -v podman-compose >/dev/null 2>&1 && echo podman-compose || \
 	(command -v docker-compose >/dev/null 2>&1 && echo docker-compose || \
@@ -26,15 +29,22 @@ export COMPOSE_PROJECT_NAME
 CONTAINER_IMAGE_NAME ?= quay.io/dcm-project/$(BINARY_NAME)
 CONTAINER_IMAGE_TAG ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 
+include make/helm.mk
+include make/auth.mk
 include make/catalog.mk
 include make/placement.mk
 include make/policy.mk
 include make/sp.mk
+include make/agent.mk
+include make/gitops.mk
 
 # Same as Containerfile: static build, no CGO (Postgres in prod/compose).
 # For SQLite local dev use make run (go run with CGO).
 build:
-	CGO_ENABLED=0 go build -buildvcs=false -o bin/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
+	CGO_ENABLED=1 go build -buildvcs=false -o bin/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
+
+build-gitops:
+	CGO_ENABLED=0 go build -buildvcs=false -o bin/dcm-gitops ./cmd/dcm-gitops
 
 # Regenerate the service-type OpenAPI specs from the UDLM registry (single source
 # of truth), then regenerate their Go types. Point UDLM_DIR at a croadfeldt/udlm
@@ -64,12 +74,14 @@ run-dev:
 	go run ./cmd/$(BINARY_NAME)
 
 # Platform stack: Postgres, NATS, control-plane, and dcm-ui (see deploy/compose.yaml).
+# Optional: AUTH=true to also start Keycloak (uncomment auth vars in deploy/.env first).
 compose-up:
-	$(COMPOSE) -f $(COMPOSE_FILE) up -d --build
+	$(COMPOSE_DEPLOY) $(if $(filter true,$(AUTH)),--profile auth,) up -d --build
 
 # Platform stack with optional service providers (see deploy/RUN.md).
+# Optional: AUTH=true to also start Keycloak.
 compose-up-with-providers:
-	$(COMPOSE) -f $(COMPOSE_FILE) --profile $(PROFILES) up -d --build
+	$(COMPOSE_DEPLOY) $(if $(filter true,$(AUTH)),--profile auth,) --profile $(or $(PROFILES),providers) up -d --build
 
 # Tear down the compose stack. Kind (or other externals) joined to the compose
 # network block "compose down" from removing it — disconnect them first.
@@ -90,8 +102,8 @@ compose-down:
 			fi; \
 		fi; \
 	done; \
-	COMPOSE_PROJECT_NAME=deploy $(COMPOSE) -f $(COMPOSE_FILE) down -v --remove-orphans 2>/dev/null || true; \
-	$(COMPOSE) -f $(COMPOSE_FILE) down -v --remove-orphans; \
+	COMPOSE_PROJECT_NAME=deploy $(COMPOSE_DEPLOY) down -v --remove-orphans 2>/dev/null || true; \
+	$(COMPOSE_DEPLOY) down -v --remove-orphans; \
 	for network in deploy_default $(COMPOSE_NETWORK); do \
 		if [ "$(CONTAINER_ENGINE)" = podman ]; then \
 			podman network rm -f "$$network" 2>/dev/null || true; \
@@ -117,6 +129,12 @@ GOLANGCI_LINT_VERSION ?= v2.12.2
 GINKGO := go run github.com/onsi/ginkgo/v2/ginkgo
 GINKGO_FLAGS := -r --randomize-all --fail-on-pending
 
+# Subsystem compose stacks read credentials from gitignored test/subsystem/.env.
+subsystem-env:
+	@test -f test/subsystem/.env || cp test/subsystem/.env.example test/subsystem/.env
+
+auth-subsystem-test-up catalog-subsystem-test-up policy-subsystem-test-up sp-subsystem-test-up: subsystem-env
+
 lint:
 	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run ./...
 
@@ -126,5 +144,6 @@ test:
 tidy:
 	go mod tidy
 
-.PHONY: build generate run run-dev compose-up compose-up-with-providers compose-down image-build \
-	clean fmt vet lint test test-catalog test-placement test-policy test-sp tidy
+.PHONY: build build-gitops generate run run-dev compose-up compose-up-with-providers compose-down image-build \
+	clean fmt vet lint test test-catalog test-placement test-policy test-sp test-gitops tidy subsystem-env \
+	helm-chart-sync helm-chart-verify-sync helm-chart-verify-admin-subject helm-chart-verify helm-chart-verify-schema helm-chart-lint helm-chart-template helm-chart-check

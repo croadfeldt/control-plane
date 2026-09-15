@@ -8,22 +8,21 @@ import (
 // convertServerToAPI converts a server ServiceTypeInstance to an API ServiceTypeInstance.
 func convertServerToAPI(src *server.ServiceTypeInstance) *resource_manager.ServiceTypeInstance {
 	return &resource_manager.ServiceTypeInstance{
-		Id:           src.Id,
-		ProviderName: src.ProviderName,
-		Spec:         src.Spec,
+		Id:   src.Id,
+		Spec: src.Spec,
 	}
 }
 
 // convertAPIToServer converts an API ServiceTypeInstance to a server ServiceTypeInstance.
 func convertAPIToServer(src *resource_manager.ServiceTypeInstance) server.ServiceTypeInstance {
 	result := server.ServiceTypeInstance{
-		Id:           src.Id,
-		Path:         src.Path,
-		ProviderName: src.ProviderName,
-		Status:       src.Status,
-		Spec:         src.Spec,
-		CreateTime:   src.CreateTime,
-		UpdateTime:   src.UpdateTime,
+		Id:         src.Id,
+		Path:       src.Path,
+		AgentName:  src.AgentName,
+		Status:     src.Status,
+		Spec:       src.Spec,
+		CreateTime: src.CreateTime,
+		UpdateTime: src.UpdateTime,
 	}
 
 	if src.DeletionStatus != nil {

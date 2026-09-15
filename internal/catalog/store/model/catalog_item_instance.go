@@ -13,6 +13,8 @@ type CatalogItemInstance struct {
 	Path        string                  `gorm:"column:path;not null"`
 	CreateTime  time.Time               `gorm:"column:create_time;autoCreateTime"`
 	UpdateTime  time.Time               `gorm:"column:update_time;autoUpdateTime"`
+	// RunID is the Placement run id
+	RunID string `gorm:"column:run_id"`
 
 	// Indexed field for filtering
 	SpecCatalogItemId string       `gorm:"column:spec_catalog_item_id;not null;index"`
@@ -26,8 +28,6 @@ type CatalogItemInstanceList []CatalogItemInstance
 type CatalogItemInstanceSpec struct {
 	CatalogItemId string      `json:"catalog_item_id"`
 	UserValues    []UserValue `json:"user_values"`
-	// ResourceIDs stores placement resource IDs for multi-resource instances (all nodes).
-	ResourceIDs []string `json:"resource_ids,omitempty"`
 }
 
 // UserValue represents a user-provided value for a field

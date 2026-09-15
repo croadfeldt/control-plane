@@ -11,25 +11,16 @@ import (
 )
 
 type Config struct {
-	Database    *DBConfig
-	Service     *ServiceConfig
-	HealthCheck *HealthCheckConfig
-	NATS        *NATSConfig
-	Cleanup     *CleanupConfig
+	Database *DBConfig
+	Service  *ServiceConfig
+	NATS     *NATSConfig
+	Cleanup  *CleanupConfig
 }
 
 type CleanupConfig struct {
 	Interval   time.Duration `envconfig:"CLEANUP_INTERVAL" default:"1m"`
 	MaxRetries int           `envconfig:"CLEANUP_MAX_RETRIES" default:"10"`
 	Timeout    time.Duration `envconfig:"CLEANUP_TIMEOUT" default:"10s"`
-}
-
-type HealthCheckConfig struct {
-	Interval               time.Duration `envconfig:"HEALTH_CHECK_INTERVAL" default:"10s"`
-	Timeout                time.Duration `envconfig:"HEALTH_CHECK_TIMEOUT" default:"5s"`
-	MaxConsecutiveFailures int           `envconfig:"HEALTH_CHECK_MAX_CONSECUTIVE_FAILURES" default:"3"`
-	BaseBackoffInterval    time.Duration `envconfig:"HEALTH_CHECK_BASE_BACKOFF_INTERVAL" default:"10s"`
-	MaxBackoffInterval     time.Duration `envconfig:"HEALTH_CHECK_MAX_BACKOFF_INTERVAL" default:"5m"`
 }
 
 type DBConfig struct {

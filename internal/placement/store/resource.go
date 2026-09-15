@@ -15,25 +15,34 @@ var (
 	ErrResourceIdExist  = errors.New("resource with id already exists")
 )
 
-// ResourceListOptions contains optional fields for listing requests.
+// ResourceListOptions contains optional fields for listing runs.
 type ResourceListOptions struct {
-	ProviderName *string
-	PageSize     int
-	PageToken    *string
+	AgentName *string
+	PageSize  int
+	PageToken *string
 }
 
-// ResourceListResult contains the result of a List operation.
+// ResourceListResult contains resources for a page of runs (complete sets per run_id).
+// PageSize is the number of runs; Resources may contain more rows than PageSize.
 type ResourceListResult struct {
 	Resources     model.ResourceList
 	NextPageToken *string
 }
 
 // Resource defines the repository interface for Resource operations
-type Resource interface {
-	List(ctx context.Context, opts *ResourceListOptions) (*ResourceListResult, error)
+type Resource interface { //nolint:interfacebloat
+	ListRun(ctx context.Context, opts *ResourceListOptions) (*ResourceListResult, error)
 	Create(ctx context.Context, request model.Resource) (*model.Resource, error)
+	CreateBatch(ctx context.Context, resources []model.Resource) ([]model.Resource, error)
 	Delete(ctx context.Context, id string) error
 	Get(ctx context.Context, id string) (*model.Resource, error)
+	ListByRunID(ctx context.Context, runID string) (model.ResourceList, error)
+	DeleteByRunID(ctx context.Context, runID string) error
+	UpdateRunID(ctx context.Context, oldRunID, newRunID string) error
+	UpdateStatus(ctx context.Context, id, status string) error
+	UpdateStatusByRunID(ctx context.Context, runID, status string) error
+	UpdateAgentName(ctx context.Context, id string, agentName string) error
+	UpdatePlacementDecision(ctx context.Context, id, agentName, approval string) error
 }
 
 type ResourceStore struct {
@@ -47,10 +56,9 @@ func NewResource(db *gorm.DB) Resource {
 	return &ResourceStore{db: db}
 }
 
-func (s *ResourceStore) List(ctx context.Context, opts *ResourceListOptions) (*ResourceListResult, error) {
-	var requests model.ResourceList
-	query := s.db.WithContext(ctx)
-
+// ListRun paginates by distinct run_id, then loads the full resource set for each
+// run on the page. PageSize is the number of runs, not resource rows.
+func (s *ResourceStore) ListRun(ctx context.Context, opts *ResourceListOptions) (*ResourceListResult, error) {
 	// Default page size
 	pageSize := 100
 	if opts != nil && opts.PageSize > 0 {
@@ -63,49 +71,74 @@ func (s *ResourceStore) List(ctx context.Context, opts *ResourceListOptions) (*R
 		offset = decodePageToken(opts.PageToken)
 	}
 
+	query := s.db.WithContext(ctx).Model(&model.Resource{})
+
 	// Apply filters
-	if opts != nil {
-		if opts.ProviderName != nil && *opts.ProviderName != "" {
-			query = query.Where("provider_name = ?", *opts.ProviderName)
-		}
+	if opts != nil && opts.AgentName != nil && strings.TrimSpace(*opts.AgentName) != "" {
+		query = query.Where("agent_name = ?", *opts.AgentName)
 	}
 
-	// Apply consistent ordering for pagination
-	query = query.Order("create_time ASC, id ASC")
-
-	// Query with limit+1 to detect if there are more results
-	query = query.Limit(pageSize + 1).Offset(offset)
-
-	if err := query.Find(&requests).Error; err != nil {
+	// Page distinct run_ids (limit+1 to detect if there are more results).
+	var runIDs []string
+	if err := query.
+		// Session: allows reuse of the original query when loading resources
+		Session(&gorm.Session{}).
+		Distinct("run_id").
+		Order("run_id ASC").
+		Limit(pageSize+1).
+		Offset(offset).
+		// Pluck: select run_id column into []string
+		Pluck("run_id", &runIDs).Error; err != nil {
 		return nil, err
 	}
 
-	// Build result with next page token if needed
-	result := &ResourceListResult{
-		Resources:     requests,
-		NextPageToken: generateNextPageToken(len(requests), pageSize, offset),
+	// Build next page token before trimming to page size
+	nextToken := generateNextPageToken(len(runIDs), pageSize, offset)
+	if len(runIDs) > pageSize {
+		runIDs = runIDs[:pageSize]
 	}
 
-	// Trim to requested page size if we got limit+1 results
-	if len(requests) > pageSize {
-		result.Resources = requests[:pageSize]
+	var resources model.ResourceList
+	if len(runIDs) > 0 {
+		if err := query.
+			Where("run_id IN ?", runIDs).
+			Order("run_id ASC, dag_level ASC, name ASC, id ASC").
+			Find(&resources).Error; err != nil {
+			return nil, err
+		}
 	}
 
-	return result, nil
+	return &ResourceListResult{
+		Resources:     resources,
+		NextPageToken: nextToken,
+	}, nil
 }
 
 func (s *ResourceStore) Create(ctx context.Context, request model.Resource) (*model.Resource, error) {
 	if err := s.db.WithContext(ctx).Clauses(clause.Returning{}).Create(&request).Error; err != nil {
-		// Check for duplicate key errors (PostgreSQL, MySQL, SQLite)
-		errMsg := err.Error()
-		if errors.Is(err, gorm.ErrDuplicatedKey) ||
-			strings.Contains(errMsg, "UNIQUE constraint") ||
-			strings.Contains(errMsg, "duplicate key") {
-			return nil, ErrResourceIdExist
-		}
-		return nil, err
+		return nil, mapResourceCreateError(err)
 	}
 	return &request, nil
+}
+
+func (s *ResourceStore) CreateBatch(ctx context.Context, resources []model.Resource) ([]model.Resource, error) {
+	if len(resources) == 0 {
+		return nil, nil
+	}
+	if err := s.db.WithContext(ctx).Clauses(clause.Returning{}).Create(&resources).Error; err != nil {
+		return nil, mapResourceCreateError(err)
+	}
+	return resources, nil
+}
+
+func mapResourceCreateError(err error) error {
+	errMsg := err.Error()
+	if errors.Is(err, gorm.ErrDuplicatedKey) ||
+		strings.Contains(errMsg, "UNIQUE constraint") ||
+		strings.Contains(errMsg, "duplicate key") {
+		return ErrResourceIdExist
+	}
+	return err
 }
 
 func (s *ResourceStore) Delete(ctx context.Context, id string) error {
@@ -128,4 +161,94 @@ func (s *ResourceStore) Get(ctx context.Context, id string) (*model.Resource, er
 		return nil, err
 	}
 	return &request, nil
+}
+
+func (s *ResourceStore) ListByRunID(ctx context.Context, runID string) (model.ResourceList, error) {
+	var resources model.ResourceList
+	if err := s.db.WithContext(ctx).
+		Where("run_id = ?", runID).
+		Order("dag_level ASC, name ASC, id ASC").
+		Find(&resources).Error; err != nil {
+		return nil, err
+	}
+	return resources, nil
+}
+
+func (s *ResourceStore) DeleteByRunID(ctx context.Context, runID string) error {
+	result := s.db.WithContext(ctx).Where("run_id = ?", runID).Delete(&model.Resource{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrResourceNotFound
+	}
+	return nil
+}
+
+func (s *ResourceStore) UpdateRunID(ctx context.Context, oldRunID, newRunID string) error {
+	result := s.db.WithContext(ctx).Model(&model.Resource{}).
+		Where("run_id = ?", oldRunID).
+		Update("run_id", newRunID)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrResourceNotFound
+	}
+	return nil
+}
+
+func (s *ResourceStore) UpdateStatus(ctx context.Context, id, status string) error {
+	result := s.db.WithContext(ctx).Model(&model.Resource{}).
+		Where("id = ?", id).
+		Update("status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrResourceNotFound
+	}
+	return nil
+}
+
+func (s *ResourceStore) UpdateStatusByRunID(ctx context.Context, runID, status string) error {
+	result := s.db.WithContext(ctx).Model(&model.Resource{}).
+		Where("run_id = ?", runID).
+		Update("status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrResourceNotFound
+	}
+	return nil
+}
+
+// UpdateAgentName updates the agent_name column for observability after the
+// self-healing loop re-routes a resource to a different agent.
+func (s *ResourceStore) UpdateAgentName(ctx context.Context, id string, agentName string) error {
+	result := s.db.WithContext(ctx).Model(&model.Resource{}).Where("id = ?", id).Update("agent_name", agentName)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrResourceNotFound
+	}
+	return nil
+}
+
+func (s *ResourceStore) UpdatePlacementDecision(ctx context.Context, id, agentName, approval string) error {
+	result := s.db.WithContext(ctx).Model(&model.Resource{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"agent_name":      agentName,
+			"approval_status": approval,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrResourceNotFound
+	}
+	return nil
 }

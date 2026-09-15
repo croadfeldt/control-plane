@@ -27,7 +27,7 @@ var _ = Describe("OpenAPI request validation", func() {
 		It("bypasses domain validators", func() {
 			router := chi.NewRouter()
 			router.Use(validators.middleware())
-			registerMonolithHealth(router)
+			registerMonolithHealth(router, stubChecker{name: "database"})
 
 			req := httptest.NewRequest(http.MethodGet, auth.MonolithHealthPath, nil)
 			rec := httptest.NewRecorder()
@@ -63,12 +63,6 @@ var _ = Describe("OpenAPI request validation", func() {
 	Describe("catalog routes", func() {
 		It("rejects malformed JSON on POST /catalog-items", func() {
 			expectInvalidJSONRejected(validators, "/api/v1alpha1/catalog-items")
-		})
-	})
-
-	Describe("SP provider routes", func() {
-		It("rejects malformed JSON on POST /providers", func() {
-			expectInvalidJSONRejected(validators, "/api/v1alpha1/providers")
 		})
 	})
 

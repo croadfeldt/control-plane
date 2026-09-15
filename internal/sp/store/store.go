@@ -3,20 +3,17 @@ package store
 
 import (
 	"github.com/cenkalti/backoff/v5"
-	providerstore "github.com/dcm-project/control-plane/internal/sp/store/provider"
 	rmstore "github.com/dcm-project/control-plane/internal/sp/store/resource_manager"
 	"gorm.io/gorm"
 )
 
 type Store interface {
 	Close() error
-	Provider() providerstore.Provider
 	ServiceTypeInstance() rmstore.ServiceTypeInstance
 }
 
 type DataStore struct {
 	db       *gorm.DB
-	provider providerstore.Provider
 	instance rmstore.ServiceTypeInstance
 }
 
@@ -48,7 +45,6 @@ func NewStore(db *gorm.DB, opts ...StoreOption) Store {
 	}
 	return &DataStore{
 		db:       db,
-		provider: providerstore.NewProvider(db),
 		instance: instance,
 	}
 }
@@ -59,10 +55,6 @@ func (s *DataStore) Close() error {
 		return err
 	}
 	return sqlDB.Close()
-}
-
-func (s *DataStore) Provider() providerstore.Provider {
-	return s.provider
 }
 
 func (s *DataStore) ServiceTypeInstance() rmstore.ServiceTypeInstance {

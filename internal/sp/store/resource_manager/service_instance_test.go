@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 
+	agentmodel "github.com/dcm-project/control-plane/internal/agent/store/model"
 	"github.com/dcm-project/control-plane/internal/sp/store/model"
 	rmstore "github.com/dcm-project/control-plane/internal/sp/store/resource_manager"
 	"github.com/dcm-project/control-plane/internal/sp/testutil"
@@ -14,23 +15,26 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-func newServiceTypeInstance(providerName, instanceName string, spec map[string]any) model.ServiceTypeInstance {
+func newServiceTypeInstance(instanceName string, spec map[string]any) model.ServiceTypeInstance {
 	return model.ServiceTypeInstance{
 		ID:           uuid.New().String(),
-		ProviderName: providerName,
 		Status:       "PROVISIONING",
 		InstanceName: instanceName,
 		Spec:         spec,
 	}
 }
 
-func newServiceTypeInstanceWithType(providerName, instanceName, serviceType string, spec map[string]any) model.ServiceTypeInstance {
-	inst := newServiceTypeInstance(providerName, instanceName, spec)
+func newServiceTypeInstanceWithType(instanceName, serviceType string, spec map[string]any) model.ServiceTypeInstance {
+	inst := newServiceTypeInstance(instanceName, spec)
 	inst.ServiceType = serviceType
 	return inst
 }
 
-var kubevirtProvider = "kubevirt-sp"
+func newServiceTypeInstanceWithAgent(instanceName, agentName string, spec map[string]any) model.ServiceTypeInstance {
+	inst := newServiceTypeInstance(instanceName, spec)
+	inst.AgentName = &agentName
+	return inst
+}
 
 var _ = Describe("ServiceTypeInstance Store", func() {
 	var (
@@ -51,7 +55,7 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 			Logger: logger.Default.LogMode(logger.Silent),
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(db.AutoMigrate(&model.Provider{}, &model.ServiceTypeInstance{})).To(Succeed())
+		Expect(db.AutoMigrate(&agentmodel.Agent{}, &model.ServiceTypeInstance{})).To(Succeed())
 
 		s = rmstore.NewServiceTypeInstance(db, testutil.FastServiceTypeInstanceRetry()...)
 		ctx = context.Background()
@@ -66,7 +70,6 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 	Describe("Create", func() {
 		It("persists the instance", func() {
 			instance := newServiceTypeInstance(
-				kubevirtProvider,
 				"instance-1",
 				map[string]any{"cpu": 2})
 			created, err := s.Create(ctx, instance)
@@ -82,7 +85,6 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 			_ = sqlDB.Close()
 
 			instance := newServiceTypeInstance(
-				kubevirtProvider,
 				"retry-test",
 				map[string]any{"cpu": 1})
 
@@ -92,18 +94,26 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("database is closed"))
 		})
+
+		It("returns ErrInstanceConflict for duplicate ID without retrying forever", func() {
+			instance := newServiceTypeInstance("dup-inst", map[string]any{"cpu": 1})
+			_, err := s.Create(ctx, instance)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = s.Create(ctx, instance)
+			Expect(err).To(MatchError(rmstore.ErrInstanceConflict))
+		})
 	})
 
 	Describe("Get", func() {
 		It("retrieves by ID", func() {
-			seeded := newServiceTypeInstance(kubevirtProvider, "get-inst", map[string]any{"cpu": 1})
+			seeded := newServiceTypeInstance("get-inst", map[string]any{"cpu": 1})
 			addInstanceToStore(seeded)
 
 			found, err := s.Get(ctx, seeded.ID, false)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(found).NotTo(BeNil())
-			Expect(found.ProviderName).To(Equal(kubevirtProvider))
 			Expect(found.InstanceName).To(Equal("get-inst"))
 		})
 
@@ -115,9 +125,9 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 
 	Describe("List", func() {
 		BeforeEach(func() {
-			addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "instance1", map[string]any{}))
-			addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "instance2", map[string]any{}))
-			addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "instance3", map[string]any{}))
+			addInstanceToStore(newServiceTypeInstance("instance1", map[string]any{}))
+			addInstanceToStore(newServiceTypeInstance("instance2", map[string]any{}))
+			addInstanceToStore(newServiceTypeInstance("instance3", map[string]any{}))
 		})
 
 		It("returns all instances when opts is nil", func() {
@@ -125,14 +135,6 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Instances).To(HaveLen(3))
 			Expect(result.NextPageToken).To(BeNil())
-		})
-
-		It("filters by provider name", func() {
-			result, err := s.List(ctx, &rmstore.ServiceTypeInstanceListOptions{
-				ProviderName: &kubevirtProvider,
-			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Instances).To(HaveLen(3))
 		})
 
 		It("applies pagination with page size", func() {
@@ -147,8 +149,8 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 		It("filters by service type", func() {
 			vmType := "vm"
 			containerType := "container"
-			addInstanceToStore(newServiceTypeInstanceWithType(kubevirtProvider, "vm-inst", vmType, map[string]any{}))
-			addInstanceToStore(newServiceTypeInstanceWithType(kubevirtProvider, "container-inst", containerType, map[string]any{}))
+			addInstanceToStore(newServiceTypeInstanceWithType("vm-inst", vmType, map[string]any{}))
+			addInstanceToStore(newServiceTypeInstanceWithType("container-inst", containerType, map[string]any{}))
 
 			result, err := s.List(ctx, &rmstore.ServiceTypeInstanceListOptions{
 				ServiceType: &vmType,
@@ -163,6 +165,65 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Instances).To(HaveLen(1))
 			Expect(result.Instances[0].ServiceType).To(Equal("container"))
+		})
+
+		It("filters by agent name", func() {
+			addInstanceToStore(newServiceTypeInstanceWithAgent("agent-a-inst", "agent-a", map[string]any{}))
+			addInstanceToStore(newServiceTypeInstanceWithAgent("agent-b-inst", "agent-b", map[string]any{}))
+
+			agentA := "agent-a"
+			result, err := s.List(ctx, &rmstore.ServiceTypeInstanceListOptions{
+				AgentName: &agentA,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Instances).To(HaveLen(1))
+			Expect(*result.Instances[0].AgentName).To(Equal("agent-a"))
+		})
+
+		It("excludes instances with no agent name when filtering by agent name", func() {
+			addInstanceToStore(newServiceTypeInstanceWithAgent("agent-a-inst", "agent-a", map[string]any{}))
+			addInstanceToStore(newServiceTypeInstance("unassigned-inst", map[string]any{}))
+
+			agentA := "agent-a"
+			result, err := s.List(ctx, &rmstore.ServiceTypeInstanceListOptions{
+				AgentName: &agentA,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Instances).To(HaveLen(1))
+			Expect(*result.Instances[0].AgentName).To(Equal("agent-a"))
+		})
+
+		It("treats a blank agent name as no filter", func() {
+			addInstanceToStore(newServiceTypeInstanceWithAgent("agent-a-inst", "agent-a", map[string]any{}))
+			addInstanceToStore(newServiceTypeInstance("unassigned-inst", map[string]any{}))
+
+			blank := "   "
+			result, err := s.List(ctx, &rmstore.ServiceTypeInstanceListOptions{
+				AgentName: &blank,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			// 3 base instances from the outer BeforeEach + the 2 created above.
+			Expect(result.Instances).To(HaveLen(5))
+		})
+
+		It("combines service type and agent name filters with AND semantics", func() {
+			vmType, containerType := "vm", "container"
+			agentA, agentB := "agent-a", "agent-b"
+			vmAgentA := newServiceTypeInstanceWithType("vm-agent-a", vmType, map[string]any{})
+			vmAgentA.AgentName = &agentA
+			addInstanceToStore(vmAgentA)
+			vmAgentB := newServiceTypeInstanceWithType("vm-agent-b", vmType, map[string]any{})
+			vmAgentB.AgentName = &agentB
+			addInstanceToStore(vmAgentB)
+			addInstanceToStore(newServiceTypeInstanceWithType("container-agent-a", containerType, map[string]any{}))
+
+			result, err := s.List(ctx, &rmstore.ServiceTypeInstanceListOptions{
+				ServiceType: &vmType,
+				AgentName:   &agentA,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Instances).To(HaveLen(1))
+			Expect(result.Instances[0].InstanceName).To(Equal("vm-agent-a"))
 		})
 
 		It("returns next page using page token", func() {
@@ -187,7 +248,7 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 
 	Describe("HardDelete", func() {
 		It("removes the instance", func() {
-			instance := newServiceTypeInstance(kubevirtProvider, "to-delete", map[string]any{})
+			instance := newServiceTypeInstance("to-delete", map[string]any{})
 			addInstanceToStore(instance)
 
 			Expect(s.HardDelete(ctx, instance.ID)).To(Succeed())
@@ -210,12 +271,33 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 		})
 	})
 
-	Describe("UpdateStatus", func() {
-		It("updates status and status message by instance ID", func() {
-			instance := newServiceTypeInstance(kubevirtProvider, "status-inst", map[string]any{"cpu": "2"})
+	// AC-08 (TC-11): the plain, unconditional variant used by internal
+	// (non-CE-driven) callers - no agent_name gating - must keep working
+	// exactly as before this fix, independent of the *FromAgent sibling.
+	Describe("MarkDeletionComplete", func() {
+		It("sets deletion_status to DELETED regardless of agent_name", func() {
+			instance := newServiceTypeInstance("soft-delete-plain", map[string]any{})
 			addInstanceToStore(instance)
 
-			err := s.UpdateStatus(ctx, instance.ID, "RUNNING", "VM is running")
+			Expect(s.MarkDeletionComplete(ctx, instance.ID)).To(Succeed())
+
+			found, err := s.Get(ctx, instance.ID, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(*found.DeletionStatus).To(Equal("DELETED"))
+		})
+
+		It("returns ErrInstanceNotFound for a genuinely missing ID", func() {
+			err := s.MarkDeletionComplete(ctx, uuid.New().String())
+			Expect(err).To(MatchError(rmstore.ErrInstanceNotFound))
+		})
+	})
+
+	Describe("UpdateStatus", func() {
+		It("updates status and status message by instance ID", func() {
+			instance := newServiceTypeInstance("status-inst", map[string]any{"cpu": "2"})
+			addInstanceToStore(instance)
+
+			err := s.UpdateStatus(ctx, instance.ID, "RUNNING", "VM is running", nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			found, err := s.Get(ctx, instance.ID, false)
@@ -225,14 +307,343 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 		})
 
 		It("returns ErrInstanceNotFound for non-existent instance", func() {
-			err := s.UpdateStatus(ctx, "non-existent", "RUNNING", "message")
+			err := s.UpdateStatus(ctx, "non-existent", "RUNNING", "message", nil)
 			Expect(err).To(MatchError(rmstore.ErrInstanceNotFound))
+		})
+
+		It("persists output_spec when provided", func() {
+			instance := newServiceTypeInstance("output-spec-inst", map[string]any{"cpu": "2"})
+			addInstanceToStore(instance)
+
+			outputSpec := map[string]any{"connection_string": "postgres://db:5432/orders"}
+			err := s.UpdateStatus(ctx, instance.ID, "RUNNING", "VM is running", outputSpec)
+			Expect(err).NotTo(HaveOccurred())
+
+			found, err := s.Get(ctx, instance.ID, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.OutputSpec).To(Equal(outputSpec))
+		})
+	})
+
+	Describe("UpdateStatusFrom", func() {
+		It("transitions status only when current status and agent_name match", func() {
+			agentName := "agent-a"
+			instance := newServiceTypeInstance("cas-inst", map[string]any{"cpu": "2"})
+			instance.AgentName = &agentName
+			addInstanceToStore(instance)
+
+			applied, err := s.UpdateStatusFrom(ctx, instance.ID, []string{"PROVISIONING"}, agentName, "RUNNING", "up")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(applied).To(BeTrue())
+
+			found, err := s.Get(ctx, instance.ID, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Status).To(Equal("RUNNING"))
+		})
+
+		It("does not transition when current status does not match", func() {
+			agentName := "agent-a"
+			instance := newServiceTypeInstance("cas-inst-2", map[string]any{"cpu": "2"})
+			instance.AgentName = &agentName
+			addInstanceToStore(instance)
+
+			applied, err := s.UpdateStatusFrom(ctx, instance.ID, []string{"RUNNING"}, agentName, "STOPPED", "down")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(applied).To(BeFalse())
+
+			found, err := s.Get(ctx, instance.ID, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Status).To(Equal("PROVISIONING"))
+		})
+
+		// An agent_name mismatch rejects an otherwise-valid transition, even
+		// though the status-only WHERE would have matched.
+		It("does not transition when status matches but agent_name does not (identity check)", func() {
+			currentAgent := "agent-b"
+			instance := newServiceTypeInstance("cas-inst-3", map[string]any{"cpu": "2"})
+			instance.Status = "PENDING"
+			instance.AgentName = &currentAgent
+			addInstanceToStore(instance)
+
+			applied, err := s.UpdateStatusFrom(ctx, instance.ID, []string{"PENDING"}, "agent-a-stale", "PROVISIONING", "")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(applied).To(BeFalse())
+
+			found, err := s.Get(ctx, instance.ID, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Status).To(Equal("PENDING"))
+			Expect(*found.AgentName).To(Equal(currentAgent))
+		})
+
+		It("does not transition when the instance's agent_name is NULL (defensive: never treated as a match)", func() {
+			instance := newServiceTypeInstance("cas-inst-4", map[string]any{"cpu": "2"})
+			instance.Status = "PENDING"
+			addInstanceToStore(instance)
+
+			applied, err := s.UpdateStatusFrom(ctx, instance.ID, []string{"PENDING"}, "any-agent", "PROVISIONING", "")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(applied).To(BeFalse())
+		})
+	})
+
+	Describe("MarkQueued", func() {
+		It("transitions pending to queued and resets pending_started_at when agent_name matches", func() {
+			agentName := "agent-a"
+			instance := newServiceTypeInstance("queue-inst", map[string]any{})
+			instance.Status = "pending"
+			instance.AgentName = &agentName
+			addInstanceToStore(instance)
+
+			Expect(s.MarkQueued(ctx, instance.ID, agentName)).To(Succeed())
+
+			found, err := s.Get(ctx, instance.ID, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Status).To(Equal("queued"))
+			Expect(found.PendingStartedAt).NotTo(BeNil())
+		})
+
+		It("returns ErrInstanceNotFound when instance is not pending", func() {
+			agentName := "agent-a"
+			instance := newServiceTypeInstance("not-pending-inst", map[string]any{})
+			instance.AgentName = &agentName
+			addInstanceToStore(instance)
+
+			err := s.MarkQueued(ctx, instance.ID, agentName)
+			Expect(err).To(MatchError(rmstore.ErrInstanceNotFound))
+		})
+
+		// An agent_name mismatch rejects an otherwise-valid pending ->
+		// queued transition, so a stale request-queued can't reset the
+		// queued timer under a new agent.
+		It("returns ErrInstanceNotFound when status matches but agent_name does not (identity check)", func() {
+			currentAgent := "agent-b"
+			instance := newServiceTypeInstance("queue-inst-mismatch", map[string]any{})
+			instance.Status = "pending"
+			instance.AgentName = &currentAgent
+			addInstanceToStore(instance)
+
+			err := s.MarkQueued(ctx, instance.ID, "agent-a-stale")
+			Expect(err).To(MatchError(rmstore.ErrInstanceNotFound))
+
+			found, err := s.Get(ctx, instance.ID, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Status).To(Equal("pending"))
+		})
+	})
+
+	Describe("HardDeleteFromAgent", func() {
+		It("removes the instance when agent_name matches", func() {
+			agentName := "agent-a"
+			instance := newServiceTypeInstance("to-delete-agent", map[string]any{})
+			instance.AgentName = &agentName
+			addInstanceToStore(instance)
+
+			Expect(s.HardDeleteFromAgent(ctx, instance.ID, agentName)).To(Succeed())
+
+			_, err := s.Get(ctx, instance.ID, false)
+			Expect(err).To(MatchError(rmstore.ErrInstanceNotFound))
+		})
+
+		// TC-12: mismatch is rejected with the same sentinel as "not found" -
+		// callers already treat that as "ack, don't retry" either way, and
+		// the row must survive (not be deleted) since the event's agent no
+		// longer owns it.
+		It("returns ErrInstanceNotFound and leaves the row intact when agent_name does not match", func() {
+			currentAgent := "agent-b"
+			instance := newServiceTypeInstance("to-delete-mismatch", map[string]any{})
+			instance.AgentName = &currentAgent
+			addInstanceToStore(instance)
+
+			err := s.HardDeleteFromAgent(ctx, instance.ID, "agent-a-stale")
+			Expect(err).To(MatchError(rmstore.ErrInstanceNotFound))
+
+			found, getErr := s.Get(ctx, instance.ID, false)
+			Expect(getErr).NotTo(HaveOccurred())
+			Expect(found.ID).To(Equal(instance.ID))
+		})
+
+		It("returns ErrInstanceNotFound for a genuinely missing ID", func() {
+			err := s.HardDeleteFromAgent(ctx, uuid.New().String(), "agent-a")
+			Expect(err).To(MatchError(rmstore.ErrInstanceNotFound))
+		})
+	})
+
+	Describe("MarkDeletionCompleteFromAgent", func() {
+		It("sets deletion_status to DELETED when agent_name matches", func() {
+			agentName := "agent-a"
+			instance := newServiceTypeInstance("soft-delete-agent", map[string]any{})
+			instance.AgentName = &agentName
+			addInstanceToStore(instance)
+
+			Expect(s.MarkDeletionCompleteFromAgent(ctx, instance.ID, agentName)).To(Succeed())
+
+			found, err := s.Get(ctx, instance.ID, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(*found.DeletionStatus).To(Equal("DELETED"))
+		})
+
+		// TC-12: mismatch is rejected with the same sentinel as "not found",
+		// and does not touch deletion_status - the row must not be silently
+		// tombstoned by an event from an agent that no longer owns it.
+		It("returns ErrInstanceNotFound and leaves deletion_status untouched when agent_name does not match", func() {
+			currentAgent := "agent-b"
+			instance := newServiceTypeInstance("soft-delete-mismatch", map[string]any{})
+			instance.AgentName = &currentAgent
+			addInstanceToStore(instance)
+
+			err := s.MarkDeletionCompleteFromAgent(ctx, instance.ID, "agent-a-stale")
+			Expect(err).To(MatchError(rmstore.ErrInstanceNotFound))
+
+			found, getErr := s.Get(ctx, instance.ID, true)
+			Expect(getErr).NotTo(HaveOccurred())
+			Expect(found.DeletionStatus).To(BeNil())
+		})
+
+		It("returns ErrInstanceNotFound for a genuinely missing ID", func() {
+			err := s.MarkDeletionCompleteFromAgent(ctx, uuid.New().String(), "agent-a")
+			Expect(err).To(MatchError(rmstore.ErrInstanceNotFound))
+		})
+	})
+
+	Describe("ReassignAndReset", func() {
+		It("re-points agent_name and resets to a fresh pending state, preserving retry_count", func() {
+			instance := newServiceTypeInstanceWithAgent("reassign-inst", "old-agent", map[string]any{})
+			instance.Status = model.StatusPending
+			instance.RetryCount = 2
+			addInstanceToStore(instance)
+
+			Expect(s.ReassignAndReset(ctx, instance.ID, "new-agent", "old-agent")).To(Succeed())
+
+			found, err := s.Get(ctx, instance.ID, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Status).To(Equal("pending"))
+			// retry_count is NOT reset: it's cumulative across every agent
+			// tried, so maxRetries is still enforced globally.
+			Expect(found.RetryCount).To(Equal(2))
+			Expect(found.AgentName).NotTo(BeNil())
+			Expect(*found.AgentName).To(Equal("new-agent"))
+			Expect(found.PendingStartedAt).NotTo(BeNil())
+		})
+
+		It("returns ErrInstanceNotFound for missing ID", func() {
+			err := s.ReassignAndReset(ctx, uuid.New().String(), "new-agent", "old-agent")
+			Expect(err).To(MatchError(rmstore.ErrInstanceNotFound))
+		})
+
+		It("returns ErrInstanceNotEligible when expectedCurrentAgent no longer matches (lost the race to a concurrent reassignment)", func() {
+			// Guards the fix for a real cross-replica race: two callers
+			// (e.g. a sweep-claimed primary heal and a sibling self-heal
+			// from a different resource in the same run) could otherwise
+			// both pass a status-only CAS and both publish a create to a
+			// different agent for the same instance, since status stays
+			// "pending" across a successful reassignment.
+			instance := newServiceTypeInstanceWithAgent("reassign-stale-agent", "agent-that-already-moved-on", map[string]any{})
+			instance.Status = model.StatusPending
+			addInstanceToStore(instance)
+
+			err := s.ReassignAndReset(ctx, instance.ID, "new-agent", "agent-the-caller-still-thinks-is-current")
+			Expect(err).To(MatchError(rmstore.ErrInstanceNotEligible))
+
+			found, getErr := s.Get(ctx, instance.ID, false)
+			Expect(getErr).NotTo(HaveOccurred())
+			Expect(*found.AgentName).To(Equal("agent-that-already-moved-on"))
+		})
+
+		It("returns ErrInstanceNotEligible when the instance is mid-deletion", func() {
+			instance := newServiceTypeInstanceWithAgent("reassign-deleting", "old-agent", map[string]any{})
+			instance.Status = model.StatusDeleting
+			addInstanceToStore(instance)
+
+			err := s.ReassignAndReset(ctx, instance.ID, "new-agent", "old-agent")
+			Expect(err).To(MatchError(rmstore.ErrInstanceNotEligible))
+
+			found, getErr := s.Get(ctx, instance.ID, true)
+			Expect(getErr).NotTo(HaveOccurred())
+			Expect(found.Status).To(Equal(model.StatusDeleting))
+		})
+
+		It("returns ErrInstanceNotEligible for a pending_deletion instance", func() {
+			instance := newServiceTypeInstanceWithAgent("reassign-pending-deletion", "old-agent", map[string]any{})
+			instance.Status = model.StatusPendingDeletion
+			addInstanceToStore(instance)
+
+			err := s.ReassignAndReset(ctx, instance.ID, "new-agent", "old-agent")
+			Expect(err).To(MatchError(rmstore.ErrInstanceNotEligible))
+		})
+
+		It("returns ErrInstanceNotEligible for a provisioning instance (split-brain: agent A may already be actively provisioning)", func() {
+			// Simulates: sweep claims a pending-timeout retry, then before
+			// selfHeal runs, the response consumer applies a genuine
+			// creation-acknowledged from the ORIGINAL agent (pending ->
+			// provisioning). ReassignAndReset must not silently re-point a
+			// "provisioning" instance onto a second agent - that would mean
+			// two agents both believe they own provisioning for the same
+			// instance.
+			originalAgent := "original-agent"
+			instance := newServiceTypeInstance("reassign-provisioning", map[string]any{})
+			instance.Status = model.StatusProvisioning
+			instance.AgentName = &originalAgent
+			addInstanceToStore(instance)
+
+			err := s.ReassignAndReset(ctx, instance.ID, "new-agent", originalAgent)
+			Expect(err).To(MatchError(rmstore.ErrInstanceNotEligible))
+
+			found, getErr := s.Get(ctx, instance.ID, true)
+			Expect(getErr).NotTo(HaveOccurred())
+			Expect(found.Status).To(Equal(model.StatusProvisioning))
+			Expect(found.AgentName).NotTo(BeNil())
+			Expect(*found.AgentName).To(Equal(originalAgent))
+		})
+
+		It("allows reassigning a cancelled instance (cancelQueuedInstance's self-heal path)", func() {
+			instance := newServiceTypeInstanceWithAgent("reassign-cancelled", "old-agent", map[string]any{})
+			instance.Status = model.StatusCancelled
+			addInstanceToStore(instance)
+
+			Expect(s.ReassignAndReset(ctx, instance.ID, "new-agent", "old-agent")).To(Succeed())
+
+			found, err := s.Get(ctx, instance.ID, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Status).To(Equal(model.StatusPending))
+			Expect(*found.AgentName).To(Equal("new-agent"))
+		})
+
+		It("returns ErrInstanceNotEligible for a queued instance (not yet cancelled by the sweep's CAS)", func() {
+			instance := newServiceTypeInstanceWithAgent("reassign-queued", "old-agent", map[string]any{})
+			instance.Status = model.StatusQueued
+			addInstanceToStore(instance)
+
+			err := s.ReassignAndReset(ctx, instance.ID, "new-agent", "old-agent")
+			Expect(err).To(MatchError(rmstore.ErrInstanceNotEligible))
+		})
+
+		It("returns ErrInstanceNotEligible for a pending instance with a delete already scheduled against it (R2 S2: finding #1)", func() {
+			// A deferred DeleteInstance never touches Status, so a "pending"
+			// instance can have deletion_status=SCHEDULED. sweepPending's own
+			// filter is the primary defense, but this store method must not
+			// rely solely on its one caller to enforce that - it should
+			// refuse to resurrect/reassign such an instance no matter who
+			// calls it.
+			deletionStatus := "SCHEDULED"
+			instance := newServiceTypeInstanceWithAgent("reassign-delete-scheduled", "old-agent", map[string]any{})
+			instance.Status = model.StatusPending
+			instance.DeletionStatus = &deletionStatus
+			addInstanceToStore(instance)
+
+			err := s.ReassignAndReset(ctx, instance.ID, "new-agent", "old-agent")
+			Expect(err).To(MatchError(rmstore.ErrInstanceNotEligible))
+
+			found, getErr := s.Get(ctx, instance.ID, true)
+			Expect(getErr).NotTo(HaveOccurred())
+			Expect(found.Status).To(Equal(model.StatusPending))
+			Expect(found.DeletionStatus).NotTo(BeNil())
+			Expect(*found.DeletionStatus).To(Equal("SCHEDULED"))
 		})
 	})
 
 	Describe("MarkForDeletion", func() {
 		It("sets deletion_status to SCHEDULED", func() {
-			instance := newServiceTypeInstance(kubevirtProvider, "mark-del", map[string]any{})
+			instance := newServiceTypeInstance("mark-del", map[string]any{})
 			addInstanceToStore(instance)
 
 			Expect(s.MarkForDeletion(ctx, instance.ID)).To(Succeed())
@@ -245,7 +656,7 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 		})
 
 		It("hides instance from default Get", func() {
-			instance := newServiceTypeInstance(kubevirtProvider, "mark-hidden", map[string]any{})
+			instance := newServiceTypeInstance("mark-hidden", map[string]any{})
 			addInstanceToStore(instance)
 
 			Expect(s.MarkForDeletion(ctx, instance.ID)).To(Succeed())
@@ -262,9 +673,9 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 
 	Describe("ListPendingDeletions", func() {
 		It("returns only SCHEDULED instances", func() {
-			inst1 := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "pending1", map[string]any{}))
-			inst2 := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "pending2", map[string]any{}))
-			addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "active", map[string]any{}))
+			inst1 := addInstanceToStore(newServiceTypeInstance("pending1", map[string]any{}))
+			inst2 := addInstanceToStore(newServiceTypeInstance("pending2", map[string]any{}))
+			addInstanceToStore(newServiceTypeInstance("active", map[string]any{}))
 
 			Expect(s.MarkForDeletion(ctx, inst1.ID)).To(Succeed())
 			Expect(s.MarkForDeletion(ctx, inst2.ID)).To(Succeed())
@@ -275,7 +686,7 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 		})
 
 		It("excludes FAILED instances", func() {
-			inst := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "failed", map[string]any{}))
+			inst := addInstanceToStore(newServiceTypeInstance("failed", map[string]any{}))
 			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
 			Expect(s.MarkDeletionFailed(ctx, inst.ID)).To(Succeed())
 
@@ -284,8 +695,18 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 			Expect(pending).To(BeEmpty())
 		})
 
+		It("excludes DELETED instances", func() {
+			inst := addInstanceToStore(newServiceTypeInstance("deleted", map[string]any{}))
+			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
+			Expect(s.MarkDeletionComplete(ctx, inst.ID)).To(Succeed())
+
+			pending, err := s.ListPendingDeletions(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pending).To(BeEmpty())
+		})
+
 		It("returns empty when no pending deletions exist", func() {
-			addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "active", map[string]any{}))
+			addInstanceToStore(newServiceTypeInstance("active", map[string]any{}))
 
 			pending, err := s.ListPendingDeletions(ctx)
 			Expect(err).NotTo(HaveOccurred())
@@ -295,7 +716,7 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 
 	Describe("IncrementDeletionRetry", func() {
 		It("increments retry count and sets last_deletion_attempt", func() {
-			inst := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "retry-inst", map[string]any{}))
+			inst := addInstanceToStore(newServiceTypeInstance("retry-inst", map[string]any{}))
 			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
 
 			Expect(s.IncrementDeletionRetry(ctx, inst.ID)).To(Succeed())
@@ -320,7 +741,7 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 
 	Describe("MarkDeletionFailed", func() {
 		It("sets deletion_status to FAILED", func() {
-			inst := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "fail-inst", map[string]any{}))
+			inst := addInstanceToStore(newServiceTypeInstance("fail-inst", map[string]any{}))
 			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
 
 			Expect(s.MarkDeletionFailed(ctx, inst.ID)).To(Succeed())
@@ -334,11 +755,23 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 			err := s.MarkDeletionFailed(ctx, uuid.New().String())
 			Expect(err).To(MatchError(rmstore.ErrInstanceNotFound))
 		})
+
+		It("does not overwrite DELETED with FAILED", func() {
+			inst := addInstanceToStore(newServiceTypeInstance("fail-after-deleted", map[string]any{}))
+			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
+			Expect(s.MarkDeletionComplete(ctx, inst.ID)).To(Succeed())
+
+			Expect(s.MarkDeletionFailed(ctx, inst.ID)).To(Succeed())
+
+			found, err := s.Get(ctx, inst.ID, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(*found.DeletionStatus).To(Equal("DELETED"))
+		})
 	})
 
 	Describe("ResetRetryCount", func() {
 		It("resets retry count and status to SCHEDULED", func() {
-			inst := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "reset-inst", map[string]any{}))
+			inst := addInstanceToStore(newServiceTypeInstance("reset-inst", map[string]any{}))
 			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
 			Expect(s.IncrementDeletionRetry(ctx, inst.ID)).To(Succeed())
 			Expect(s.IncrementDeletionRetry(ctx, inst.ID)).To(Succeed())
@@ -361,7 +794,7 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 
 	Describe("Get with showDeleted", func() {
 		It("returns soft-deleted instance when showDeleted is true", func() {
-			inst := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "soft-del", map[string]any{}))
+			inst := addInstanceToStore(newServiceTypeInstance("soft-del", map[string]any{}))
 			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
 
 			found, err := s.Get(ctx, inst.ID, true)
@@ -370,8 +803,30 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 			Expect(*found.DeletionStatus).To(Equal("SCHEDULED"))
 		})
 
+		It("returns DELETED instance when showDeleted is true", func() {
+			inst := addInstanceToStore(newServiceTypeInstance("soft-del-complete", map[string]any{}))
+			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
+			Expect(s.MarkDeletionComplete(ctx, inst.ID)).To(Succeed())
+
+			found, err := s.Get(ctx, inst.ID, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.ID).To(Equal(inst.ID))
+			Expect(*found.DeletionStatus).To(Equal("DELETED"))
+		})
+
+		It("returns FAILED instance when showDeleted is true", func() {
+			inst := addInstanceToStore(newServiceTypeInstance("soft-del-failed", map[string]any{}))
+			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
+			Expect(s.MarkDeletionFailed(ctx, inst.ID)).To(Succeed())
+
+			found, err := s.Get(ctx, inst.ID, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.ID).To(Equal(inst.ID))
+			Expect(*found.DeletionStatus).To(Equal("FAILED"))
+		})
+
 		It("returns not found for soft-deleted instance when showDeleted is false", func() {
-			inst := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "soft-del2", map[string]any{}))
+			inst := addInstanceToStore(newServiceTypeInstance("soft-del2", map[string]any{}))
 			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
 
 			_, err := s.Get(ctx, inst.ID, false)
@@ -381,8 +836,8 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 
 	Describe("List with ShowDeleted", func() {
 		It("excludes soft-deleted instances by default", func() {
-			addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "active", map[string]any{}))
-			deleted := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "deleted", map[string]any{}))
+			addInstanceToStore(newServiceTypeInstance("active", map[string]any{}))
+			deleted := addInstanceToStore(newServiceTypeInstance("deleted", map[string]any{}))
 			Expect(s.MarkForDeletion(ctx, deleted.ID)).To(Succeed())
 
 			result, err := s.List(ctx, &rmstore.ServiceTypeInstanceListOptions{})
@@ -391,8 +846,8 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 		})
 
 		It("includes soft-deleted instances when ShowDeleted is true", func() {
-			addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "active", map[string]any{}))
-			deleted := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "deleted", map[string]any{}))
+			addInstanceToStore(newServiceTypeInstance("active", map[string]any{}))
+			deleted := addInstanceToStore(newServiceTypeInstance("deleted", map[string]any{}))
 			Expect(s.MarkForDeletion(ctx, deleted.ID)).To(Succeed())
 
 			result, err := s.List(ctx, &rmstore.ServiceTypeInstanceListOptions{ShowDeleted: true})
@@ -403,7 +858,7 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 
 	Describe("ExistsByID", func() {
 		It("returns true when instance exists", func() {
-			instance := newServiceTypeInstance(kubevirtProvider, "exists", map[string]any{})
+			instance := newServiceTypeInstance("exists", map[string]any{})
 			addInstanceToStore(instance)
 
 			exists, err := s.ExistsByID(ctx, instance.ID)
@@ -415,158 +870,6 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 			exists, err := s.ExistsByID(ctx, uuid.New().String())
 			Expect(err).NotTo(HaveOccurred())
 			Expect(exists).To(BeFalse())
-		})
-	})
-
-	Describe("MarkProviderDeletionsPendingProvider", func() {
-		It("transitions PENDING and FAILED instances to PENDING_PROVIDER", func() {
-			pendingInst := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "pending", map[string]any{}))
-			Expect(s.MarkForDeletion(ctx, pendingInst.ID)).To(Succeed())
-
-			failedInst := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "failed", map[string]any{}))
-			Expect(s.MarkForDeletion(ctx, failedInst.ID)).To(Succeed())
-			Expect(s.MarkDeletionFailed(ctx, failedInst.ID)).To(Succeed())
-
-			activeInst := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "active", map[string]any{}))
-
-			Expect(s.MarkProviderDeletionsPendingProvider(ctx, kubevirtProvider)).To(Succeed())
-
-			found, err := s.Get(ctx, pendingInst.ID, true)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(*found.DeletionStatus).To(Equal("PENDING_PROVIDER"))
-
-			found, err = s.Get(ctx, failedInst.ID, true)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(*found.DeletionStatus).To(Equal("PENDING_PROVIDER"))
-
-			found, err = s.Get(ctx, activeInst.ID, false)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(found.DeletionStatus).To(BeNil())
-		})
-
-		It("does not affect instances from other providers", func() {
-			otherProvider := "other-provider"
-			inst := addInstanceToStore(newServiceTypeInstance(otherProvider, "other-pending", map[string]any{}))
-			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
-
-			Expect(s.MarkProviderDeletionsPendingProvider(ctx, kubevirtProvider)).To(Succeed())
-
-			found, err := s.Get(ctx, inst.ID, true)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(*found.DeletionStatus).To(Equal("SCHEDULED"))
-		})
-	})
-
-	Describe("ReactivateProviderDeletions", func() {
-		It("transitions PENDING_PROVIDER to PENDING with retry_count=0", func() {
-			inst := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "marked", map[string]any{}))
-			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
-			Expect(s.IncrementDeletionRetry(ctx, inst.ID)).To(Succeed())
-			Expect(s.MarkProviderDeletionsPendingProvider(ctx, kubevirtProvider)).To(Succeed())
-
-			Expect(s.ReactivateProviderDeletions(ctx, kubevirtProvider)).To(Succeed())
-
-			found, err := s.Get(ctx, inst.ID, true)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(*found.DeletionStatus).To(Equal("SCHEDULED"))
-			Expect(found.RetryCount).To(Equal(0))
-		})
-
-		It("does not affect SCHEDULED or FAILED instances", func() {
-			pendingInst := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "still-pending", map[string]any{}))
-			Expect(s.MarkForDeletion(ctx, pendingInst.ID)).To(Succeed())
-
-			failedInst := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "still-failed", map[string]any{}))
-			Expect(s.MarkForDeletion(ctx, failedInst.ID)).To(Succeed())
-			Expect(s.MarkDeletionFailed(ctx, failedInst.ID)).To(Succeed())
-
-			Expect(s.ReactivateProviderDeletions(ctx, kubevirtProvider)).To(Succeed())
-
-			found, err := s.Get(ctx, pendingInst.ID, true)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(*found.DeletionStatus).To(Equal("SCHEDULED"))
-
-			found, err = s.Get(ctx, failedInst.ID, true)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(*found.DeletionStatus).To(Equal("FAILED"))
-		})
-	})
-
-	Describe("MarkPendingProviderIfNotReady", func() {
-		var addProvider func(name string, healthStatus model.HealthStatus)
-
-		BeforeEach(func() {
-			addProvider = func(name string, healthStatus model.HealthStatus) {
-				provider := model.Provider{
-					ID:            uuid.New().String(),
-					Name:          name,
-					ServiceType:   "vm",
-					SchemaVersion: "v1",
-					Endpoint:      "http://localhost:8080",
-					HealthStatus:  healthStatus,
-				}
-				Expect(db.Create(&provider).Error).NotTo(HaveOccurred())
-			}
-		})
-
-		It("parks instance and returns true when provider is Unavailable", func() {
-			addProvider(kubevirtProvider, model.HealthStatusUnavailable)
-			inst := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "to-park", map[string]any{}))
-			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
-
-			marked, err := s.MarkPendingProviderIfNotReady(ctx, inst.ID)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(marked).To(BeTrue())
-
-			found, err := s.Get(ctx, inst.ID, true)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(*found.DeletionStatus).To(Equal("PENDING_PROVIDER"))
-		})
-
-		It("parks instance and returns true when provider is Unhealthy", func() {
-			addProvider(kubevirtProvider, model.HealthStatusUnhealthy)
-			inst := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "to-park-unhealthy", map[string]any{}))
-			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
-
-			marked, err := s.MarkPendingProviderIfNotReady(ctx, inst.ID)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(marked).To(BeTrue())
-
-			found, err := s.Get(ctx, inst.ID, true)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(*found.DeletionStatus).To(Equal("PENDING_PROVIDER"))
-		})
-
-		It("is a no-op and returns false when provider is Ready", func() {
-			addProvider(kubevirtProvider, model.HealthStatusReady)
-			inst := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "healthy", map[string]any{}))
-			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
-
-			marked, err := s.MarkPendingProviderIfNotReady(ctx, inst.ID)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(marked).To(BeFalse())
-
-			found, err := s.Get(ctx, inst.ID, true)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(*found.DeletionStatus).To(Equal("SCHEDULED"))
-		})
-
-		It("is idempotent when instance is already PENDING_PROVIDER", func() {
-			addProvider(kubevirtProvider, model.HealthStatusUnavailable)
-			inst := addInstanceToStore(newServiceTypeInstance(kubevirtProvider, "already-marked", map[string]any{}))
-			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
-
-			marked1, err := s.MarkPendingProviderIfNotReady(ctx, inst.ID)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(marked1).To(BeTrue())
-
-			marked2, err := s.MarkPendingProviderIfNotReady(ctx, inst.ID)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(marked2).To(BeTrue())
-
-			found, err := s.Get(ctx, inst.ID, true)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(*found.DeletionStatus).To(Equal("PENDING_PROVIDER"))
 		})
 	})
 })

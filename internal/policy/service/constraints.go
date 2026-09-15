@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/brunoga/deep/v4"
-	"github.com/dcm-project/control-plane/internal/policy/opa"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -17,14 +16,133 @@ import (
 type ConstraintContext struct {
 	constrainedFieldsByFieldPath map[string]map[string]any // field path → JSON Schema keywords
 	policyIdByFieldPath          map[string]string         // field path → policy ID that set it
-	serviceProviderConstraints   *AccumulatedSPConstraints
+	agentConstraints             *AccumulatedAgentConstraints
 }
 
-// AccumulatedSPConstraints tracks accumulated service provider constraints
-type AccumulatedSPConstraints struct {
-	AllowList   []string // Intersection of all allow lists
-	Patterns    []string // All patterns (ANDed)
-	SetByPolicy string   // Policy ID that first set SP constraints
+// AccumulatedAgentConstraints tracks accumulated agent constraints across policies.
+type AccumulatedAgentConstraints struct {
+	AllowList              []string // Intersection of all allow lists
+	Patterns               []string // All patterns (ANDed)
+	EnvironmentConstraints []string // Allowed environments
+	SetByPolicy            string   // Policy ID that first set agent constraints
+}
+
+// MergeAgentConstraints merges agent constraints from a policy decision.
+// Allow lists are intersected; patterns and environment constraints are appended (AND).
+func (c *ConstraintContext) MergeAgentConstraints(incoming *AccumulatedAgentConstraints, policyID string) error {
+	if incoming == nil {
+		return nil
+	}
+	if len(incoming.AllowList) == 0 && len(incoming.Patterns) == 0 && len(incoming.EnvironmentConstraints) == 0 {
+		return nil
+	}
+
+	if c.agentConstraints == nil {
+		c.agentConstraints = &AccumulatedAgentConstraints{
+			AllowList:              append([]string(nil), incoming.AllowList...),
+			Patterns:               append([]string(nil), incoming.Patterns...),
+			EnvironmentConstraints: append([]string(nil), incoming.EnvironmentConstraints...),
+			SetByPolicy:            policyID,
+		}
+		return nil
+	}
+
+	if len(incoming.AllowList) > 0 && len(c.agentConstraints.AllowList) > 0 {
+		intersected := intersectStringSlices(c.agentConstraints.AllowList, incoming.AllowList)
+		if len(intersected) == 0 {
+			return fmt.Errorf("agent allow list intersection is empty: "+
+				"policy '%s' allows %v but existing constraints from policy '%s' allow %v",
+				policyID, incoming.AllowList, c.agentConstraints.SetByPolicy, c.agentConstraints.AllowList)
+		}
+		c.agentConstraints.AllowList = intersected
+	} else if len(incoming.AllowList) > 0 {
+		c.agentConstraints.AllowList = incoming.AllowList
+	}
+
+	c.agentConstraints.Patterns = append(c.agentConstraints.Patterns, incoming.Patterns...)
+
+	if len(incoming.EnvironmentConstraints) > 0 && len(c.agentConstraints.EnvironmentConstraints) > 0 {
+		intersected := intersectStringSlices(c.agentConstraints.EnvironmentConstraints, incoming.EnvironmentConstraints)
+		if len(intersected) == 0 {
+			return fmt.Errorf("agent environment constraint intersection is empty: "+
+				"policy '%s' allows %v but existing constraints from policy '%s' allow %v",
+				policyID, incoming.EnvironmentConstraints, c.agentConstraints.SetByPolicy, c.agentConstraints.EnvironmentConstraints)
+		}
+		c.agentConstraints.EnvironmentConstraints = intersected
+	} else if len(incoming.EnvironmentConstraints) > 0 {
+		c.agentConstraints.EnvironmentConstraints = incoming.EnvironmentConstraints
+	}
+
+	return nil
+}
+
+// ValidateAgent checks an agent name against availableAgents and the
+// accumulated agent constraints. The availableAgents check is independent of
+// (and enforced before) any policy allow-list/pattern below: a decision must
+// stay within what was offered, regardless of what a policy further
+// restricts it to. A nil/empty availableAgents means the check is skipped.
+func (c *ConstraintContext) ValidateAgent(agentName string, availableAgents []string) error {
+	if agentName == "" {
+		return nil
+	}
+
+	if len(availableAgents) > 0 && !slices.Contains(availableAgents, agentName) {
+		return fmt.Errorf("agent '%s' is not in the available agents list %v", agentName, availableAgents)
+	}
+
+	if c.agentConstraints == nil {
+		return nil
+	}
+
+	if len(c.agentConstraints.AllowList) > 0 {
+		if !slices.Contains(c.agentConstraints.AllowList, agentName) {
+			return fmt.Errorf("agent '%s' is not in the allowed list %v (constrained by policy '%s')",
+				agentName, c.agentConstraints.AllowList, c.agentConstraints.SetByPolicy)
+		}
+	}
+
+	for _, pattern := range c.agentConstraints.Patterns {
+		matched, err := regexp.MatchString(pattern, agentName)
+		if err != nil {
+			return fmt.Errorf("invalid agent pattern '%s': %v", pattern, err)
+		}
+		if !matched {
+			return fmt.Errorf("agent '%s' does not match required pattern '%s'", agentName, pattern)
+		}
+	}
+
+	return nil
+}
+
+// ValidateAgentEnvironment checks an agent's environment against constraints.
+func (c *ConstraintContext) ValidateAgentEnvironment(environment string) error {
+	if c.agentConstraints == nil || len(c.agentConstraints.EnvironmentConstraints) == 0 {
+		return nil
+	}
+
+	if !slices.Contains(c.agentConstraints.EnvironmentConstraints, environment) {
+		return fmt.Errorf("agent environment '%s' not in allowed environments %v",
+			environment, c.agentConstraints.EnvironmentConstraints)
+	}
+	return nil
+}
+
+// GetAgentConstraintsMap returns agent constraints for inclusion in OPA input.
+func (c *ConstraintContext) GetAgentConstraintsMap() map[string]any {
+	if c.agentConstraints == nil {
+		return nil
+	}
+	result := make(map[string]any)
+	if len(c.agentConstraints.AllowList) > 0 {
+		result["allow_list"] = c.agentConstraints.AllowList
+	}
+	if len(c.agentConstraints.Patterns) > 0 {
+		result["patterns"] = c.agentConstraints.Patterns
+	}
+	if len(c.agentConstraints.EnvironmentConstraints) > 0 {
+		result["environment_constraints"] = c.agentConstraints.EnvironmentConstraints
+	}
+	return result
 }
 
 // ConstraintConflictError is returned by MergeConstraints when a lower-priority
@@ -125,77 +243,6 @@ func (c *ConstraintContext) validatePatchRecursive(
 	}
 }
 
-// MergeSPConstraints merges service provider constraints from a policy decision.
-// If sp is nil or has neither allow list nor patterns, it is a no-op.
-// Allow lists are intersected once; all patterns are appended (ANDed).
-func (c *ConstraintContext) MergeSPConstraints(sp *opa.ServiceProviderConstraints, policyID string) error {
-	if sp == nil {
-		return nil
-	}
-	allowList := sp.AllowList
-	patterns := sp.Patterns
-	if len(allowList) == 0 && len(patterns) == 0 {
-		return nil
-	}
-	if c.serviceProviderConstraints == nil {
-		c.serviceProviderConstraints = &AccumulatedSPConstraints{
-			AllowList:   allowList,
-			Patterns:    append([]string(nil), patterns...),
-			SetByPolicy: policyID,
-		}
-		return nil
-	}
-
-	// Intersect allow lists if both exist
-	if len(allowList) > 0 && len(c.serviceProviderConstraints.AllowList) > 0 {
-		intersected := intersectStringSlices(c.serviceProviderConstraints.AllowList, allowList)
-		if len(intersected) == 0 {
-			return fmt.Errorf("service provider allow list intersection is empty: "+
-				"policy '%s' allows %v but existing constraints from policy '%s' allow %v",
-				policyID, allowList, c.serviceProviderConstraints.SetByPolicy, c.serviceProviderConstraints.AllowList)
-		}
-		c.serviceProviderConstraints.AllowList = intersected
-	} else if len(allowList) > 0 {
-		c.serviceProviderConstraints.AllowList = allowList
-	}
-
-	// AND patterns
-	c.serviceProviderConstraints.Patterns = append(c.serviceProviderConstraints.Patterns, patterns...)
-
-	return nil
-}
-
-// ValidateServiceProvider checks a provider against accumulated SP constraints
-func (c *ConstraintContext) ValidateServiceProvider(provider string) error {
-	if c.serviceProviderConstraints == nil || provider == "" {
-		return nil
-	}
-
-	sp := c.serviceProviderConstraints
-
-	// Check allow list
-	if len(sp.AllowList) > 0 {
-		found := slices.Contains(sp.AllowList, provider)
-		if !found {
-			return fmt.Errorf("provider '%s' is not in the allowed list %v (constrained by policy '%s')",
-				provider, sp.AllowList, sp.SetByPolicy)
-		}
-	}
-
-	// Check patterns
-	for _, pattern := range sp.Patterns {
-		matched, err := regexp.MatchString(pattern, provider)
-		if err != nil {
-			return fmt.Errorf("invalid service provider pattern '%s': %v", pattern, err)
-		}
-		if !matched {
-			return fmt.Errorf("provider '%s' does not match required pattern '%s'", provider, pattern)
-		}
-	}
-
-	return nil
-}
-
 // GetConstraintsMap returns the accumulated constraints for inclusion in OPA input
 func (c *ConstraintContext) GetConstraintsMap() map[string]any {
 	if len(c.constrainedFieldsByFieldPath) == 0 {
@@ -204,22 +251,6 @@ func (c *ConstraintContext) GetConstraintsMap() map[string]any {
 	result := make(map[string]any, len(c.constrainedFieldsByFieldPath))
 	for k, v := range c.constrainedFieldsByFieldPath {
 		result[k] = v
-	}
-	return result
-}
-
-// GetSPConstraintsMap returns SP constraints for inclusion in OPA input
-func (c *ConstraintContext) GetSPConstraintsMap() map[string]any {
-	if c.serviceProviderConstraints == nil {
-		return nil
-	}
-	result := make(map[string]any)
-	if len(c.serviceProviderConstraints.AllowList) > 0 {
-		result["allow_list"] = c.serviceProviderConstraints.AllowList
-	}
-	if len(c.serviceProviderConstraints.Patterns) > 0 {
-		// Combine patterns into a single regex with AND semantics
-		result["patterns"] = c.serviceProviderConstraints.Patterns
 	}
 	return result
 }

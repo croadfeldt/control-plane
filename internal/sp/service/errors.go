@@ -5,11 +5,12 @@ import "errors"
 
 // Error codes returned by service operations.
 const (
-	ErrCodeNotFound      = "https://dcm.example.com/errors/not-found"
-	ErrCodeConflict      = "https://dcm.example.com/errors/conflict"
-	ErrCodeValidation    = "https://dcm.example.com/errors/validation"
-	ErrCodeProviderError = "https://dcm.example.com/errors/provider-error"
-	ErrCodeInternal      = "https://dcm.example.com/errors/internal-error"
+	ErrCodeNotFound          = "https://dcm.example.com/errors/not-found"
+	ErrCodeConflict          = "https://dcm.example.com/errors/conflict"
+	ErrCodeValidation        = "https://dcm.example.com/errors/validation"
+	ErrCodeProvisioningError = "https://dcm.example.com/errors/provisioning-error"
+	ErrCodeInternal          = "https://dcm.example.com/errors/internal-error"
+	ErrCodeUnavailable       = "https://dcm.example.com/errors/unavailable"
 )
 
 // ServiceError represents a business logic error with a code for HTTP mapping.
@@ -45,9 +46,9 @@ func NewValidationError(message string) *ServiceError {
 	}
 }
 
-func NewProviderError(message string) *ServiceError {
+func NewProvisioningError(message string) *ServiceError {
 	return &ServiceError{
-		Code:    ErrCodeProviderError,
+		Code:    ErrCodeProvisioningError,
 		Message: message,
 	}
 }
@@ -59,6 +60,13 @@ func NewInternalError(message string) *ServiceError {
 	}
 }
 
+func NewUnavailableError(message string) *ServiceError {
+	return &ServiceError{
+		Code:    ErrCodeUnavailable,
+		Message: message,
+	}
+}
+
 // IsClientError returns true if err is a ServiceError representing a client-side
 // (4xx) problem. If svcErr is non-nil it is populated with the unwrapped error.
 func IsClientError(err error, svcErr **ServiceError) bool {
@@ -66,7 +74,7 @@ func IsClientError(err error, svcErr **ServiceError) bool {
 		return false
 	}
 	switch (*svcErr).Code {
-	case ErrCodeValidation, ErrCodeNotFound, ErrCodeConflict, ErrCodeProviderError:
+	case ErrCodeValidation, ErrCodeNotFound, ErrCodeConflict, ErrCodeProvisioningError:
 		return true
 	}
 	return false

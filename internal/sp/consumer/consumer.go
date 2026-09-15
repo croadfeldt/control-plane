@@ -7,21 +7,27 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
+	"strings"
 	"time"
 
 	cloudevents "github.com/cloudevents/sdk-go/v2/event"
+	placementtypes "github.com/dcm-project/control-plane/internal/placement/types"
 	"github.com/dcm-project/control-plane/internal/sp/store"
 	rmstore "github.com/dcm-project/control-plane/internal/sp/store/resource_manager"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
+const healthFlushTimeout = 2 * time.Second
+
 // StatusEvent represents a status event payload.
 type StatusEvent struct {
-	Id        string    `json:"id"`
-	Status    string    `json:"status"`
-	Message   string    `json:"message"`
-	Timestamp time.Time `json:"timestamp"`
+	Id         string         `json:"id"`
+	Status     string         `json:"status"`
+	Message    string         `json:"message"`
+	OutputSpec map[string]any `json:"output_spec,omitempty"`
+	Timestamp  time.Time      `json:"timestamp"`
 }
 
 // StatusConsumer subscribes to status events from NATS JetStream
@@ -34,6 +40,9 @@ type StatusConsumer struct {
 	subject      string
 	streamName   string
 	consumerName string
+	onRunning    func(context.Context, placementtypes.ResourceStatusEvent) error
+	onDeleted    func(context.Context, string) error
+	onFailed     func(context.Context, string) error
 }
 
 // New creates a new StatusConsumer connected to the given NATS URL.
@@ -84,6 +93,19 @@ func SetConsumerName(name string) Option {
 	return func(c *StatusConsumer) { c.consumerName = name }
 }
 
+// SetPlacementStatusHandlers registers placement callbacks for async DAG orchestration.
+func SetPlacementStatusHandlers(
+	onRunning func(context.Context, placementtypes.ResourceStatusEvent) error,
+	onDeleted func(context.Context, string) error,
+	onFailed func(context.Context, string) error,
+) Option {
+	return func(c *StatusConsumer) {
+		c.onRunning = onRunning
+		c.onDeleted = onDeleted
+		c.onFailed = onFailed
+	}
+}
+
 // Start creates the JetStream stream and consumer, then begins processing messages.
 func (c *StatusConsumer) Start(ctx context.Context) error {
 	stream, err := c.js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
@@ -127,6 +149,35 @@ func (c *StatusConsumer) Stop() {
 	slog.Info("StatusConsumer stopped")
 }
 
+// Check verifies the NATS connection is usable (connected and responsive).
+func (c *StatusConsumer) Check(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.conn == nil || !c.conn.IsConnected() {
+		return errors.New("nats not connected")
+	}
+
+	timeout := healthFlushTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return context.DeadlineExceeded
+		}
+		if remaining < timeout {
+			timeout = remaining
+		}
+	}
+
+	if err := c.conn.FlushTimeout(timeout); err != nil {
+		return fmt.Errorf("nats flush: %w", err)
+	}
+	return nil
+}
+
 func (c *StatusConsumer) handleMessage(ctx context.Context, msg jetstream.Msg) {
 	var event cloudevents.Event
 	if err := json.Unmarshal(msg.Data(), &event); err != nil {
@@ -148,7 +199,13 @@ func (c *StatusConsumer) handleMessage(ctx context.Context, msg jetstream.Msg) {
 		return
 	}
 
-	if err := c.store.ServiceTypeInstance().UpdateStatus(ctx, payload.Id, payload.Status, payload.Message); err != nil {
+	// This event's status string comes from an external CloudEvent producer
+	// we don't control, so it's normalized to the lowercase convention used
+	// throughout the rest of the status lifecycle before it crosses into our
+	// store, rather than trusting upstream casing (see internal/sp/store/model/status.go).
+	normalizedStatus := strings.ToLower(strings.TrimSpace(payload.Status))
+
+	if err := c.store.ServiceTypeInstance().UpdateStatus(ctx, payload.Id, normalizedStatus, payload.Message, payload.OutputSpec); err != nil {
 		if errors.Is(err, rmstore.ErrInstanceNotFound) {
 			slog.Warn("No instance found, skipping status update", "instance_id", payload.Id)
 			_ = msg.Ack()
@@ -159,6 +216,51 @@ func (c *StatusConsumer) handleMessage(ctx context.Context, msg jetstream.Msg) {
 		return
 	}
 
-	slog.Info("Instance status updated", "instance_id", payload.Id, "status", payload.Status)
+	if fields := sortedOutputFields(payload.OutputSpec); len(fields) > 0 {
+		slog.Info("audit: output_spec persisted from status event",
+			"instance_id", payload.Id,
+			"status", normalizedStatus,
+			"output_fields", fields,
+		)
+	}
+
+	slog.Info("Instance status updated", "instance_id", payload.Id, "status", normalizedStatus)
+
+	switch strings.ToUpper(normalizedStatus) {
+	case placementtypes.ResourceStatusRunning:
+		if c.onRunning != nil {
+			if err := c.onRunning(ctx, placementtypes.ResourceStatusEvent{
+				ResourceID: payload.Id,
+				Status:     normalizedStatus,
+				OutputSpec: payload.OutputSpec,
+			}); err != nil {
+				slog.Error("Placement OnResourceRunning failed", "instance_id", payload.Id, "error", err)
+			}
+		}
+	case placementtypes.ResourceStatusDeleted:
+		if c.onDeleted != nil {
+			if err := c.onDeleted(ctx, payload.Id); err != nil {
+				slog.Error("Placement OnResourceDeleted failed", "instance_id", payload.Id, "error", err)
+			}
+		}
+	case placementtypes.ResourceStatusFailed:
+		if c.onFailed != nil {
+			if err := c.onFailed(ctx, payload.Id); err != nil {
+				slog.Error("Placement OnResourceFailed failed", "instance_id", payload.Id, "error", err)
+			}
+		}
+	}
 	_ = msg.Ack()
+}
+
+func sortedOutputFields(outputSpec map[string]any) []string {
+	if len(outputSpec) == 0 {
+		return nil
+	}
+	fields := make([]string, 0, len(outputSpec))
+	for key := range outputSpec {
+		fields = append(fields, key)
+	}
+	sort.Strings(fields)
+	return fields
 }

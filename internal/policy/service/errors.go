@@ -128,6 +128,31 @@ func NewFailedPreconditionError(message, detail string) *ServiceError {
 	}
 }
 
+// NewNoCapableAgentError signals that agents were available but none serve
+// the requested service type (406, same bucket as a policy rejection).
+// remainingCount is the post-exclusion count, so the message doesn't imply
+// "no agent anywhere supports this" when capable agents were excluded.
+func NewNoCapableAgentError(serviceType string, remainingCount int) *ServiceError {
+	return &ServiceError{
+		Type:    ErrorTypeRejected,
+		Message: fmt.Sprintf("No available agent supports service type '%s'", serviceType),
+		Detail: fmt.Sprintf(
+			"service_type %q has no capable agent among the %d agent(s) remaining after exclusion filtering",
+			serviceType, remainingCount,
+		),
+	}
+}
+
+// NewAllAgentsExcludedError signals that exclude_agents removed every
+// available agent (406, same bucket as a policy rejection).
+func NewAllAgentsExcludedError(excludedCount int) *ServiceError {
+	return &ServiceError{
+		Type:    ErrorTypeRejected,
+		Message: "No available agent remains after exclusions",
+		Detail:  fmt.Sprintf("all %d available agent(s) were excluded from consideration", excludedCount),
+	}
+}
+
 // NewPolicyRejectedError creates a new policy rejected error (406 Not Acceptable)
 func NewPolicyRejectedError(policyID, reason string) *ServiceError {
 	return &ServiceError{
@@ -171,11 +196,11 @@ func NewConstraintConflictError(policyID, fieldPath, existingPolicyID, reason st
 	}
 }
 
-// NewServiceProviderConstraintError creates a new SP constraint error (409 Conflict)
-func NewServiceProviderConstraintError(policyID, detail string) *ServiceError {
+// NewAgentConstraintError creates an error when a selected agent violates constraints (409 Conflict)
+func NewAgentConstraintError(policyID, detail string) *ServiceError {
 	return &ServiceError{
 		Type:    ErrorTypePolicyConflict,
-		Message: fmt.Sprintf("Policy '%s' selected a service provider that violates constraints", policyID),
+		Message: fmt.Sprintf("Policy '%s' selected an agent that violates constraints", policyID),
 		Detail:  detail,
 	}
 }

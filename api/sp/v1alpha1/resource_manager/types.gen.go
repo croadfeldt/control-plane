@@ -13,17 +13,17 @@ const (
 
 // Defines values for ServiceTypeInstanceDeletionStatus.
 const (
-	FAILED          ServiceTypeInstanceDeletionStatus = "FAILED"
-	PENDINGPROVIDER ServiceTypeInstanceDeletionStatus = "PENDING_PROVIDER"
-	SCHEDULED       ServiceTypeInstanceDeletionStatus = "SCHEDULED"
+	DELETED   ServiceTypeInstanceDeletionStatus = "DELETED"
+	FAILED    ServiceTypeInstanceDeletionStatus = "FAILED"
+	SCHEDULED ServiceTypeInstanceDeletionStatus = "SCHEDULED"
 )
 
 // Valid indicates whether the value is a known member of the ServiceTypeInstanceDeletionStatus enum.
 func (e ServiceTypeInstanceDeletionStatus) Valid() bool {
 	switch e {
-	case FAILED:
+	case DELETED:
 		return true
-	case PENDINGPROVIDER:
+	case FAILED:
 		return true
 	case SCHEDULED:
 		return true
@@ -52,14 +52,18 @@ type Error struct {
 
 // ServiceTypeInstance Full service type instance resource representation
 type ServiceTypeInstance struct {
+	// AgentName Name of the agent managing this instance. Absent or null when the
+	// instance was created without agent routing.
+	AgentName *string `json:"agent_name,omitempty"`
+
 	// CreateTime Timestamp when the instance was first created
 	CreateTime *time.Time `json:"create_time,omitempty"`
 
 	// DeletionStatus Deletion status for deferred deletions. Absent for active
 	// instances. SCHEDULED indicates the instance is queued for cleanup.
 	// FAILED indicates the cleanup has exceeded maximum retries.
-	// PENDING_PROVIDER indicates the instance is waiting for its
-	// provider to become healthy before cleanup is retried.
+	// DELETED indicates cleanup completed (visible when listing deleted
+	// instances).
 	DeletionStatus *ServiceTypeInstanceDeletionStatus `json:"deletion_status,omitempty"`
 
 	// Id Unique identifier for the Service Type Instance
@@ -67,9 +71,6 @@ type ServiceTypeInstance struct {
 
 	// Path Resource path identifier
 	Path *string `json:"path,omitempty"`
-
-	// ProviderName Name of the provider
-	ProviderName string `json:"provider_name"`
 
 	// Spec Service specification following one of the supported service type
 	// schemas (VMSpec, ContainerSpec, DatabaseSpec, or ClusterSpec).
@@ -85,8 +86,8 @@ type ServiceTypeInstance struct {
 // ServiceTypeInstanceDeletionStatus Deletion status for deferred deletions. Absent for active
 // instances. SCHEDULED indicates the instance is queued for cleanup.
 // FAILED indicates the cleanup has exceeded maximum retries.
-// PENDING_PROVIDER indicates the instance is waiting for its
-// provider to become healthy before cleanup is retried.
+// DELETED indicates cleanup completed (visible when listing deleted
+// instances).
 type ServiceTypeInstanceDeletionStatus string
 
 // ServiceTypeInstanceList Paginated list of instances
@@ -111,11 +112,11 @@ type bearerAuthContextKey string
 
 // ListInstancesParams defines parameters for ListInstances.
 type ListInstancesParams struct {
-	// Provider Filter service provider
-	Provider *string `form:"provider,omitempty" json:"provider,omitempty"`
-
 	// ServiceType Filter instances by service type
 	ServiceType *string `form:"service_type,omitempty" json:"service_type,omitempty"`
+
+	// AgentName Filter instances by the agent managing them
+	AgentName *string `form:"agent_name,omitempty" json:"agent_name,omitempty"`
 
 	// ShowDeleted If true, soft-deleted instances are included in the results
 	// alongside active instances. Defaults to false.

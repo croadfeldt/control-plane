@@ -3,10 +3,9 @@ package service
 import (
 	"context"
 
-	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/cluster"
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/container"
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/database"
-	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/storage"
+	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/network"
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/three_tier_app_demo"
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/vm"
 	"github.com/dcm-project/control-plane/internal/catalog/store/model"
@@ -40,14 +39,12 @@ func defaultServiceTypes() []model.ServiceType {
 			ApiVersion:  "v1alpha1",
 			ServiceType: "vm",
 			Spec: map[string]any{
-				"instance_size": "",
-				"vcpu":          vm.Vcpu{},
-				"memory":        vm.Memory{},
-				"guest_os":      vm.GuestOs{},
-				"disks":         vm.Disk{},
-				"placement":     vm.Placement{},
-				"networks":      vm.Network{},
-				"power":         vm.Power{},
+				"vcpu":     vm.Vcpu{},
+				"memory":   vm.Memory{},
+				"storage":  vm.Storage{},
+				"guest_os": vm.GuestOS{},
+				"access":   vm.Access{},
+				"ip":       []vm.VmEndpoint{},
 			},
 			Path: "service-types/vm",
 		},
@@ -56,13 +53,11 @@ func defaultServiceTypes() []model.ServiceType {
 			ApiVersion:  "v1alpha1",
 			ServiceType: "container",
 			Spec: map[string]any{
-				"image":     "",
-				"command":   []string{},
-				"args":      []string{},
-				"resources": container.Resources{},
+				"image":     container.Image{},
+				"resources": container.ContainerResources{},
 				"process":   container.Process{},
 				"network":   container.Network{},
-				"runtime":   container.Runtime{},
+				"endpoints": []container.ContainerEndpoint{},
 			},
 			Path: "service-types/container",
 		},
@@ -71,9 +66,10 @@ func defaultServiceTypes() []model.ServiceType {
 			ApiVersion:  "v1alpha1",
 			ServiceType: "database",
 			Spec: map[string]any{
-				"engine":    "",
-				"version":   "",
-				"resources": database.Resources{},
+				"engine":            "",
+				"version":           "",
+				"resources":         database.DatabaseResources{},
+				"connection_string": "",
 			},
 			Path: "service-types/database",
 		},
@@ -82,9 +78,10 @@ func defaultServiceTypes() []model.ServiceType {
 			ApiVersion:  "v1alpha1",
 			ServiceType: "cluster",
 			Spec: map[string]any{
-				"release":    "",
-				"node_pools": cluster.NodePool{},
-				"network":    cluster.Network{},
+				"version":      "",
+				"api_endpoint": "",
+				"console_url":  "",
+				"kubeconfig":   "",
 			},
 			Path: "service-types/cluster",
 		},
@@ -93,13 +90,21 @@ func defaultServiceTypes() []model.ServiceType {
 			ApiVersion:  "v1alpha1",
 			ServiceType: "storage",
 			Spec: map[string]any{
-				"capacity":          "",
-				"access_mode":       storage.StorageSpecAccessMode(""),
-				"volume_mode":       storage.StorageSpecVolumeMode(""),
-				"storage_class":     "",
-				"retain_on_release": false,
+				"capacity":    "",
+				"volume_name": "",
 			},
 			Path: "service-types/storage",
+		},
+		{
+			ID:          "network",
+			ApiVersion:  "v1alpha1",
+			ServiceType: "network",
+			Spec: map[string]any{
+				"ports":         []network.NetworkPort{},
+				"routing_level": "",
+				"endpoints":     []network.NetworkEndpoint{},
+			},
+			Path: "service-types/network",
 		},
 	}
 }

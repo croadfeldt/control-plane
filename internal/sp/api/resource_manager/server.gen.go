@@ -22,17 +22,17 @@ const (
 
 // Defines values for ServiceTypeInstanceDeletionStatus.
 const (
-	FAILED          ServiceTypeInstanceDeletionStatus = "FAILED"
-	PENDINGPROVIDER ServiceTypeInstanceDeletionStatus = "PENDING_PROVIDER"
-	SCHEDULED       ServiceTypeInstanceDeletionStatus = "SCHEDULED"
+	DELETED   ServiceTypeInstanceDeletionStatus = "DELETED"
+	FAILED    ServiceTypeInstanceDeletionStatus = "FAILED"
+	SCHEDULED ServiceTypeInstanceDeletionStatus = "SCHEDULED"
 )
 
 // Valid indicates whether the value is a known member of the ServiceTypeInstanceDeletionStatus enum.
 func (e ServiceTypeInstanceDeletionStatus) Valid() bool {
 	switch e {
-	case FAILED:
+	case DELETED:
 		return true
-	case PENDINGPROVIDER:
+	case FAILED:
 		return true
 	case SCHEDULED:
 		return true
@@ -61,14 +61,18 @@ type Error struct {
 
 // ServiceTypeInstance Full service type instance resource representation
 type ServiceTypeInstance struct {
+	// AgentName Name of the agent managing this instance. Absent or null when the
+	// instance was created without agent routing.
+	AgentName *string `json:"agent_name,omitempty"`
+
 	// CreateTime Timestamp when the instance was first created
 	CreateTime *time.Time `json:"create_time,omitempty"`
 
 	// DeletionStatus Deletion status for deferred deletions. Absent for active
 	// instances. SCHEDULED indicates the instance is queued for cleanup.
 	// FAILED indicates the cleanup has exceeded maximum retries.
-	// PENDING_PROVIDER indicates the instance is waiting for its
-	// provider to become healthy before cleanup is retried.
+	// DELETED indicates cleanup completed (visible when listing deleted
+	// instances).
 	DeletionStatus *ServiceTypeInstanceDeletionStatus `json:"deletion_status,omitempty"`
 
 	// Id Unique identifier for the Service Type Instance
@@ -76,9 +80,6 @@ type ServiceTypeInstance struct {
 
 	// Path Resource path identifier
 	Path *string `json:"path,omitempty"`
-
-	// ProviderName Name of the provider
-	ProviderName string `json:"provider_name"`
 
 	// Spec Service specification following one of the supported service type
 	// schemas (VMSpec, ContainerSpec, DatabaseSpec, or ClusterSpec).
@@ -94,8 +95,8 @@ type ServiceTypeInstance struct {
 // ServiceTypeInstanceDeletionStatus Deletion status for deferred deletions. Absent for active
 // instances. SCHEDULED indicates the instance is queued for cleanup.
 // FAILED indicates the cleanup has exceeded maximum retries.
-// PENDING_PROVIDER indicates the instance is waiting for its
-// provider to become healthy before cleanup is retried.
+// DELETED indicates cleanup completed (visible when listing deleted
+// instances).
 type ServiceTypeInstanceDeletionStatus string
 
 // ServiceTypeInstanceList Paginated list of instances
@@ -120,11 +121,11 @@ type bearerAuthContextKey string
 
 // ListInstancesParams defines parameters for ListInstances.
 type ListInstancesParams struct {
-	// Provider Filter service provider
-	Provider *string `form:"provider,omitempty" json:"provider,omitempty"`
-
 	// ServiceType Filter instances by service type
 	ServiceType *string `form:"service_type,omitempty" json:"service_type,omitempty"`
+
+	// AgentName Filter instances by the agent managing them
+	AgentName *string `form:"agent_name,omitempty" json:"agent_name,omitempty"`
 
 	// ShowDeleted If true, soft-deleted instances are included in the results
 	// alongside active instances. Defaults to false.
@@ -228,19 +229,6 @@ func (siw *ServerInterfaceWrapper) ListInstances(w http.ResponseWriter, r *http.
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ListInstancesParams
 
-	// ------------- Optional query parameter "provider" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "provider", r.URL.Query(), &params.Provider, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "provider"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider", Err: err})
-		}
-		return
-	}
-
 	// ------------- Optional query parameter "service_type" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "service_type", r.URL.Query(), &params.ServiceType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
@@ -250,6 +238,19 @@ func (siw *ServerInterfaceWrapper) ListInstances(w http.ResponseWriter, r *http.
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "service_type"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "service_type", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "agent_name" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "agent_name", r.URL.Query(), &params.AgentName, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "agent_name"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "agent_name", Err: err})
 		}
 		return
 	}
@@ -760,6 +761,20 @@ func (response CreateInstance422ApplicationProblemPlusJSONResponse) VisitCreateI
 	return err
 }
 
+type CreateInstance503ApplicationProblemPlusJSONResponse Error
+
+func (response CreateInstance503ApplicationProblemPlusJSONResponse) VisitCreateInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateInstancedefaultApplicationProblemPlusJSONResponse struct {
 	Body       Error
 	StatusCode int
@@ -846,6 +861,20 @@ func (response DeleteInstance404ApplicationProblemPlusJSONResponse) VisitDeleteI
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteInstance422ApplicationProblemPlusJSONResponse Error
+
+func (response DeleteInstance422ApplicationProblemPlusJSONResponse) VisitDeleteInstanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
 	_, err := buf.WriteTo(w)
 	return err
 }

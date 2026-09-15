@@ -10,9 +10,10 @@ import (
 
 	"github.com/dcm-project/control-plane/internal/auth"
 
+	agentapi "github.com/dcm-project/control-plane/api/agent/v1alpha1"
 	catalogapi "github.com/dcm-project/control-plane/api/catalog/v1alpha1"
+	gitopsapi "github.com/dcm-project/control-plane/api/gitops/v1alpha1"
 	policyapi "github.com/dcm-project/control-plane/api/policy/v1alpha1"
-	spproviderapi "github.com/dcm-project/control-plane/api/sp/v1alpha1/provider"
 	sprmapi "github.com/dcm-project/control-plane/api/sp/v1alpha1/resource_manager"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -22,26 +23,32 @@ import (
 const apiV1Alpha1Prefix = "/api/v1alpha1"
 
 type openAPIValidators struct {
-	catalog  func(http.Handler) http.Handler
-	policy   func(http.Handler) http.Handler
-	provider func(http.Handler) http.Handler
-	rm       func(http.Handler) http.Handler
+	agent   func(http.Handler) http.Handler
+	catalog func(http.Handler) http.Handler
+	gitops  func(http.Handler) http.Handler
+	policy  func(http.Handler) http.Handler
+	rm      func(http.Handler) http.Handler
 }
 
 func newOpenAPIValidators() (*openAPIValidators, error) {
+	agentSpec, err := agentapi.GetSpec()
+	if err != nil {
+		return nil, fmt.Errorf("load agent OpenAPI spec: %w", err)
+	}
+
 	catalogSpec, err := catalogapi.GetSpec()
 	if err != nil {
 		return nil, fmt.Errorf("load catalog OpenAPI spec: %w", err)
 	}
 
+	gitopsSpec, err := gitopsapi.GetSpec()
+	if err != nil {
+		return nil, fmt.Errorf("load gitops OpenAPI spec: %w", err)
+	}
+
 	policySpec, err := policyapi.GetSpec()
 	if err != nil {
 		return nil, fmt.Errorf("load policy OpenAPI spec: %w", err)
-	}
-
-	providerSpec, err := spproviderapi.GetSpec()
-	if err != nil {
-		return nil, fmt.Errorf("load service provider OpenAPI spec: %w", err)
 	}
 
 	rmSpec, err := sprmapi.GetSpec()
@@ -50,20 +57,18 @@ func newOpenAPIValidators() (*openAPIValidators, error) {
 	}
 
 	return &openAPIValidators{
-		catalog:  oapiRequestValidator(catalogSpec),
-		policy:   oapiRequestValidator(policySpec),
-		provider: oapiRequestValidator(providerSpec),
-		rm:       oapiRequestValidator(rmSpec),
+		agent:   oapiRequestValidator(agentSpec),
+		catalog: oapiRequestValidator(catalogSpec),
+		gitops:  oapiRequestValidator(gitopsSpec),
+		policy:  oapiRequestValidator(policySpec),
+		rm:      oapiRequestValidator(rmSpec),
 	}, nil
 }
 
 func oapiRequestValidator(spec *openapi3.T) func(http.Handler) http.Handler {
 	return nethttpmiddleware.OapiRequestValidatorWithOptions(spec, &nethttpmiddleware.Options{
 		Options: openapi3filter.Options{
-			AuthenticationFunc: verifyActorContext,
-			// kin-openapi rewrites validated bodies when schema defaults are applied,
-			// but only registers encoders for application/json. PATCH merge bodies
-			// use application/merge-patch+json and must stay partial (RFC 7396).
+			AuthenticationFunc:  verifyActorContext,
 			SkipSettingDefaults: true,
 		},
 		SilenceServersWarning: true,
@@ -116,12 +121,14 @@ func (v *openAPIValidators) middleware() func(http.Handler) http.Handler {
 			}
 
 			switch {
+			case strings.HasPrefix(path, apiV1Alpha1Prefix+"/agents"):
+				v.agent(next).ServeHTTP(w, r)
 			case strings.HasPrefix(path, apiV1Alpha1Prefix+"/service-type-instances"):
 				v.rm(next).ServeHTTP(w, r)
-			case strings.HasPrefix(path, apiV1Alpha1Prefix+"/providers"):
-				v.provider(next).ServeHTTP(w, r)
 			case strings.HasPrefix(path, apiV1Alpha1Prefix+"/policies"):
 				v.policy(next).ServeHTTP(w, r)
+			case strings.HasPrefix(path, apiV1Alpha1Prefix+"/git-repositories"):
+				v.gitops(next).ServeHTTP(w, r)
 			default:
 				v.catalog(next).ServeHTTP(w, r)
 			}

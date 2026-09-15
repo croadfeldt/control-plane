@@ -1,0 +1,13 @@
+package sprm_test
+
+import (
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+func TestSPRM(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "SPRM Suite")
+}

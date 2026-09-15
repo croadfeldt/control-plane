@@ -1,7 +1,6 @@
 package service
 
 import (
-	"github.com/dcm-project/control-plane/internal/policy/opa"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -364,85 +363,6 @@ var _ = Describe("ConstraintContext", func() {
 			})
 			Expect(violations).To(HaveLen(1))
 			Expect(violations[0].FieldPath).To(Equal("compute.cpu_count"))
-		})
-	})
-
-	Describe("MergeSPConstraints", func() {
-		It("stores first SP constraints", func() {
-			err := constraintCtx.MergeSPConstraints(&opa.ServiceProviderConstraints{AllowList: []string{"aws", "gcp"}}, "policy-1")
-			Expect(err).NotTo(HaveOccurred())
-
-			spConstraints := constraintCtx.GetSPConstraintsMap()
-			Expect(spConstraints).To(HaveKey("allow_list"))
-		})
-
-		It("intersects allow lists", func() {
-			err := constraintCtx.MergeSPConstraints(&opa.ServiceProviderConstraints{AllowList: []string{"aws", "gcp", "azure"}}, "policy-1")
-			Expect(err).NotTo(HaveOccurred())
-
-			err = constraintCtx.MergeSPConstraints(&opa.ServiceProviderConstraints{AllowList: []string{"aws", "azure"}}, "policy-2")
-			Expect(err).NotTo(HaveOccurred())
-
-			spConstraints := constraintCtx.GetSPConstraintsMap()
-			allowList := spConstraints["allow_list"].([]string)
-			Expect(allowList).To(ConsistOf("aws", "azure"))
-		})
-
-		It("rejects empty allow list intersection", func() {
-			err := constraintCtx.MergeSPConstraints(&opa.ServiceProviderConstraints{AllowList: []string{"aws"}}, "policy-1")
-			Expect(err).NotTo(HaveOccurred())
-
-			err = constraintCtx.MergeSPConstraints(&opa.ServiceProviderConstraints{AllowList: []string{"gcp"}}, "policy-2")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("empty"))
-		})
-
-		It("accumulates patterns", func() {
-			err := constraintCtx.MergeSPConstraints(&opa.ServiceProviderConstraints{Patterns: []string{"^aws"}}, "policy-1")
-			Expect(err).NotTo(HaveOccurred())
-
-			err = constraintCtx.MergeSPConstraints(&opa.ServiceProviderConstraints{Patterns: []string{".*-prod$"}}, "policy-2")
-			Expect(err).NotTo(HaveOccurred())
-
-			spConstraints := constraintCtx.GetSPConstraintsMap()
-			patterns := spConstraints["patterns"].([]string)
-			Expect(patterns).To(ConsistOf("^aws", ".*-prod$"))
-		})
-	})
-
-	Describe("ValidateServiceProvider", func() {
-		It("allows provider in allow list", func() {
-			err := constraintCtx.MergeSPConstraints(&opa.ServiceProviderConstraints{AllowList: []string{"aws", "gcp"}}, "policy-1")
-			Expect(err).NotTo(HaveOccurred())
-
-			err = constraintCtx.ValidateServiceProvider("aws")
-			Expect(err).NotTo(HaveOccurred())
-		})
-
-		It("rejects provider not in allow list", func() {
-			err := constraintCtx.MergeSPConstraints(&opa.ServiceProviderConstraints{AllowList: []string{"aws", "gcp"}}, "policy-1")
-			Expect(err).NotTo(HaveOccurred())
-
-			err = constraintCtx.ValidateServiceProvider("azure")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not in the allowed list"))
-		})
-
-		It("validates provider against pattern", func() {
-			err := constraintCtx.MergeSPConstraints(&opa.ServiceProviderConstraints{Patterns: []string{"^aws"}}, "policy-1")
-			Expect(err).NotTo(HaveOccurred())
-
-			err = constraintCtx.ValidateServiceProvider("aws-prod")
-			Expect(err).NotTo(HaveOccurred())
-
-			err = constraintCtx.ValidateServiceProvider("gcp-prod")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("does not match"))
-		})
-
-		It("allows empty provider without constraints", func() {
-			err := constraintCtx.ValidateServiceProvider("")
-			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 

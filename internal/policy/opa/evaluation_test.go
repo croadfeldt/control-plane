@@ -19,14 +19,14 @@ func TestParsePolicyDecision(t *testing.T) {
 				"patch": map[string]interface{}{
 					"region": "us-east-1",
 				},
-				"selected_provider": "aws",
+				"selected_agent": "aws-agent",
 			},
 			expected: &PolicyDecision{
 				Rejected: false,
 				Patch: map[string]interface{}{
 					"region": "us-east-1",
 				},
-				SelectedProvider: "aws",
+				SelectedAgent: "aws-agent",
 			},
 		},
 		{
@@ -55,17 +55,17 @@ func TestParsePolicyDecision(t *testing.T) {
 			},
 		},
 		{
-			name: "approval with service provider constraints",
+			name: "approval with agent constraints",
 			result: map[string]interface{}{
 				"rejected": false,
-				"service_provider_constraints": map[string]interface{}{
+				"agent_constraints": map[string]interface{}{
 					"allow_list": []interface{}{"aws", "gcp"},
 					"patterns":   []interface{}{"^(aws|gcp)$"},
 				},
 			},
 			expected: &PolicyDecision{
 				Rejected: false,
-				ServiceProviderConstraints: &ServiceProviderConstraints{
+				AgentConstraints: &AgentConstraints{
 					AllowList: []string{"aws", "gcp"},
 					Patterns:  []string{"^(aws|gcp)$"},
 				},
@@ -113,13 +113,13 @@ func TestParsePolicyDecision(t *testing.T) {
 			assert.Equal(t, tt.expected.RejectionReason, decision.RejectionReason)
 			assert.Equal(t, tt.expected.Patch, decision.Patch)
 			assert.Equal(t, tt.expected.Constraints, decision.Constraints)
-			assert.Equal(t, tt.expected.SelectedProvider, decision.SelectedProvider)
-			if tt.expected.ServiceProviderConstraints != nil {
-				assert.NotNil(t, decision.ServiceProviderConstraints)
-				assert.Equal(t, tt.expected.ServiceProviderConstraints.AllowList, decision.ServiceProviderConstraints.AllowList)
-				assert.Equal(t, tt.expected.ServiceProviderConstraints.Patterns, decision.ServiceProviderConstraints.Patterns)
+			assert.Equal(t, tt.expected.SelectedAgent, decision.SelectedAgent)
+			if tt.expected.AgentConstraints != nil {
+				assert.NotNil(t, decision.AgentConstraints)
+				assert.Equal(t, tt.expected.AgentConstraints.AllowList, decision.AgentConstraints.AllowList)
+				assert.Equal(t, tt.expected.AgentConstraints.Patterns, decision.AgentConstraints.Patterns)
 			} else {
-				assert.Nil(t, decision.ServiceProviderConstraints)
+				assert.Nil(t, decision.AgentConstraints)
 			}
 		})
 	}

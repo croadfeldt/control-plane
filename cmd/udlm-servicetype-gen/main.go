@@ -239,7 +239,7 @@ func (g *generator) buildRootSchema(spec, outputs *yaml.Node, m mapping, resourc
 		appendKV(inner, "required", req)
 	}
 	appendKV(inner, "properties", topProps)
-	appendKV(inner, "additionalProperties", boolNode(true))
+	appendKV(inner, "additionalProperties", trueNode())
 
 	schema := mappingNode()
 	appendKV(schema, "type", scalarNode("object"))
@@ -357,11 +357,12 @@ func (g *generator) buildProperty(name string, sch *yaml.Node) *yaml.Node {
 		if d := scalarValue(mapGet(sch, "description")); d != "" {
 			appendKV(out, "description", literalScalar(d))
 		}
-		if items != nil && scalarValue(mapGet(items, "type")) == "object" && mapGet(items, "properties") != nil {
+		switch {
+		case items != nil && scalarValue(mapGet(items, "type")) == "object" && mapGet(items, "properties") != nil:
 			appendKV(out, "items", g.hoist(pascal(singular(name)), items))
-		} else if items != nil {
+		case items != nil:
 			appendKV(out, "items", g.buildProperty(singular(name), items))
-		} else {
+		default:
 			// OpenAPI 3.0 requires items; UDLM outputs sometimes leave an
 			// address list untyped. Strings are the only safe default.
 			appendKV(out, "items", copyScalarSchema(nil))
@@ -390,7 +391,7 @@ func (g *generator) hoist(name string, obj *yaml.Node) *yaml.Node {
 			appendKV(schema, "required", cloneSeqStrings(req))
 		}
 		appendKV(schema, "properties", g.buildProperties(mapGet(obj, "properties")))
-		appendKV(schema, "additionalProperties", boolNode(true))
+		appendKV(schema, "additionalProperties", trueNode())
 		g.hoisted[name] = schema
 	}
 	ref := mappingNode()
@@ -434,14 +435,14 @@ func (g *generator) appendOutputs(props, outputs *yaml.Node) (added, skipped []s
 		if mapGet(prop, "$ref") != nil {
 			wrapped := mappingNode()
 			appendKV(wrapped, "description", literalScalar(desc))
-			appendKV(wrapped, "readOnly", boolNode(true))
+			appendKV(wrapped, "readOnly", trueNode())
 			allOf := sequenceNode()
 			allOf.Content = append(allOf.Content, prop)
 			appendKV(wrapped, "allOf", allOf)
 			prop = wrapped
 		} else {
 			setKV(prop, "description", literalScalar(desc))
-			appendKV(prop, "readOnly", boolNode(true))
+			appendKV(prop, "readOnly", trueNode())
 		}
 		appendKV(props, name, prop)
 		added = append(added, name)
@@ -683,12 +684,8 @@ func scalarNode(v string) *yaml.Node {
 	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v}
 }
 
-func boolNode(b bool) *yaml.Node {
-	v := "false"
-	if b {
-		v = "true"
-	}
-	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: v}
+func trueNode() *yaml.Node {
+	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: "true"}
 }
 
 // literalScalar renders multi-line text as a YAML literal block for readability.

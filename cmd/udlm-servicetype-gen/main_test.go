@@ -41,8 +41,10 @@ const fixtureUDLM = `{
   }
 }`
 
-const fixtureCommonElements = `{"$defs": {"Reference": {"type": "string", "format": "udlm-ref-url", "description": "shared wording"}}}`
-const fixtureDataReference = `{"$defs": {"data_reference": {"type": "string", "format": "udlm-ref-url", "description": "a reference-data pointer"}}}`
+const (
+	fixtureCommonElements = `{"$defs": {"Reference": {"type": "string", "format": "udlm-ref-url", "description": "shared wording"}}}`
+	fixtureDataReference  = `{"$defs": {"data_reference": {"type": "string", "format": "udlm-ref-url", "description": "a reference-data pointer"}}}`
+)
 
 func TestGenerateTransform(t *testing.T) {
 	root := t.TempDir()

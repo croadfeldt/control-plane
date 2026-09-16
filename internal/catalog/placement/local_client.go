@@ -21,50 +21,56 @@ func NewLocalClient(svc *service.PlacementService, logger *slog.Logger) Client {
 	return &localClient{svc: svc, logger: logger.With("component", "placement-local")}
 }
 
-func (c *localClient) CreateResource(ctx context.Context, req CreateResourceRequest, id string) (*Resource, error) {
-	c.logger.InfoContext(ctx, "Creating resource in placement (in-process)",
-		"catalog_item_instance_id", req.CatalogItemInstanceID,
-		"resource_id", id,
+func (c *localClient) CreateRun(ctx context.Context, req CreateRunRequest) (*Run, error) {
+	c.logger.InfoContext(ctx, "Creating run in placement (in-process)",
+		"catalog_item_instance_id", req.CatalogItemInstanceId,
+		"resource_count", len(req.Resources),
 	)
 
-	body := &types.Resource{
-		CatalogItemInstanceId: req.CatalogItemInstanceID,
-		Spec:                  req.Spec,
-	}
-	var queryID *string
-	if id != "" {
-		queryID = &id
-	}
-
-	result, err := c.svc.CreateResource(ctx, body, queryID)
+	result, err := c.svc.CreateRun(ctx, &req)
 	if err != nil {
 		return nil, mapPlacementServiceError(err)
 	}
-	return mapAPIResource(result), nil
+	return mapAPIRun(result), nil
 }
 
-func (c *localClient) DeleteResource(ctx context.Context, resourceID string) error {
-	c.logger.InfoContext(ctx, "Deleting resource in placement (in-process)", "resource_id", resourceID)
-	if err := c.svc.DeleteResource(ctx, resourceID); err != nil {
+func (c *localClient) DeleteRun(ctx context.Context, runID string) error {
+	c.logger.InfoContext(ctx, "Deleting run in placement (in-process)", "run_id", runID)
+	if err := c.svc.DeleteRun(ctx, runID); err != nil {
 		return mapPlacementServiceError(err)
 	}
 	return nil
 }
 
-func (c *localClient) RehydrateResource(ctx context.Context, resourceID string, newResourceID string) (*Resource, error) {
+func (c *localClient) RehydrateResource(ctx context.Context, runID, newRunID string) (*Resource, error) {
 	c.logger.InfoContext(ctx, "Rehydrating resource in placement (in-process)",
-		"resource_id", resourceID,
-		"new_resource_id", newResourceID,
+		"run_id", runID,
+		"new_run_id", newRunID,
 	)
-	result, err := c.svc.RehydrateResource(ctx, resourceID, newResourceID)
+	result, err := c.svc.RehydrateResource(ctx, runID, newRunID)
 	if err != nil {
 		return nil, mapPlacementServiceError(err)
 	}
 	return mapAPIResource(result), nil
 }
 
+func mapAPIRun(r *types.Run) *Run {
+	if r == nil {
+		return nil
+	}
+	out := &Run{
+		RunID:                 r.RunId,
+		CatalogItemInstanceID: r.CatalogItemInstanceId,
+		Resources:             make([]Resource, 0, len(r.Resources)),
+	}
+	for i := range r.Resources {
+		out.Resources = append(out.Resources, *mapAPIResource(&r.Resources[i]))
+	}
+	return out
+}
+
 func mapAPIResource(r *types.Resource) *Resource {
-	res := &Resource{Spec: r.Spec}
+	res := &Resource{Spec: r.Spec, Name: r.Name}
 	if r.Id != nil {
 		res.ID = *r.Id
 	}
@@ -88,13 +94,27 @@ func mapPlacementServiceError(err error) error {
 		status = http.StatusNotAcceptable
 	case service.ErrCodeConflict, service.ErrCodePolicyConflict:
 		status = http.StatusConflict
-	case service.ErrCodeProviderError:
+	case service.ErrCodeProvisioningError:
 		status = http.StatusUnprocessableEntity
 	case service.ErrCodeNotFound:
 		status = http.StatusNotFound
 	case service.ErrCodePolicyError, service.ErrCodePolicyInternalError:
 		status = http.StatusFailedDependency
+	case service.ErrCodeUnavailable:
+		status = http.StatusServiceUnavailable
 	}
 
-	return &PlacementError{StatusCode: status, Body: svcErr.Message}
+	// 5xx bodies may carry internal error detail from downstream services -
+	// log server-side and return a generic message to the API caller.
+	body := svcErr.Message
+	if status >= http.StatusInternalServerError {
+		slog.Error("placement local client error", "status", status, "detail", svcErr.Message)
+		if status == http.StatusServiceUnavailable {
+			body = "service temporarily unavailable"
+		} else {
+			body = "internal server error"
+		}
+	}
+
+	return &PlacementError{StatusCode: status, Body: body}
 }

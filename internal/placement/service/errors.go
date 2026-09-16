@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/dcm-project/control-plane/internal/placement/policy"
@@ -14,13 +15,14 @@ const (
 	ErrCodeNotFound            = "https://dcm.example.com/errors/not-found"
 	ErrCodeConflict            = "https://dcm.example.com/errors/conflict"
 	ErrCodeValidation          = "https://dcm.example.com/errors/validation"
-	ErrCodeProviderError       = "https://dcm.example.com/errors/provider-error"
+	ErrCodeProvisioningError   = "https://dcm.example.com/errors/provisioning-error"
 	ErrCodeInternal            = "https://dcm.example.com/errors/internal-error"
 	ErrCodePolicyError         = "https://dcm.example.com/errors/policy-error"
 	ErrCodePolicyInternalError = "https://dcm.example.com/errors/policy-internal-error"
 	ErrCodePolicyRejected      = "https://dcm.example.com/errors/policy-rejected"
 	ErrCodePolicyConflict      = "https://dcm.example.com/errors/policy-conflict"
 	ErrCodeSPRMError           = "https://dcm.example.com/errors/sprm-error"
+	ErrCodeUnavailable         = "https://dcm.example.com/errors/unavailable"
 )
 
 // ServiceError represents a business logic error with a code for HTTP mapping.
@@ -98,6 +100,13 @@ func NewSPRMError(message string) *ServiceError {
 	}
 }
 
+func NewUnavailableError(message string) *ServiceError {
+	return &ServiceError{
+		Code:    ErrCodeUnavailable,
+		Message: message,
+	}
+}
+
 // IsClientError returns true if err is a ServiceError representing a client-side
 // (4xx) problem. If svcErr is non-nil it is populated with the unwrapped error.
 func IsClientError(err error, svcErr **ServiceError) bool {
@@ -106,7 +115,7 @@ func IsClientError(err error, svcErr **ServiceError) bool {
 	}
 	switch (*svcErr).Code {
 	case ErrCodeValidation, ErrCodeNotFound, ErrCodeConflict,
-		ErrCodePolicyRejected, ErrCodePolicyConflict, ErrCodeProviderError:
+		ErrCodePolicyRejected, ErrCodePolicyConflict, ErrCodeProvisioningError:
 		return true
 	}
 	return false
@@ -137,7 +146,9 @@ func handlePolicyError(err error) *ServiceError {
 }
 
 // handleSPRMError maps SPRM client errors to service errors by checking
-// the error type and extracting the HTTP status code.
+// the error type and extracting the HTTP status code. 5xx bodies are logged
+// server-side and replaced with a generic client-facing message so internal
+// error detail (DB errors, NATS errors) never leaks into API responses.
 func handleSPRMError(err error) *ServiceError {
 	var httpErr *sprm.HTTPError
 	if errors.As(err, &httpErr) {
@@ -150,15 +161,21 @@ func handleSPRMError(err error) *ServiceError {
 			return NewConflictError(fmt.Sprintf("resource conflict in SPRM: %s", httpErr.Body))
 		case http.StatusUnprocessableEntity:
 			return &ServiceError{
-				Code:    ErrCodeProviderError,
-				Message: fmt.Sprintf("SPRM provider error: %s", httpErr.Body),
+				Code:    ErrCodeProvisioningError,
+				Message: fmt.Sprintf("SPRM provisioning error: %s", httpErr.Body),
 			}
+		case http.StatusServiceUnavailable:
+			slog.Error("sprm request failed", "status", httpErr.StatusCode, "detail", httpErr.Body)
+			return NewUnavailableError("service temporarily unavailable")
 		case http.StatusInternalServerError:
-			return NewSPRMError(fmt.Sprintf("SPRM internal error: %s", httpErr.Body))
+			slog.Error("sprm request failed", "status", httpErr.StatusCode, "detail", httpErr.Body)
+			return NewSPRMError("internal server error")
 		default:
-			return NewSPRMError(fmt.Sprintf("SPRM request failed with status %d: %s", httpErr.StatusCode, httpErr.Body))
+			slog.Error("sprm request failed", "status", httpErr.StatusCode, "detail", httpErr.Body)
+			return NewSPRMError("internal server error")
 		}
 	}
 
-	return NewSPRMError("SPRM request failed: " + err.Error())
+	slog.Error("sprm request failed", "error", err)
+	return NewSPRMError("internal server error")
 }

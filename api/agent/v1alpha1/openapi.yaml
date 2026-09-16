@@ -1,0 +1,374 @@
+openapi: 3.0.4
+info:
+  contact: {}
+  description: |
+    DCM Agent API - Registration and management of Environment Agents.
+    Agents register with the control plane and send periodic heartbeats.
+  title: Agent API
+  version: v1alpha1
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: /api/v1alpha1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: agent
+    description: Agent management operations
+
+paths:
+  /agents:
+    get:
+      tags:
+        - agent
+      summary: List all agents
+      operationId: listAgents
+      description: Returns a list of registered agents with optional filtering
+      parameters:
+        - name: health_status
+          in: query
+          description: Filter agents by health status
+          schema:
+            type: string
+            enum:
+              - ready
+              - congested
+              - unavailable
+        - name: max_page_size
+          in: query
+          description: Maximum number of results per page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+        - name: page_token
+          in: query
+          description: Token for pagination
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentList'
+        '400':
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      tags:
+        - agent
+      summary: Register an agent
+      operationId: createAgent
+      description: |
+        Register a new agent or update an existing one.
+        Registration is idempotent by name:
+        - If name does not exist, a new agent entry is created (201)
+        - If name exists, the entry is updated and heartbeat is reset (200)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentRegistrationRequest'
+      responses:
+        '200':
+          description: Agent updated (re-registration)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '201':
+          description: Agent created (new registration)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          description: Invalid input
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Agent name is already registered with a different topic_name, or vice versa
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /agents/{agentId}:
+    get:
+      tags:
+        - agent
+      summary: Get an agent
+      operationId: getAgent
+      description: Get an agent by its unique ID
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          description: Invalid ID supplied
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Agent not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /agents/{agentId}/heartbeat:
+    put:
+      tags:
+        - agent
+      summary: Send agent heartbeat
+      operationId: agentHeartbeat
+      description: |
+        Agents send periodic heartbeats to report health and consumer lag.
+        Heartbeat timestamps are monotonic: stale timestamps are ignored.
+      parameters:
+        - $ref: '#/components/parameters/AgentIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeartbeatRequest'
+      responses:
+        '200':
+          description: Heartbeat accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          description: Invalid input
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Agent not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  parameters:
+    AgentIdPath:
+      name: agentId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 63
+      description: Unique identifier of the agent
+
+  schemas:
+    AgentRegistrationRequest:
+      type: object
+      description: Request body for agent registration
+      required:
+        - name
+        - environment
+        - topic_name
+        - service_types
+        - cost
+      properties:
+        name:
+          type: string
+          description: Unique name of the agent
+          example: "env-agent-west-1"
+        environment:
+          type: string
+          description: Environment label for the agent
+          example: "production"
+        service_types:
+          type: array
+          items:
+            type: string
+          description: List of service types this agent can provide
+          example: ["vm", "container"]
+        cost:
+          type: string
+          enum:
+            - low
+            - medium-low
+            - medium
+            - medium-high
+            - high
+          description: Relative cost weight for placement decisions
+          example: "medium"
+        topic_name:
+          type: string
+          description: NATS topic name for this agent (must start with dcm.agent.)
+          pattern: '^dcm\.agent\..+'
+          example: "dcm.agent.env-agent-west-1"
+
+    Agent:
+      type: object
+      description: Full agent resource representation
+      properties:
+        agent_id:
+          type: string
+          readOnly: true
+          description: Server-generated unique identifier
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        name:
+          type: string
+          description: Unique name of the agent
+          example: "env-agent-west-1"
+        environment:
+          type: string
+          description: Environment label for the agent
+          example: "production"
+        service_types:
+          type: array
+          items:
+            type: string
+          description: List of service types this agent can provide
+          example: ["vm", "container"]
+        cost:
+          type: string
+          enum:
+            - low
+            - medium-low
+            - medium
+            - medium-high
+            - high
+          description: Relative cost weight for placement decisions
+          example: "medium"
+        topic_name:
+          type: string
+          description: NATS topic name for this agent
+          example: "dcm.agent.env-agent-west-1"
+        health_status:
+          type: string
+          description: Current health status of the agent
+          readOnly: true
+          enum:
+            - ready
+            - congested
+            - unavailable
+          example: "ready"
+        last_heartbeat:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Timestamp of last heartbeat received
+        create_time:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Timestamp when the agent was first registered
+        update_time:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Timestamp when the agent was last updated
+
+    HeartbeatRequest:
+      type: object
+      description: Request body for agent heartbeat
+      required:
+        - consumer_lag
+        - timestamp
+      properties:
+        consumer_lag:
+          type: integer
+          format: int64
+          description: Number of unprocessed messages in the agent's NATS consumer
+          example: 0
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of this heartbeat (used for monotonicity check)
+
+    AgentList:
+      type: object
+      description: Paginated list of agents
+      properties:
+        agents:
+          type: array
+          items:
+            $ref: '#/components/schemas/Agent'
+        next_page_token:
+          type: string
+          description: Token for retrieving the next page of results
+
+    Error:
+      type: object
+      description: RFC 7807 compliant error response
+      required:
+        - type
+        - title
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          description: URI reference identifying the error type
+        title:
+          type: string
+          description: Short human-readable summary of the problem
+        status:
+          type: integer
+          description: HTTP status code
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence
+        instance:
+          type: string
+          format: uri-reference
+          description: URI reference for this specific error occurrence
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from the configured Auth Provider

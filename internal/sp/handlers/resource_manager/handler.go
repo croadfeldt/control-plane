@@ -27,15 +27,14 @@ func (h *Handler) ListInstances(ctx context.Context, request server.ListInstance
 	log := logging.FromContext(ctx)
 	showDeleted := request.Params.ShowDeleted != nil && *request.Params.ShowDeleted
 	log.Debug("ListInstances request received",
-		"provider", request.Params.Provider,
 		"page_size", request.Params.MaxPageSize,
 		"show_deleted", showDeleted,
 	)
 
 	result, err := h.instanceService.ListInstances(
 		ctx,
-		request.Params.Provider,
 		request.Params.ServiceType,
+		request.Params.AgentName,
 		showDeleted,
 		request.Params.MaxPageSize,
 		request.Params.PageToken,
@@ -58,14 +57,11 @@ func (h *Handler) ListInstances(ctx context.Context, request server.ListInstance
 // CreateInstance creates a new service type instance.
 func (h *Handler) CreateInstance(ctx context.Context, request server.CreateInstanceRequestObject) (server.CreateInstanceResponseObject, error) {
 	log := logging.FromContext(ctx)
-	log.Debug("CreateInstance request received",
-		"client_id", request.Params.Id,
-		"provider_name", request.Body.ProviderName,
-	)
+	log.Debug("CreateInstance request received", "client_id", request.Params.Id)
 
 	instance := convertServerToAPI(request.Body)
 
-	result, err := h.instanceService.CreateInstance(ctx, instance, request.Params.Id)
+	result, err := h.instanceService.CreateInstance(ctx, instance, request.Params.Id, "")
 	if err != nil {
 		logServiceError(ctx, "CreateInstance failed", err)
 		return handleCreateInstanceError(err), nil

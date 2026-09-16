@@ -64,7 +64,7 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 
 	slog.Info("Database connection established", "type", cfg.Database.Type)
 
-	if err := db.AutoMigrate(&model.Provider{}, &model.ServiceTypeInstance{}); err != nil {
+	if err := db.AutoMigrate(&model.ServiceTypeInstance{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 

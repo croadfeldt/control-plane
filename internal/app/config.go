@@ -19,7 +19,19 @@ type Config struct {
 	Seed     SeedConfig
 	NATS     NATSConfig
 	SP       SPConfig
+	Agent    AgentConfig
 	Wiring   WiringConfig
+}
+
+type AgentConfig struct {
+	HeartbeatTimeout         time.Duration `envconfig:"AGENT_HEARTBEAT_TIMEOUT" default:"60s"`
+	ConsumerLagThreshold     int64         `envconfig:"AGENT_CONSUMER_LAG_THRESHOLD" default:"100"`
+	QueuedRequestTimeout     time.Duration `envconfig:"AGENT_QUEUED_REQUEST_TIMEOUT" default:"5m"`
+	PendingRequestTimeout    time.Duration `envconfig:"AGENT_PENDING_REQUEST_TIMEOUT" default:"2m"`
+	PendingRequestMaxRetries int           `envconfig:"AGENT_PENDING_REQUEST_MAX_RETRIES" default:"3"`
+	SweepInterval            time.Duration `envconfig:"AGENT_SWEEP_INTERVAL" default:"10s"`
+	ResponseMaxDeliver       int           `envconfig:"AGENT_RESPONSE_MAX_DELIVER" default:"10"`
+	ResponseAckWait          time.Duration `envconfig:"AGENT_RESPONSE_ACK_WAIT" default:"30s"`
 }
 
 type AuthConfig struct {

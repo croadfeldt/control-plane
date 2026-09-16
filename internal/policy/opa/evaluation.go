@@ -2,24 +2,25 @@ package opa
 
 // EvaluationResult represents the result from OPA evaluation
 type EvaluationResult struct {
-	Result  map[string]any // The policy decision
-	Defined bool           // Whether the policy made a decision
+	Result  map[string]any
+	Defined bool
 }
 
-// ServiceProviderConstraints represents constraints on which service providers are allowed
-type ServiceProviderConstraints struct {
-	AllowList []string `json:"allow_list,omitempty"`
-	Patterns  []string `json:"patterns,omitempty"`
+// AgentConstraints represents constraints on which agents are allowed
+type AgentConstraints struct {
+	AllowList              []string `json:"allow_list,omitempty"`
+	Patterns               []string `json:"patterns,omitempty"`
+	EnvironmentConstraints []string `json:"environment_constraints,omitempty"`
 }
 
 // PolicyDecision represents the expected output from OPA policies
 type PolicyDecision struct {
-	Rejected                   bool                        `json:"rejected"`
-	RejectionReason            string                      `json:"rejection_reason,omitempty"`
-	Patch                      map[string]any              `json:"patch,omitempty"`
-	Constraints                map[string]any              `json:"constraints,omitempty"`
-	ServiceProviderConstraints *ServiceProviderConstraints `json:"service_provider_constraints,omitempty"`
-	SelectedProvider           string                      `json:"selected_provider,omitempty"`
+	Rejected         bool              `json:"rejected"`
+	RejectionReason  string            `json:"rejection_reason,omitempty"`
+	Patch            map[string]any    `json:"patch,omitempty"`
+	Constraints      map[string]any    `json:"constraints,omitempty"`
+	SelectedAgent    string            `json:"selected_agent,omitempty"`
+	AgentConstraints *AgentConstraints `json:"agent_constraints,omitempty"`
 }
 
 // ParsePolicyDecision extracts a PolicyDecision from the OPA evaluation result
@@ -42,27 +43,34 @@ func ParsePolicyDecision(result map[string]any) *PolicyDecision {
 		decision.Constraints = constraints
 	}
 
-	if spc, ok := result["service_provider_constraints"].(map[string]any); ok {
-		spConstraints := &ServiceProviderConstraints{}
-		if allowList, ok := spc["allow_list"].([]any); ok {
-			for _, item := range allowList {
-				if s, ok := item.(string); ok {
-					spConstraints.AllowList = append(spConstraints.AllowList, s)
-				}
-			}
-		}
-		if patterns, ok := spc["patterns"].([]any); ok {
-			for _, item := range patterns {
-				if s, ok := item.(string); ok {
-					spConstraints.Patterns = append(spConstraints.Patterns, s)
-				}
-			}
-		}
-		decision.ServiceProviderConstraints = spConstraints
+	if agent, ok := result["selected_agent"].(string); ok {
+		decision.SelectedAgent = agent
 	}
 
-	if provider, ok := result["selected_provider"].(string); ok {
-		decision.SelectedProvider = provider
+	if ac, ok := result["agent_constraints"].(map[string]any); ok {
+		agentConstraints := &AgentConstraints{}
+		if allowList, ok := ac["allow_list"].([]any); ok {
+			for _, item := range allowList {
+				if s, ok := item.(string); ok {
+					agentConstraints.AllowList = append(agentConstraints.AllowList, s)
+				}
+			}
+		}
+		if patterns, ok := ac["patterns"].([]any); ok {
+			for _, item := range patterns {
+				if s, ok := item.(string); ok {
+					agentConstraints.Patterns = append(agentConstraints.Patterns, s)
+				}
+			}
+		}
+		if envConstraints, ok := ac["environment_constraints"].([]any); ok {
+			for _, item := range envConstraints {
+				if s, ok := item.(string); ok {
+					agentConstraints.EnvironmentConstraints = append(agentConstraints.EnvironmentConstraints, s)
+				}
+			}
+		}
+		decision.AgentConstraints = agentConstraints
 	}
 
 	return decision

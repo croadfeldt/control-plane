@@ -108,6 +108,21 @@ var _ = Describe("ServiceType Service", func() {
 				Expect(result.ServiceType).To(Equal("storage"))
 				Expect(result.Spec).To(HaveKey("capacity"))
 			})
+
+			It("should create a service type with 'network'", func() {
+				req := &service.CreateServiceTypeRequest{
+					ApiVersion:  "v1alpha1",
+					ServiceType: "network",
+					Spec:        map[string]any{"ports": []map[string]any{{"port": 80, "target_port": 8080}}, "routing_level": "network"},
+				}
+
+				result, err := svc.ServiceType().Create(ctx, req)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).ToNot(BeNil())
+				Expect(result.ServiceType).To(Equal("network"))
+				Expect(result.Spec).To(HaveKey("ports"))
+				Expect(result.Spec).To(HaveKey("routing_level"))
+			})
 		})
 
 		Context("with invalid service types", func() {
@@ -312,13 +327,14 @@ var _ = Describe("ServiceType Service", func() {
 
 			result, err := svc.ServiceType().List(ctx, &service.ServiceTypeListOptions{})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.ServiceTypes).To(HaveLen(6))
+			Expect(result.ServiceTypes).To(HaveLen(7))
 
 			types := make([]string, len(result.ServiceTypes))
 			for i, st := range result.ServiceTypes {
 				types[i] = st.ServiceType
 			}
 			Expect(types).To(ContainElement("storage"))
+			Expect(types).To(ContainElement("network"))
 		})
 
 		It("should list service types", func() {

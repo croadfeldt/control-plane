@@ -36,17 +36,20 @@ Run the monolith (pick one):
 |---------|---------------|----------|------------|
 | `make run` | host | SQLite at `/tmp/control-plane.db` | NATS disabled |
 | `make run-dev` | host | Postgres (`DB_*` defaults) | Postgres + NATS running locally |
-| `make compose-up` | containers | Postgres in compose | also starts NATS, Keycloak, control-plane, and dcm-ui |
+| `make compose-up` | containers | Postgres in compose | also starts NATS, control-plane, and dcm-ui (no Keycloak) |
 
 ```bash
 make run              # SQLite, no containers
+cp deploy/.env.example deploy/.env
 make compose-up       # platform stack in containers
+make compose-up AUTH=true  # same + Keycloak when auth is enabled in .env
 make compose-down     # stop stack and remove volumes
 ```
 
-Compose uses `POSTGRES_USER` and `POSTGRES_PASSWORD` (defaults in compose
-are for local dev only). Override via environment or a `.env` file; see
-`deploy/.env.example`.
+Compose credentials live in `deploy/.env` (copy from `deploy/.env.example`). Keycloak
+uses the `auth` compose profile — `make compose-up AUTH=true` after uncommenting the auth block
+in `.env`. With providers: `make compose-up-with-providers PROFILES=kubevirt AUTH=true`.
+Subsystem tests use the shared `test/subsystem/.env.example` file.
 
 Policy evaluation and placement provisioning run in-process in the monolith
 (`EvaluationService`, `PlacementService` via local clients). There is no public
@@ -77,14 +80,14 @@ in shared-workflows for tag behavior and version conventions.
 Full-stack Compose and Helm packaging live under `deploy/`:
 
 - **Compose:** control-plane, postgres, nats, keycloak, dcm-ui, and optional service providers
-- **Helm:** Kubernetes/OpenShift chart at `deploy/helm/dcm` (authentication is not yet integrated into the Helm chart — Keycloak is only available in the Compose stack)
+- **Helm:** Kubernetes/OpenShift chart at `deploy/helm/dcm` (optional auth via `auth.enabled`)
 
 See [deploy/RUN.md](deploy/RUN.md) for local stack usage, authentication, and service provider profiles.
 See [deploy/helm/dcm/README.md](deploy/helm/dcm/README.md) for cluster installs.
 
-Authentication is disabled by default (`AUTH_DISABLED=true`) until end-to-end
-authentication is fully implemented. Service providers do not yet forward
-authentication headers, so enabling auth will break SP communication with the
+Authentication is disabled by default (`AUTH_DISABLED=true`). The CLI forwards
+bearer tokens (`dcm login` or `DCM_TOKEN`); service providers do not yet forward
+authentication headers, so enabling auth can break SP communication with the
 control plane.
 
 | Port | Service | Notes |

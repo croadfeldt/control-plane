@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	sprmv1alpha1 "github.com/dcm-project/control-plane/api/sp/v1alpha1/resource_manager"
@@ -22,12 +23,11 @@ func NewServiceClient(instances *rmsvc.InstanceService) Client {
 
 func (c *serviceClient) CreateResource(ctx context.Context, req CreateResourceRequest) (*CreateResourceResponse, error) {
 	body := sprmv1alpha1.ServiceTypeInstance{
-		ProviderName: req.ProviderName,
-		Spec:         req.Spec,
+		Spec: req.Spec,
 	}
 	queryID := req.ID
 
-	instance, err := c.instances.CreateInstance(ctx, &body, &queryID)
+	instance, err := c.instances.CreateInstance(ctx, &body, &queryID, req.AgentName)
 	if err != nil {
 		return nil, mapInstanceError(err)
 	}
@@ -42,6 +42,14 @@ func (c *serviceClient) CreateResource(ctx context.Context, req CreateResourceRe
 	return resp, nil
 }
 
+func (c *serviceClient) GetOutputSpec(ctx context.Context, resourceID string) (*GetOutputSpecResponse, error) {
+	outputSpec, err := c.instances.GetOutputSpec(ctx, resourceID)
+	if err != nil {
+		return nil, mapInstanceError(err)
+	}
+	return &GetOutputSpecResponse{OutputSpec: outputSpec}, nil
+}
+
 func (c *serviceClient) DeleteResource(ctx context.Context, resourceID string) error {
 	return c.deleteResource(ctx, resourceID, false)
 }
@@ -52,6 +60,13 @@ func (c *serviceClient) DeleteResourceDeferred(ctx context.Context, resourceID s
 
 func (c *serviceClient) deleteResource(ctx context.Context, resourceID string, deferred bool) error {
 	if err := c.instances.DeleteInstance(ctx, resourceID, deferred); err != nil {
+		return mapInstanceError(err)
+	}
+	return nil
+}
+
+func (c *serviceClient) ReassignResource(ctx context.Context, resourceID string, agentName string, expectedCurrentAgent string) error {
+	if err := c.instances.ReassignAgent(ctx, resourceID, agentName, expectedCurrentAgent); err != nil {
 		return mapInstanceError(err)
 	}
 	return nil
@@ -71,9 +86,24 @@ func mapInstanceError(err error) error {
 		status = http.StatusNotFound
 	case spservice.ErrCodeConflict:
 		status = http.StatusConflict
-	case spservice.ErrCodeProviderError:
+	case spservice.ErrCodeProvisioningError:
 		status = http.StatusUnprocessableEntity
+	case spservice.ErrCodeUnavailable:
+		status = http.StatusServiceUnavailable
 	}
 
-	return &HTTPError{StatusCode: status, Body: svcErr.Message}
+	// 4xx bodies are client-facing validation detail and safe to return
+	// verbatim. 5xx bodies may contain internal error strings (DB, NATS) -
+	// log them server-side and return a generic message to the caller.
+	body := svcErr.Message
+	if status >= http.StatusInternalServerError {
+		slog.Error("sprm adapter error", "status", status, "detail", svcErr.Message)
+		if status == http.StatusServiceUnavailable {
+			body = "service temporarily unavailable"
+		} else {
+			body = "internal server error"
+		}
+	}
+
+	return &HTTPError{StatusCode: status, Body: body}
 }

@@ -2,18 +2,18 @@ package cleanup_test
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"time"
 
+	agentstore "github.com/dcm-project/control-plane/internal/agent/store/agent"
+	agentmodel "github.com/dcm-project/control-plane/internal/agent/store/model"
 	"github.com/dcm-project/control-plane/internal/sp/cleanup"
 	"github.com/dcm-project/control-plane/internal/sp/config"
-	rmsvc "github.com/dcm-project/control-plane/internal/sp/service/resource_manager"
+	"github.com/dcm-project/control-plane/internal/sp/messaging"
 	"github.com/dcm-project/control-plane/internal/sp/store"
 	"github.com/dcm-project/control-plane/internal/sp/store/model"
 	"github.com/dcm-project/control-plane/internal/sp/testutil"
-	"github.com/go-resty/resty/v2"
 	"github.com/google/uuid"
+	"github.com/nats-io/nats.go/jetstream"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gorm.io/driver/sqlite"
@@ -21,15 +21,26 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+// stubJetStream acknowledges every publish so tests can exercise the
+// publish-then-wait-for-ack path without a real NATS server.
+type stubJetStream struct {
+	jetstream.JetStream
+	publishErr error
+}
+
+func (s *stubJetStream) Publish(_ context.Context, _ string, _ []byte, _ ...jetstream.PublishOpt) (*jetstream.PubAck, error) {
+	if s.publishErr != nil {
+		return nil, s.publishErr
+	}
+	return &jetstream.PubAck{}, nil
+}
+
 var _ = Describe("Scheduler", func() {
 	var (
-		db              *gorm.DB
-		dataStore       store.Store
-		instanceService *rmsvc.InstanceService
-		scheduler       *cleanup.Scheduler
-		ctx             context.Context
-		mockProvider    *httptest.Server
-		providerName    string
+		db        *gorm.DB
+		dataStore store.Store
+		scheduler *cleanup.Scheduler
+		ctx       context.Context
 	)
 
 	BeforeEach(func() {
@@ -38,85 +49,38 @@ var _ = Describe("Scheduler", func() {
 			Logger: logger.Default.LogMode(logger.Silent),
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(db.AutoMigrate(&model.Provider{}, &model.ServiceTypeInstance{})).To(Succeed())
+		Expect(db.AutoMigrate(&agentmodel.Agent{}, &model.ServiceTypeInstance{})).To(Succeed())
 
-		providerName = "test-provider"
-
-		// Mock provider server that returns 204 on DELETE
-		mockProvider = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodDelete {
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
-			w.WriteHeader(http.StatusOK)
-		}))
-
-		// Create a provider in the database
-		provider := model.Provider{
-			ID:            uuid.New().String(),
-			Name:          providerName,
-			ServiceType:   "vm",
-			SchemaVersion: "v1",
-			Endpoint:      mockProvider.URL,
-			HealthStatus:  model.HealthStatusReady,
+		for _, name := range []string{"audit-agent", "unregistered-agent", "mismatch-agent"} {
+			Expect(db.Create(&agentmodel.Agent{ID: uuid.New().String(), Name: name, TopicName: "dcm.agent." + name}).Error).NotTo(HaveOccurred())
 		}
-		Expect(db.Create(&provider).Error).NotTo(HaveOccurred())
 
 		dataStore = store.NewStore(db, store.WithServiceTypeInstanceRetry(testutil.FastServiceTypeInstanceRetry()...))
-		instanceService = rmsvc.NewInstanceService(dataStore, resty.New().
-			SetTimeout(5*time.Second).
-			SetRetryCount(0))
 
 		cfg := &config.CleanupConfig{
 			Interval:   1 * time.Minute,
 			MaxRetries: 3,
 		}
-		scheduler = cleanup.NewScheduler(dataStore, instanceService, cfg)
+		scheduler = cleanup.NewScheduler(dataStore, nil, nil, cfg)
 		ctx = context.Background()
 	})
 
 	AfterEach(func() {
-		mockProvider.Close()
 		sqlDB, err := db.DB()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(sqlDB.Close()).To(Succeed())
 	})
 
-	Describe("ProcessPendingDeletions with provider health check", func() {
-		It("skips instance when provider is not ready", func() {
-			// Mark provider as NotReady
-			Expect(db.Model(&model.Provider{}).Where("name = ?", providerName).
-				Update("health_status", model.HealthStatusUnavailable).Error).NotTo(HaveOccurred())
-
-			// Create an instance marked for deletion
+	Describe("Agent-only cleanup (all instances are agent-routed)", func() {
+		It("marks DELETED for agent-routed instance", func() {
+			agentName := "audit-agent"
 			inst := model.ServiceTypeInstance{
 				ID:           uuid.New().String(),
-				ProviderName: providerName,
+				ServiceType:  "vm",
 				Status:       "PROVISIONING",
-				InstanceName: "skip-inst",
+				InstanceName: "audit-inst",
 				Spec:         map[string]any{"cpu": 1},
-			}
-			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
-			Expect(dataStore.ServiceTypeInstance().MarkForDeletion(ctx, inst.ID)).To(Succeed())
-
-			scheduler.ProcessPendingDeletions(ctx)
-
-			// Instance should be marked as PENDING_PROVIDER, not deleted
-			found, err := dataStore.ServiceTypeInstance().Get(ctx, inst.ID, true)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(*found.DeletionStatus).To(Equal("PENDING_PROVIDER"))
-		})
-
-		It("skips instance when provider is unhealthy", func() {
-			Expect(db.Model(&model.Provider{}).Where("name = ?", providerName).
-				Update("health_status", model.HealthStatusUnhealthy).Error).NotTo(HaveOccurred())
-
-			inst := model.ServiceTypeInstance{
-				ID:           uuid.New().String(),
-				ProviderName: providerName,
-				Status:       "PROVISIONING",
-				InstanceName: "skip-unhealthy-inst",
-				Spec:         map[string]any{"cpu": 1},
+				AgentName:    &agentName,
 			}
 			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
 			Expect(dataStore.ServiceTypeInstance().MarkForDeletion(ctx, inst.ID)).To(Succeed())
@@ -125,18 +89,55 @@ var _ = Describe("Scheduler", func() {
 
 			found, err := dataStore.ServiceTypeInstance().Get(ctx, inst.ID, true)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(*found.DeletionStatus).To(Equal("PENDING_PROVIDER"))
+			Expect(*found.DeletionStatus).To(Equal("DELETED"))
 		})
 
-		It("proceeds with deletion when provider is ready", func() {
-			// Provider is already Ready from setup
-
-			// Create an instance marked for deletion
+		It("marks DELETED when agent not registered", func() {
+			agentName := "unregistered-agent"
 			inst := model.ServiceTypeInstance{
 				ID:           uuid.New().String(),
-				ProviderName: providerName,
+				ServiceType:  "vm",
 				Status:       "PROVISIONING",
-				InstanceName: "delete-inst",
+				InstanceName: "orphan-inst",
+				Spec:         map[string]any{"cpu": 1},
+				AgentName:    &agentName,
+			}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+			Expect(dataStore.ServiceTypeInstance().MarkForDeletion(ctx, inst.ID)).To(Succeed())
+
+			scheduler.ProcessPendingDeletions(ctx)
+
+			found, err := dataStore.ServiceTypeInstance().Get(ctx, inst.ID, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(*found.DeletionStatus).To(Equal("DELETED"))
+		})
+
+		It("marks DELETED for agent-routed instance regardless of service_type", func() {
+			agentName := "mismatch-agent"
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "storage",
+				Status:       "PROVISIONING",
+				InstanceName: "mismatch-inst",
+				Spec:         map[string]any{"size": 100},
+				AgentName:    &agentName,
+			}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+			Expect(dataStore.ServiceTypeInstance().MarkForDeletion(ctx, inst.ID)).To(Succeed())
+
+			scheduler.ProcessPendingDeletions(ctx)
+
+			found, err := dataStore.ServiceTypeInstance().Get(ctx, inst.ID, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(*found.DeletionStatus).To(Equal("DELETED"))
+		})
+
+		It("treats instance without agent_name as agent-routed (agent-only world)", func() {
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "PROVISIONING",
+				InstanceName: "no-agent-inst",
 				Spec:         map[string]any{"cpu": 1},
 			}
 			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
@@ -144,9 +145,61 @@ var _ = Describe("Scheduler", func() {
 
 			scheduler.ProcessPendingDeletions(ctx)
 
-			// Instance should be hard-deleted
-			_, err := dataStore.ServiceTypeInstance().Get(ctx, inst.ID, true)
-			Expect(err).To(HaveOccurred())
+			found, err := dataStore.ServiceTypeInstance().Get(ctx, inst.ID, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(*found.DeletionStatus).To(Equal("DELETED"))
+		})
+	})
+
+	Describe("Ack-driven deletion (agent + publisher configured)", func() {
+		It("stays SCHEDULED and does not mark DELETED after a successful publish, awaiting the agent's ack", func() {
+			agentName := "audit-agent"
+			pub := messaging.NewPublisher(&stubJetStream{})
+			schedulerWithAgent := cleanup.NewScheduler(dataStore, pub, agentstore.NewAgent(db), &config.CleanupConfig{MaxRetries: 3})
+
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "deleting",
+				InstanceName: "ack-driven-inst",
+				Spec:         map[string]any{"cpu": 1},
+				AgentName:    &agentName,
+			}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+			Expect(dataStore.ServiceTypeInstance().MarkForDeletion(ctx, inst.ID)).To(Succeed())
+
+			schedulerWithAgent.ProcessPendingDeletions(ctx)
+
+			found, err := dataStore.ServiceTypeInstance().Get(ctx, inst.ID, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(*found.DeletionStatus).To(Equal("SCHEDULED"))
+			Expect(found.RetryCount).To(Equal(1))
+		})
+
+		It("marks FAILED for manual intervention once retries are exhausted", func() {
+			agentName := "audit-agent"
+			pub := messaging.NewPublisher(&stubJetStream{})
+			schedulerWithAgent := cleanup.NewScheduler(dataStore, pub, agentstore.NewAgent(db), &config.CleanupConfig{MaxRetries: 2})
+
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "deleting",
+				InstanceName: "exhausted-inst",
+				Spec:         map[string]any{"cpu": 1},
+				AgentName:    &agentName,
+				RetryCount:   2,
+			}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+			Expect(dataStore.ServiceTypeInstance().MarkForDeletion(ctx, inst.ID)).To(Succeed())
+			// MarkForDeletion resets retry_count; simulate prior attempts explicitly.
+			Expect(db.Model(&inst).Update("retry_count", 2).Error).NotTo(HaveOccurred())
+
+			schedulerWithAgent.ProcessPendingDeletions(ctx)
+
+			found, err := dataStore.ServiceTypeInstance().Get(ctx, inst.ID, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(*found.DeletionStatus).To(Equal("FAILED"))
 		})
 	})
 })

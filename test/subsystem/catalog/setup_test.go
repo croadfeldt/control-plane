@@ -30,18 +30,25 @@ func resetWireMock() {
 func stubPMCreateResource() {
 	stub := map[string]any{
 		"request": map[string]any{
-			"method":     "POST",
-			"urlPattern": "/api/v1alpha1/resources.*",
+			"method":  "POST",
+			"urlPath": "/api/v1alpha1/runs",
 		},
 		"response": map[string]any{
-			"status": 201,
+			"status": 202,
 			"headers": map[string]string{
 				"Content-Type": "application/json",
 			},
 			"jsonBody": map[string]any{
-				"id":   "pm-resource-1",
-				"path": "resources/pm-resource-1",
-				"spec": map[string]any{},
+				"run_id":                   "pm-run-1",
+				"catalog_item_instance_id": "ignored",
+				"resources": []map[string]any{
+					{
+						"id":   "pm-resource-1",
+						"name": "main",
+						"path": "resources/pm-resource-1",
+						"spec": map[string]any{},
+					},
+				},
 			},
 		},
 	}
@@ -52,10 +59,10 @@ func stubPMRehydrateResource() {
 	stub := map[string]any{
 		"request": map[string]any{
 			"method":         "POST",
-			"urlPathPattern": "/api/v1alpha1/resources/.*:rehydrate",
+			"urlPathPattern": "/api/v1alpha1/runs/.*:rehydrate",
 		},
 		"response": map[string]any{
-			"status": 200,
+			"status": 202,
 			"headers": map[string]string{
 				"Content-Type": "application/json",
 			},
@@ -73,7 +80,7 @@ func stubPMRehydrateResourceFailure() {
 	stub := map[string]any{
 		"request": map[string]any{
 			"method":         "POST",
-			"urlPathPattern": "/api/v1alpha1/resources/.*:rehydrate",
+			"urlPathPattern": "/api/v1alpha1/runs/.*:rehydrate",
 		},
 		"response": map[string]any{
 			"status": 500,
@@ -94,7 +101,7 @@ func stubPMDeleteResource() {
 	stub := map[string]any{
 		"request": map[string]any{
 			"method":         "DELETE",
-			"urlPathPattern": "/api/v1alpha1/resources/.*",
+			"urlPathPattern": "/api/v1alpha1/runs/.*",
 		},
 		"response": map[string]any{
 			"status": 204,
@@ -106,8 +113,8 @@ func stubPMDeleteResource() {
 func stubPMCreateResourcePolicyRejected() {
 	stub := map[string]any{
 		"request": map[string]any{
-			"method":     "POST",
-			"urlPattern": "/api/v1alpha1/resources.*",
+			"method":  "POST",
+			"urlPath": "/api/v1alpha1/runs",
 		},
 		"response": map[string]any{
 			"status": 406,
@@ -128,8 +135,8 @@ func stubPMCreateResourcePolicyRejected() {
 func stubPMCreateResourceProviderError() {
 	stub := map[string]any{
 		"request": map[string]any{
-			"method":     "POST",
-			"urlPattern": "/api/v1alpha1/resources.*",
+			"method":  "POST",
+			"urlPath": "/api/v1alpha1/runs",
 		},
 		"response": map[string]any{
 			"status": 422,
@@ -151,7 +158,7 @@ func stubPMRehydrateResourcePolicyRejected() {
 	stub := map[string]any{
 		"request": map[string]any{
 			"method":         "POST",
-			"urlPathPattern": "/api/v1alpha1/resources/.*:rehydrate",
+			"urlPathPattern": "/api/v1alpha1/runs/.*:rehydrate",
 		},
 		"response": map[string]any{
 			"status": 406,
@@ -173,7 +180,7 @@ func stubPMRehydrateResourceProviderError() {
 	stub := map[string]any{
 		"request": map[string]any{
 			"method":         "POST",
-			"urlPathPattern": "/api/v1alpha1/resources/.*:rehydrate",
+			"urlPathPattern": "/api/v1alpha1/runs/.*:rehydrate",
 		},
 		"response": map[string]any{
 			"status": 422,
@@ -194,8 +201,8 @@ func stubPMRehydrateResourceProviderError() {
 func stubPMCreateResourceFailure() {
 	stub := map[string]any{
 		"request": map[string]any{
-			"method":     "POST",
-			"urlPattern": "/api/v1alpha1/resources.*",
+			"method":  "POST",
+			"urlPath": "/api/v1alpha1/runs",
 		},
 		"response": map[string]any{
 			"status": 500,
@@ -216,7 +223,7 @@ func stubPMDeleteResourceFailure() {
 	stub := map[string]any{
 		"request": map[string]any{
 			"method":         "DELETE",
-			"urlPathPattern": "/api/v1alpha1/resources/.*",
+			"urlPathPattern": "/api/v1alpha1/runs/.*",
 		},
 		"response": map[string]any{
 			"status": 500,
@@ -234,23 +241,33 @@ func stubPMDeleteResourceFailure() {
 }
 
 func verifyPMCreateResourceCalled(expectedCount int) {
-	verifyWireMockRequestCount("POST", "/api/v1alpha1/resources", expectedCount)
+	verifyWireMockRequestCountByURLPath("POST", "/api/v1alpha1/runs", expectedCount)
 }
 
 func verifyPMDeleteResourceCalled(expectedCount int) {
-	verifyWireMockRequestCount("DELETE", "/api/v1alpha1/resources/.*", expectedCount)
+	verifyWireMockRequestCount("DELETE", "/api/v1alpha1/runs/.*", expectedCount)
 }
 
 func verifyPMRehydrateResourceCalled(expectedCount int) {
-	verifyWireMockRequestCount("POST", "/api/v1alpha1/resources/.*:rehydrate", expectedCount)
+	verifyWireMockRequestCount("POST", "/api/v1alpha1/runs/.*:rehydrate", expectedCount)
 }
 
 func verifyWireMockRequestCount(method, urlPattern string, expectedCount int) {
-	body := map[string]any{
+	verifyWireMockRequestCountMatcher(map[string]any{
 		"method":     method,
 		"urlPattern": urlPattern + ".*",
-	}
-	data, err := json.Marshal(body)
+	}, expectedCount)
+}
+
+func verifyWireMockRequestCountByURLPath(method, urlPath string, expectedCount int) {
+	verifyWireMockRequestCountMatcher(map[string]any{
+		"method":  method,
+		"urlPath": urlPath,
+	}, expectedCount)
+}
+
+func verifyWireMockRequestCountMatcher(matcher map[string]any, expectedCount int) {
+	data, err := json.Marshal(matcher)
 	ExpectWithOffset(2, err).NotTo(HaveOccurred())
 
 	req, err := http.NewRequest(http.MethodPost, wireMockURL+"/__admin/requests/count", bytes.NewReader(data))

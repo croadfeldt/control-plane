@@ -778,3 +778,76 @@ var _ = Describe("BuildResourceGraph (multi-resource)", func() {
 		Expect(graph[1].RequiresResources).To(Equal([]string{"ordersDb"}))
 	})
 })
+
+var _ = Describe("Storage spec building", func() {
+	var (
+		ctx     context.Context
+		db      *gorm.DB
+		str     store.Store
+		builder *service.SpecBuilder
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		var err error
+		db, err = gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+			Logger: logger.Discard,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		err = db.Exec("PRAGMA foreign_keys = ON").Error
+		Expect(err).ToNot(HaveOccurred())
+		err = db.AutoMigrate(&model.ServiceType{}, &model.CatalogItem{}, &model.CatalogItemInstance{})
+		Expect(err).ToNot(HaveOccurred())
+		str = store.NewStore(db, slog.Default())
+		builder = service.NewSpecBuilderForTest(str)
+
+		ensureServiceTypeWithSpec(ctx, str, "storage-test", "storage", map[string]any{
+			"capacity":    "",
+			"volume_name": "",
+		})
+	})
+
+	AfterEach(func() {
+		if str != nil {
+			Expect(str.Close()).To(Succeed())
+		}
+	})
+
+	It("should build storage spec with capacity from user_values via SpecBuilder", func() {
+		ensureCatalogItemWithFields(ctx, str, "bronze-storage-sb", "storage", []model.FieldConfiguration{
+			{Path: "capacity", Editable: true},
+		})
+
+		result, err := buildGraphSpec(builder, ctx, "bronze-storage-sb", []v1alpha1.UserValue{
+			{Resource: testutil.DefaultResourceName, Path: "capacity", Value: "100Gi"},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result).To(HaveKey("capacity"))
+		Expect(result["capacity"]).To(Equal("100Gi"))
+		Expect(result["service_type"]).To(Equal("storage"))
+	})
+
+	It("should apply provider_hints.kubernetes.storage_class default", func() {
+		ensureCatalogItemWithFields(ctx, str, "storage-with-hints", "storage", []model.FieldConfiguration{
+			{Path: "capacity", Editable: true},
+			{
+				Path:     "provider_hints.kubernetes.storage_class",
+				Editable: false,
+				Default:  "ceph-rbd",
+			},
+		})
+
+		result, err := buildGraphSpec(builder, ctx, "storage-with-hints", []v1alpha1.UserValue{
+			{Resource: testutil.DefaultResourceName, Path: "capacity", Value: "50Gi"},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result).To(HaveKey("provider_hints"))
+		providerHints, ok := result["provider_hints"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(providerHints).To(HaveKey("kubernetes"))
+		k8sHints, ok := providerHints["kubernetes"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(k8sHints["storage_class"]).To(Equal("ceph-rbd"))
+		Expect(result["capacity"]).To(Equal("50Gi"))
+	})
+})

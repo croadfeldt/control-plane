@@ -113,7 +113,7 @@ var _ = Describe("CatalogItemInstance Store", func() {
 			Expect(retrieved.DisplayName).To(Equal(created.DisplayName))
 			Expect(retrieved.Spec.CatalogItemId).To(Equal(created.Spec.CatalogItemId))
 			Expect(retrieved.SpecCatalogItemId).To(Equal(created.SpecCatalogItemId))
-			Expect(retrieved.Spec.ResourceIDs).To(Equal(created.Spec.ResourceIDs))
+			Expect(retrieved.RunID).To(Equal(created.RunID))
 		})
 
 		It("should return error when creating duplicate ID", func() {
@@ -215,7 +215,7 @@ var _ = Describe("CatalogItemInstance Store", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(retrieved.ID).To(Equal(created.ID))
 			Expect(retrieved.Spec.CatalogItemId).To(Equal("small-vm-get"))
-			Expect(retrieved.Spec.ResourceIDs).To(Equal(created.Spec.ResourceIDs))
+			Expect(retrieved.RunID).To(Equal(created.RunID))
 		})
 
 		It("should return error for non-existent catalog item instance", func() {
@@ -258,39 +258,39 @@ var _ = Describe("CatalogItemInstance Store", func() {
 		})
 	})
 
-	Describe("UpdateResourceIDs", func() {
-		It("should update resource_ids when expected value matches", func() {
+	Describe("UpdateRunID", func() {
+		It("should update run_id when expected value matches", func() {
 			createTestServiceType("vm-st-upd", "vm")
 			createTestCatalogItem("small-vm-upd", "vm")
 
 			cii := model.CatalogItemInstance{
 				ID:          "upd-res-cii",
 				ApiVersion:  "v1alpha1",
-				DisplayName: "Update ResourceIDs",
+				DisplayName: "Update RunID",
 				Spec: model.CatalogItemInstanceSpec{
 					CatalogItemId: "small-vm-upd",
 					UserValues:    []model.UserValue{},
-					ResourceIDs:   []string{"old-resource-id"},
 				},
-				Path: "catalog-item-instances/upd-res-cii",
+				RunID: "old-run-id",
+				Path:  "catalog-item-instances/upd-res-cii",
 			}
 
 			_, err := catalogItemInstanceStore.Create(context.Background(), cii)
 			Expect(err).ToNot(HaveOccurred())
 
-			updated, err := catalogItemInstanceStore.UpdateResourceID(context.Background(), "upd-res-cii", "old-resource-id", "new-resource-id")
+			updated, err := catalogItemInstanceStore.UpdateRunID(context.Background(), "upd-res-cii", "old-run-id", "new-run-id")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(updated).ToNot(BeNil())
-			Expect(updated.Spec.ResourceIDs[0]).To(Equal("new-resource-id"))
+			Expect(updated.RunID).To(Equal("new-run-id"))
 
 			// Verify persisted
 			retrieved, err := catalogItemInstanceStore.Get(context.Background(), "upd-res-cii")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(retrieved.Spec.ResourceIDs[0]).To(Equal("new-resource-id"))
-			Expect(retrieved.DisplayName).To(Equal("Update ResourceIDs"))
+			Expect(retrieved.RunID).To(Equal("new-run-id"))
+			Expect(retrieved.DisplayName).To(Equal("Update RunID"))
 		})
 
-		It("should return conflict when expected resource_id does not match", func() {
+		It("should return conflict when expected run_id does not match", func() {
 			createTestServiceType("vm-st-cas", "vm")
 			createTestCatalogItem("small-vm-cas", "vm")
 
@@ -301,25 +301,25 @@ var _ = Describe("CatalogItemInstance Store", func() {
 				Spec: model.CatalogItemInstanceSpec{
 					CatalogItemId: "small-vm-cas",
 					UserValues:    []model.UserValue{},
-					ResourceIDs:   []string{"current-resource-id"},
 				},
-				Path: "catalog-item-instances/cas-conflict-cii",
+				RunID: "current-run-id",
+				Path:  "catalog-item-instances/cas-conflict-cii",
 			}
 
 			_, err := catalogItemInstanceStore.Create(context.Background(), cii)
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = catalogItemInstanceStore.UpdateResourceID(context.Background(), "cas-conflict-cii", "stale-resource-id", "new-resource-id")
+			_, err = catalogItemInstanceStore.UpdateRunID(context.Background(), "cas-conflict-cii", "stale-run-id", "new-run-id")
 			Expect(err).To(Equal(store.ErrCatalogItemInstanceConflict))
 
-			// Verify resource_ids unchanged
+			// Verify run_id unchanged
 			retrieved, err := catalogItemInstanceStore.Get(context.Background(), "cas-conflict-cii")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(retrieved.Spec.ResourceIDs).To(Equal([]string{"current-resource-id"}))
+			Expect(retrieved.RunID).To(Equal("current-run-id"))
 		})
 
 		It("should return not found for non-existent instance", func() {
-			_, err := catalogItemInstanceStore.UpdateResourceID(context.Background(), "non-existent", "old-id", "new-id")
+			_, err := catalogItemInstanceStore.UpdateRunID(context.Background(), "non-existent", "old-id", "new-id")
 			Expect(err).To(Equal(store.ErrCatalogItemInstanceNotFound))
 		})
 	})

@@ -1,4 +1,4 @@
-// Package resource_manager implements business logic for service type instance management.
+// Package resource_manager implements service type instance management.
 package resource_manager
 
 import (
@@ -9,71 +9,37 @@ import (
 	"time"
 
 	"github.com/dcm-project/control-plane/api/sp/v1alpha1/resource_manager"
+	agentstore "github.com/dcm-project/control-plane/internal/agent/store/agent"
+	agentmodel "github.com/dcm-project/control-plane/internal/agent/store/model"
 	"github.com/dcm-project/control-plane/internal/sp/logging"
+	"github.com/dcm-project/control-plane/internal/sp/messaging"
 	"github.com/dcm-project/control-plane/internal/sp/service"
 	"github.com/dcm-project/control-plane/internal/sp/store"
 	"github.com/dcm-project/control-plane/internal/sp/store/model"
-	providerstore "github.com/dcm-project/control-plane/internal/sp/store/provider"
 	rmstore "github.com/dcm-project/control-plane/internal/sp/store/resource_manager"
-	"github.com/go-resty/resty/v2"
 	"github.com/google/uuid"
 )
 
 type InstanceService struct {
 	store      store.Store
-	httpClient *resty.Client
+	publisher  *messaging.Publisher
+	agentStore agentstore.Agent
 }
 
-func defaultProviderHTTPClient() *resty.Client {
-	return resty.New().
-		SetTimeout(30 * time.Second).
-		SetRetryCount(3).
-		SetRetryWaitTime(2 * time.Second).
-		SetRetryMaxWaitTime(30 * time.Second)
-}
-
-// NewInstanceService constructs InstanceService. If httpClient is nil, production
-// defaults are used for outbound provider HTTP; tests may pass a non-nil client
-// (e.g. no retries, short timeout) to avoid slow failures.
-func NewInstanceService(store store.Store, httpClient *resty.Client) *InstanceService {
-	if httpClient == nil {
-		httpClient = defaultProviderHTTPClient()
-	}
+// NewInstanceService constructs InstanceService. publisher may be nil (e.g. in
+// tests); when nil, NATS publishing is skipped.
+func NewInstanceService(store store.Store, publisher *messaging.Publisher, agentSt agentstore.Agent) *InstanceService {
 	return &InstanceService{
 		store:      store,
-		httpClient: httpClient,
+		publisher:  publisher,
+		agentStore: agentSt,
 	}
 }
 
-// CreateInstance creates a new service type instance
-func (s *InstanceService) CreateInstance(ctx context.Context, request *resource_manager.ServiceTypeInstance, queryID *string) (*resource_manager.ServiceTypeInstance, error) {
+func (s *InstanceService) CreateInstance(ctx context.Context, request *resource_manager.ServiceTypeInstance, queryID *string, agentName string) (*resource_manager.ServiceTypeInstance, error) {
 	log := logging.FromContext(ctx)
-	providerName := request.ProviderName
+	log.Debug("Creating instance", "agent_name", agentName)
 
-	log.Debug("Creating instance", "provider_name", providerName)
-
-	provider, err := s.store.Provider().GetByName(ctx, providerName)
-	if err != nil {
-		if errors.Is(err, providerstore.ErrProviderNotFound) {
-			return nil, service.NewNotFoundError(fmt.Sprintf("provider '%s' not found", providerName))
-		}
-		log.Error("Failed to retrieve provider", "provider_name", providerName, "error", err)
-		return nil, service.NewInternalError(fmt.Sprintf("failed to retrieve provider: %v", err))
-	}
-
-	// Check Provider if provider is not in ready state
-	if provider.HealthStatus != model.HealthStatusReady {
-		log.Warn("Provider not in ready state", "provider_name", providerName, "health_status", provider.HealthStatus)
-		return nil, service.NewProviderError(fmt.Sprintf("provider '%s' is not in ready state (current status: %s)", providerName, provider.HealthStatus))
-	}
-
-	// Resolve instance ID
-	instanceID, err := s.resolveInstanceID(ctx, queryID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Extract service_type from spec — ok==false if the key is absent or the value is not a string
 	serviceType, ok := request.Spec["service_type"].(string)
 	if !ok {
 		return nil, service.NewValidationError("spec.service_type is required and must be a string")
@@ -82,41 +48,171 @@ func (s *InstanceService) CreateInstance(ctx context.Context, request *resource_
 		return nil, service.NewValidationError("spec.service_type must not be empty")
 	}
 
-	// Send request to provider endpoint with the resolved ID
-	providerResponse, err := s.createInstanceWithProvider(ctx, provider.Endpoint, request, instanceID)
-	if err != nil {
-		log.Error("Provider provisioning failed", "instance_id", *instanceID, "provider_name", providerName, "error", err)
-		return nil, service.NewProviderError(fmt.Sprintf("Error from Provider (%s): %v", providerName, err))
+	// An empty agentName would create a permanently orphaned Pending row:
+	// sweepPending's query filters on `agent_name IS NOT NULL`.
+	if strings.TrimSpace(agentName) == "" {
+		return nil, service.NewValidationError("agent_name is required and must not be empty")
 	}
 
-	// Create instance in database
+	if s.publisher == nil {
+		return nil, service.NewUnavailableError("nats publisher unavailable, cannot dispatch to agent")
+	}
+	if err := s.validateAgent(ctx, agentName, serviceType); err != nil {
+		return nil, err
+	}
+
+	instanceID, err := s.resolveInstanceID(ctx, queryID)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
 	instance := model.ServiceTypeInstance{
-		ID:           *instanceID,
-		ProviderName: providerName,
-		ServiceType:  serviceType,
-		Status:       providerResponse.Status,
-		Spec:         request.Spec,
+		ID:               *instanceID,
+		ServiceType:      serviceType,
+		Status:           model.StatusPending,
+		Spec:             request.Spec,
+		AgentName:        &agentName,
+		PendingStartedAt: &now,
 	}
 
 	created, err := s.store.ServiceTypeInstance().Create(ctx, instance)
 	if err != nil {
+		if errors.Is(err, rmstore.ErrInstanceConflict) {
+			return nil, service.NewConflictError(fmt.Sprintf("instance with ID '%s' already exists", *instanceID))
+		}
 		log.Error("Failed to create instance in store", "instance_id", *instanceID, "error", err)
-		return nil, service.NewInternalError(fmt.Sprintf("failed to create database record for instance %s: %v", providerResponse.ID, err))
+		return nil, service.NewInternalError(fmt.Sprintf("failed to create database record for instance %s: %v", *instanceID, err))
 	}
 
-	log.Info("Instance created successfully",
-		"instance_id", created.ID,
-		"provider_name", providerName,
-		"status", providerResponse.Status,
-	)
+	subject, pubErr := s.resolveAgentSubject(ctx, agentName)
+	if pubErr != nil {
+		log.Error("Failed to resolve agent topic, rolling back instance", "agent_name", agentName, "error", pubErr)
+		_ = s.store.ServiceTypeInstance().HardDelete(ctx, created.ID)
+		return nil, service.NewProvisioningError(fmt.Sprintf("agent '%s' topic resolution failed: %v", agentName, pubErr))
+	}
+
+	pubErr = s.publisher.PublishCreate(ctx, subject, messaging.CreatePayload{
+		ResourceID:  created.ID,
+		ServiceType: serviceType,
+		Spec:        request.Spec,
+	})
+	if pubErr != nil {
+		log.Error("Failed to publish create event, rolling back instance", "instance_id", created.ID, "error", pubErr)
+		_ = s.store.ServiceTypeInstance().HardDelete(ctx, created.ID)
+		return nil, service.NewProvisioningError(fmt.Sprintf("failed to publish create request for instance %s: %v", created.ID, pubErr))
+	}
+
+	log.Info("Instance created", "instance_id", created.ID, "status", created.Status, "agent_name", agentName)
 	return ModelToAPI(created), nil
 }
 
-// GetInstance retrieves an instance by ID
+// ReassignAgent re-points an existing instance at a new agent and re-triggers
+// provisioning from scratch (fresh "pending" state, retry count reset). Used
+// by the self-healing loop when the originally assigned agent fails, times
+// out, or is excluded from re-evaluation.
+//
+// expectedCurrentAgent is CASed against agent_name in the same update as the
+// status check, and must be the caller's own observation of the instance's
+// agent (e.g. the excluded agent), not derived from a fresh read here: a
+// fresh read would just reflect whatever the most recent writer set,
+// silently turning the CAS into an unconditional overwrite and defeating the
+// cross-replica/sibling-heal race it exists to catch.
+func (s *InstanceService) ReassignAgent(ctx context.Context, instanceID string, agentName string, expectedCurrentAgent string) error {
+	log := logging.FromContext(ctx)
+
+	instance, err := s.store.ServiceTypeInstance().Get(ctx, instanceID, false)
+	if err != nil {
+		if errors.Is(err, rmstore.ErrInstanceNotFound) {
+			return service.NewNotFoundError(fmt.Sprintf("instance %s not found", instanceID))
+		}
+		return service.NewInternalError(fmt.Sprintf("failed to retrieve instance: %v", err))
+	}
+
+	if err := s.validateAgent(ctx, agentName, instance.ServiceType); err != nil {
+		return err
+	}
+
+	if s.publisher == nil {
+		return service.NewUnavailableError("nats publisher unavailable, cannot reassign instance")
+	}
+
+	subject, err := s.resolveAgentSubject(ctx, agentName)
+	if err != nil {
+		return service.NewProvisioningError(fmt.Sprintf("agent '%s' topic resolution failed: %v", agentName, err))
+	}
+
+	if err := s.store.ServiceTypeInstance().ReassignAndReset(ctx, instanceID, agentName, expectedCurrentAgent); err != nil {
+		if errors.Is(err, rmstore.ErrInstanceNotFound) {
+			return service.NewNotFoundError(fmt.Sprintf("instance %s not found", instanceID))
+		}
+		if errors.Is(err, rmstore.ErrInstanceNotEligible) {
+			return service.NewConflictError(fmt.Sprintf("instance %s is being deleted and cannot be reassigned", instanceID))
+		}
+		return service.NewInternalError(fmt.Sprintf("failed to reassign instance %s: %v", instanceID, err))
+	}
+
+	if pubErr := s.publisher.PublishCreate(ctx, subject, messaging.CreatePayload{
+		ResourceID:  instanceID,
+		ServiceType: instance.ServiceType,
+		Spec:        instance.Spec,
+	}); pubErr != nil {
+		log.Error("Failed to publish create after reassignment", "instance_id", instanceID, "agent_name", agentName, "error", pubErr)
+		return service.NewProvisioningError(fmt.Sprintf("failed to publish create for reassigned instance %s: %v", instanceID, pubErr))
+	}
+
+	log.Info("Instance reassigned to new agent", "instance_id", instanceID, "agent_name", agentName)
+	return nil
+}
+
+func (s *InstanceService) resolveAgentSubject(ctx context.Context, agentName string) (string, error) {
+	agent, err := s.agentStore.GetByName(ctx, agentName)
+	if err != nil {
+		return "", err
+	}
+	return agent.TopicName, nil
+}
+
+func (s *InstanceService) validateAgent(ctx context.Context, agentName string, serviceType string) error {
+	if strings.TrimSpace(agentName) == "" {
+		return service.NewValidationError("agent_name is required and must not be empty")
+	}
+	if s.agentStore == nil {
+		return service.NewUnavailableError("agent store unavailable, cannot validate or dispatch to agent")
+	}
+	agent, err := s.agentStore.GetByName(ctx, agentName)
+	if err != nil {
+		if errors.Is(err, agentstore.ErrAgentNotFound) {
+			return service.NewNotFoundError(fmt.Sprintf("agent '%s' not found", agentName))
+		}
+		return service.NewInternalError(fmt.Sprintf("failed to look up agent '%s': %v", agentName, err))
+	}
+
+	if agent.HealthStatus != agentmodel.AgentHealthStatusReady {
+		return service.NewUnavailableError(fmt.Sprintf("agent '%s' is %s", agentName, agent.HealthStatus))
+	}
+
+	for _, st := range agent.ServiceTypes {
+		if st == serviceType {
+			return nil
+		}
+	}
+	return service.NewValidationError(fmt.Sprintf("agent '%s' does not serve service type '%s'", agentName, serviceType))
+}
+
 func (s *InstanceService) GetInstance(ctx context.Context, instanceID string, showDeleted bool) (*resource_manager.ServiceTypeInstance, error) {
 	log := logging.FromContext(ctx)
 	log.Debug("Getting instance", "instance_id", instanceID, "show_deleted", showDeleted)
 
+	instance, err := s.getInstanceModel(ctx, instanceID, showDeleted)
+	if err != nil {
+		return nil, err
+	}
+	return ModelToAPI(instance), nil
+}
+
+func (s *InstanceService) getInstanceModel(ctx context.Context, instanceID string, showDeleted bool) (*model.ServiceTypeInstance, error) {
+	log := logging.FromContext(ctx)
 	instance, err := s.store.ServiceTypeInstance().Get(ctx, instanceID, showDeleted)
 	if err != nil {
 		if errors.Is(err, rmstore.ErrInstanceNotFound) {
@@ -125,27 +221,37 @@ func (s *InstanceService) GetInstance(ctx context.Context, instanceID string, sh
 		log.Error("Failed to get instance from store", "instance_id", instanceID, "error", err)
 		return nil, service.NewInternalError(fmt.Sprintf("failed to retrieve instance: %v", err))
 	}
-
-	return ModelToAPI(instance), nil
+	return instance, nil
 }
 
-// ListInstances returns instances with optional filtering and pagination
-func (s *InstanceService) ListInstances(ctx context.Context, providerName *string, serviceType *string, showDeleted bool, maxPageSize *int, pageToken *string) (*resource_manager.ServiceTypeInstanceList, error) {
+// GetOutputSpec returns the persisted output_spec for an instance.
+func (s *InstanceService) GetOutputSpec(ctx context.Context, instanceID string) (map[string]any, error) {
+	log := logging.FromContext(ctx)
+	log.Debug("Getting instance output_spec", "instance_id", instanceID)
+
+	instance, err := s.getInstanceModel(ctx, instanceID, false)
+	if err != nil {
+		return nil, err
+	}
+	return instance.OutputSpec, nil
+}
+
+func (s *InstanceService) ListInstances(ctx context.Context, serviceType, agentName *string, showDeleted bool, maxPageSize *int, pageToken *string) (*resource_manager.ServiceTypeInstanceList, error) {
 	log := logging.FromContext(ctx)
 	log.Debug("Listing instances",
-		"provider_filter", providerName,
-		"service_type_filter", serviceType,
-		"page_size", maxPageSize,
+		"service_type", serviceType,
+		"agent_name", agentName,
 		"show_deleted", showDeleted,
+		"max_page_size", maxPageSize,
+		"has_page_token", pageToken != nil && *pageToken != "",
 	)
 
 	opts := &rmstore.ServiceTypeInstanceListOptions{
-		ProviderName: providerName,
-		ServiceType:  serviceType,
-		ShowDeleted:  showDeleted,
+		ServiceType: serviceType,
+		AgentName:   agentName,
+		ShowDeleted: showDeleted,
 	}
 
-	// Apply max page size (default 50, max 100)
 	if maxPageSize != nil {
 		if *maxPageSize > 0 && *maxPageSize <= 100 {
 			opts.PageSize = *maxPageSize
@@ -154,7 +260,6 @@ func (s *InstanceService) ListInstances(ctx context.Context, providerName *strin
 		}
 	}
 
-	// Apply page token
 	if pageToken != nil && *pageToken != "" {
 		opts.PageToken = pageToken
 	}
@@ -165,7 +270,6 @@ func (s *InstanceService) ListInstances(ctx context.Context, providerName *strin
 		return nil, service.NewInternalError(fmt.Sprintf("failed to list instances: %v", err))
 	}
 
-	// Convert to API types
 	apiInstances := make([]resource_manager.ServiceTypeInstance, len(result.Instances))
 	for i, inst := range result.Instances {
 		apiInstances[i] = *ModelToAPI(&inst)
@@ -175,21 +279,24 @@ func (s *InstanceService) ListInstances(ctx context.Context, providerName *strin
 		"count", len(apiInstances),
 		"has_next_page", result.NextPageToken != nil,
 	)
-	apiResult := &resource_manager.ServiceTypeInstanceList{
+	return &resource_manager.ServiceTypeInstanceList{
 		Instances:     &apiInstances,
 		NextPageToken: result.NextPageToken,
-	}
-
-	return apiResult, nil
+	}, nil
 }
 
-// DeleteInstance removes an instance by ID. When deferred is true, the instance
-// is marked for background cleanup without contacting the provider.
+// DeleteInstance removes an instance. Deferred: marks for background cleanup
+// and swallows publish failures for the cleanup scheduler to retry.
+// Non-deferred: publish failures return an error to the caller immediately.
+// In both cases, an agent-routed instance is only purged once the agent's
+// "deletion-acknowledged" event confirms the physical resource is gone (see
+// consumer.ResponseConsumer). A non-deferred delete is therefore also
+// enrolled in the same deletion_status=SCHEDULED retry/audit-giveup
+// tracking the cleanup scheduler uses for deferred deletes.
 func (s *InstanceService) DeleteInstance(ctx context.Context, instanceID string, deferred bool) error {
 	log := logging.FromContext(ctx)
 	log.Debug("Deleting instance", "instance_id", instanceID, "deferred", deferred)
 
-	// Get instance to find provider (include soft-deleted so we can retry cleanup)
 	instance, err := s.store.ServiceTypeInstance().Get(ctx, instanceID, true)
 	if err != nil {
 		if errors.Is(err, rmstore.ErrInstanceNotFound) {
@@ -199,85 +306,98 @@ func (s *InstanceService) DeleteInstance(ctx context.Context, instanceID string,
 		return service.NewInternalError(fmt.Sprintf("failed to retrieve instance: %v", err))
 	}
 
-	// Deferred mode: skip provider call, just enqueue for background cleanup
 	if deferred {
 		if instance.DeletionStatus != nil {
-			// Already marked — reset retry count so scheduler picks it up again
 			if resetErr := s.store.ServiceTypeInstance().ResetRetryCount(ctx, instanceID); resetErr != nil {
-				log.Error("Failed to reset retry count for instance", "instance_id", instanceID, "error", resetErr)
+				log.Error("Failed to reset retry count", "instance_id", instanceID, "error", resetErr)
 			}
 		} else {
-			// Mark as pending deletion
 			if markErr := s.store.ServiceTypeInstance().MarkForDeletion(ctx, instanceID); markErr != nil {
 				return service.NewInternalError(fmt.Sprintf("failed to mark instance %s for deletion: %v", instanceID, markErr))
 			}
 		}
 
-		log.Info("Scheduled deferred deletion of instance from provider", "instance_id", instance.ID, "provider_name", instance.ProviderName)
+		if err := s.publishDeleteToAgent(ctx, instance); err != nil {
+			log.Warn("Failed to publish deferred delete to agent, sweep will retry",
+				"instance_id", instanceID, "error", err)
+		}
+		log.Info("Scheduled deferred deletion", "instance_id", instanceID)
 		return nil
 	}
 
-	// Non-deferred: attempt SP deletion and DB hard-delete
-	deleteErr := s.DeleteFromProvider(ctx, instance)
-	if deleteErr == nil {
+	// Nothing to wait on: never agent-routed, or no publisher configured to
+	// dispatch a delete request in the first place. Delete now, matching the
+	// cleanup scheduler's own handling of the same case.
+	if instance.AgentName == nil || s.publisher == nil {
+		if err := s.store.ServiceTypeInstance().HardDelete(ctx, instanceID); err != nil {
+			return service.NewInternalError(fmt.Sprintf("failed to delete instance %s: %v", instanceID, err))
+		}
+		log.Info("Instance deleted (no agent to notify)", "instance_id", instance.ID)
 		return nil
 	}
 
-	log.Error(
-		"Failed to delete instance from provider",
-		"instance_id", instance.ID,
-		"provider_name", instance.ProviderName,
-		"error", deleteErr,
-	)
-
-	// For already-pending/failed instances, reset retry count so scheduler picks it up again
-	if instance.DeletionStatus != nil {
-		if resetErr := s.store.ServiceTypeInstance().ResetRetryCount(ctx, instanceID); resetErr != nil {
-			log.Error("Failed to reset retry count for instance", "instance_id", instanceID, "error", resetErr)
+	if err := s.publishDeleteToAgent(ctx, instance); err != nil {
+		if errors.Is(err, agentstore.ErrAgentNotFound) {
+			// The agent is gone, so no "deletion-acknowledged" will ever
+			// arrive: purge now instead of stranding the instance in
+			// "deleting" forever, matching the cleanup scheduler's own
+			// audit-giveup behavior for the deferred path.
+			log.Warn("Agent not found for non-deferred delete, deleting locally without confirmation",
+				"instance_id", instanceID, "agent_name", *instance.AgentName)
+			if hardErr := s.store.ServiceTypeInstance().HardDelete(ctx, instanceID); hardErr != nil {
+				return service.NewInternalError(fmt.Sprintf("failed to delete instance %s: %v", instanceID, hardErr))
+			}
+			return nil
 		}
-	}
-	return service.NewProviderError(fmt.Sprintf("failed to delete instance (%s): %v", instanceID, deleteErr))
-}
-
-// DeleteFromProvider deletes the instance from its service provider and, on
-// success, hard-deletes the database record.
-func (s *InstanceService) DeleteFromProvider(ctx context.Context, instance *model.ServiceTypeInstance) error {
-	log := logging.FromContext(ctx)
-	log.Debug("Deleting instance from provider", "instance_id", instance.ID, "provider_name", instance.ProviderName)
-
-	provider, err := s.store.Provider().GetByName(ctx, instance.ProviderName)
-	if err != nil {
-		if errors.Is(err, providerstore.ErrProviderNotFound) {
-			return fmt.Errorf("provider '%s' not found", instance.ProviderName)
-		}
-		return fmt.Errorf("failed to retrieve provider: %w", err)
+		log.Error("Failed to publish delete to agent", "instance_id", instanceID, "error", err)
+		return service.NewProvisioningError(fmt.Sprintf("failed to publish delete for instance %s: %v", instanceID, err))
 	}
 
-	if err = s.deleteInstanceWithProvider(ctx, provider.Endpoint, instance.ID); err != nil {
-		return err
+	if err := s.store.ServiceTypeInstance().UpdateStatus(ctx, instanceID, model.StatusDeleting, "", nil); err != nil {
+		log.Error("Failed to mark instance deleting", "instance_id", instanceID, "error", err)
+		return service.NewInternalError(fmt.Sprintf("failed to update instance %s: %v", instanceID, err))
 	}
 
-	log.Info("Instance deleted successfully",
-		"instance_id", instance.ID,
-		"provider_name", instance.ProviderName,
-	)
-
-	if err = s.store.ServiceTypeInstance().HardDelete(ctx, instance.ID); err != nil {
-		return fmt.Errorf("failed to delete database record for instance %s: %w", instance.ID, err)
+	if err := s.store.ServiceTypeInstance().MarkForDeletion(ctx, instanceID); err != nil {
+		// Best-effort: the instance is already "deleting" and a prompt ack
+		// still finalizes it via handleDeletionAcknowledged even without
+		// retry tracking; it just won't be retried/audited if the ack never
+		// arrives until the next code path touches it.
+		log.Error("Failed to enroll non-deferred delete in cleanup retry tracking", "instance_id", instanceID, "error", err)
 	}
 
-	log.Info("Deleted instance from DB record", "instance_id", instance.ID)
+	log.Info("Delete requested, awaiting agent acknowledgement", "instance_id", instance.ID)
 	return nil
 }
 
-// resolveInstanceID returns the requested ID after checking for conflicts, or generates a new one
+// publishDeleteToAgent publishes a delete request to the instance's agent.
+// Callers are responsible for deciding what an agentstore.ErrAgentNotFound
+// error means for their delete path: the deferred path treats any error
+// (including this one) as "log and let the cleanup scheduler retry", which
+// will itself hit the same ErrAgentNotFound on its own lookup and audit-give-up;
+// the non-deferred path (DeleteInstance) must react to it directly instead of
+// silently treating a missing agent as a successful publish.
+func (s *InstanceService) publishDeleteToAgent(ctx context.Context, instance *model.ServiceTypeInstance) error {
+	if s.publisher == nil || instance.AgentName == nil {
+		return nil
+	}
+	subject, err := s.resolveAgentSubject(ctx, *instance.AgentName)
+	if err != nil {
+		return err
+	}
+	return s.publisher.PublishDelete(ctx, subject, messaging.DeletePayload{
+		ResourceID:  instance.ID,
+		ServiceType: instance.ServiceType,
+	})
+}
+
 func (s *InstanceService) resolveInstanceID(ctx context.Context, queryID *string) (*string, error) {
 	log := logging.FromContext(ctx)
 
 	if queryID == nil || *queryID == "" {
-		generatedId := uuid.New().String()
-		log.Debug("Generated instance ID", "instance_id", generatedId)
-		return &generatedId, nil
+		generatedID := uuid.New().String()
+		log.Debug("Generated instance ID", "instance_id", generatedID)
+		return &generatedID, nil
 	}
 
 	requestedID := *queryID
@@ -293,50 +413,4 @@ func (s *InstanceService) resolveInstanceID(ctx context.Context, queryID *string
 	}
 
 	return &requestedID, nil
-}
-
-// createInstanceWithProvider sends the create request to the provider's endpoint
-func (s *InstanceService) createInstanceWithProvider(ctx context.Context, endpoint string, request *resource_manager.ServiceTypeInstance, id *string) (*ProviderResponse, error) {
-	log := logging.FromContext(ctx)
-
-	var providerResp ProviderResponse
-
-	resp, err := s.httpClient.R().
-		SetContext(ctx).
-		SetHeader("Content-Type", "application/json").
-		SetQueryParam("id", *id).
-		SetBody(map[string]interface{}{"spec": request.Spec}).
-		SetResult(&providerResp).
-		Post(endpoint)
-	if err != nil {
-		log.Error("Failed to connect to provider", "endpoint", endpoint, "error", err)
-		return nil, service.NewProviderError(fmt.Sprintf("failed to connect to provider: %v", err))
-	}
-
-	if resp.IsError() {
-		log.Error("Provider returned error", "endpoint", endpoint, "status", resp.Status())
-		return nil, service.NewProviderError(fmt.Sprintf("provider returned error: %s", resp.Status()))
-	}
-
-	return &providerResp, nil
-}
-
-// deleteInstanceWithProvider sends the delete request to the provider's endpoint
-func (s *InstanceService) deleteInstanceWithProvider(ctx context.Context, endpoint string, instanceID string) error {
-	log := logging.FromContext(ctx)
-
-	resp, err := s.httpClient.R().
-		SetContext(ctx).
-		Delete(fmt.Sprintf("%s/%s", endpoint, instanceID))
-	if err != nil {
-		log.Error("Failed to connect to provider for deletion", "endpoint", endpoint, "instance_id", instanceID, "error", err)
-		return fmt.Errorf("failed to connect to provider: %w", err)
-	}
-
-	if resp.IsError() && resp.StatusCode() != 404 {
-		log.Error("Provider returned error on deletion", "endpoint", endpoint, "instance_id", instanceID, "status", resp.Status())
-		return fmt.Errorf("provider returned error: %s", resp.Status())
-	}
-
-	return nil
 }

@@ -193,9 +193,9 @@ func NewListInstancesRequest(server string, params *ListInstancesParams) (*http.
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
 
-		if params.Provider != nil {
+		if params.ServiceType != nil {
 
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "provider", *params.Provider, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "service_type", *params.ServiceType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -205,9 +205,9 @@ func NewListInstancesRequest(server string, params *ListInstancesParams) (*http.
 
 		}
 
-		if params.ServiceType != nil {
+		if params.AgentName != nil {
 
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "service_type", *params.ServiceType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "agent_name", *params.AgentName, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -558,6 +558,7 @@ type CreateInstanceResponse struct {
 	ApplicationproblemJSON404     *Error
 	ApplicationproblemJSON409     *Error
 	ApplicationproblemJSON422     *Error
+	ApplicationproblemJSON503     *Error
 	ApplicationproblemJSONDefault *Error
 }
 
@@ -592,6 +593,7 @@ type DeleteInstanceResponse struct {
 	JSON401                       *Unauthorized
 	JSON403                       *Forbidden
 	ApplicationproblemJSON404     *Error
+	ApplicationproblemJSON422     *Error
 	ApplicationproblemJSONDefault *Error
 }
 
@@ -815,6 +817,13 @@ func ParseCreateInstanceResponse(rsp *http.Response) (*CreateInstanceResponse, e
 		}
 		response.ApplicationproblemJSON422 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -868,6 +877,13 @@ func ParseDeleteInstanceResponse(rsp *http.Response) (*DeleteInstanceResponse, e
 			return nil, err
 		}
 		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

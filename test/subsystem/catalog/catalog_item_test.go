@@ -95,7 +95,10 @@ var _ = Describe("CatalogItem API", func() {
 			id := "ci-list-" + uuid.NewString()[:8]
 			createTestCatalogItem(id, "Listed Item", "vm", nil)
 
-			resp, err := apiClient.ListCatalogItemsWithResponse(context.Background(), &v1alpha1.ListCatalogItemsParams{})
+			maxPage := int32(1000)
+			resp, err := apiClient.ListCatalogItemsWithResponse(context.Background(), &v1alpha1.ListCatalogItemsParams{
+				MaxPageSize: &maxPage,
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode()).To(Equal(http.StatusOK))
 			Expect(resp.JSON200).NotTo(BeNil())

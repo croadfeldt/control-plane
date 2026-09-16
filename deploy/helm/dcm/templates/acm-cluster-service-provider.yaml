@@ -1,5 +1,82 @@
 {{- if .Values.acmClusterServiceProvider.enabled }}
-{{- if .Values.acmClusterServiceProvider.kubeconfig }}
+{{- if not (or .Values.acmClusterServiceProvider.pullSecret .Values.acmClusterServiceProvider.pullSecretRef) }}
+  {{- fail "acmClusterServiceProvider.pullSecret or acmClusterServiceProvider.pullSecretRef is required (base64-encoded .dockerconfigjson); the referenced Secret must store the value via stringData so the SP receives it base64-encoded" }}
+{{- end }}
+{{- if not (or .Values.acmClusterServiceProvider.kubeconfig .Values.acmClusterServiceProvider.kubeconfigRef) }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "dcm.fullname" . }}-acm-cluster-sp
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "dcm.fullname" . }}-acm-cluster-sp
+  namespace: {{ .Values.acmClusterServiceProvider.namespace }}
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update"]
+  - apiGroups: ["hypershift.openshift.io"]
+    resources: ["hostedclusters", "nodepools"]
+    verbs: ["list", "watch", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "dcm.fullname" . }}-acm-cluster-sp
+  namespace: {{ .Values.acmClusterServiceProvider.namespace }}
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "dcm.fullname" . }}-acm-cluster-sp
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "dcm.fullname" . }}-acm-cluster-sp
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "dcm.clusterResourceName" . }}-acm-cluster-sp
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["hive.openshift.io"]
+    resources: ["clusterimagesets"]
+    verbs: ["list"]
+  - apiGroups: ["hypershift.openshift.io"]
+    resources: ["hostedclusters"]
+    verbs: ["list"]
+  - apiGroups: ["kubevirt.io"]
+    resources: ["virtualmachineinstances"]
+    verbs: ["list"]
+  - apiGroups: ["agent-install.openshift.io"]
+    resources: ["agents"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "dcm.clusterResourceName" . }}-acm-cluster-sp
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "dcm.clusterResourceName" . }}-acm-cluster-sp
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "dcm.fullname" . }}-acm-cluster-sp
+    namespace: {{ .Release.Namespace }}
+---
+{{- else if .Values.acmClusterServiceProvider.kubeconfig }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -9,6 +86,18 @@ metadata:
 type: Opaque
 data:
   kubeconfig: {{ .Values.acmClusterServiceProvider.kubeconfig | b64enc | quote }}
+---
+{{- end }}
+{{- if .Values.acmClusterServiceProvider.pullSecret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "dcm.fullname" . }}-acm-cluster-pull-secret
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  pull-secret: {{ .Values.acmClusterServiceProvider.pullSecret | quote }}
 ---
 {{- end }}
 apiVersion: apps/v1
@@ -28,6 +117,9 @@ spec:
       labels:
         {{- include "dcm.selectorLabels" (dict "context" . "component" "acm-cluster-service-provider") | nindent 8 }}
     spec:
+      {{- if not (or .Values.acmClusterServiceProvider.kubeconfig .Values.acmClusterServiceProvider.kubeconfigRef) }}
+      serviceAccountName: {{ include "dcm.fullname" . }}-acm-cluster-sp
+      {{- end }}
       containers:
         - name: acm-cluster-service-provider
           image: "{{ .Values.acmClusterServiceProvider.image }}:{{ include "dcm.imageTag" (dict "tag" .Values.acmClusterServiceProvider.tag "global" .Values.global) }}"
@@ -49,10 +141,16 @@ spec:
             - name: SP_BASE_DOMAIN
               value: {{ .Values.acmClusterServiceProvider.baseDomain | quote }}
             {{- end }}
-            {{- if .Values.acmClusterServiceProvider.pullSecret }}
             - name: SP_PULL_SECRET
-              value: {{ .Values.acmClusterServiceProvider.pullSecret | quote }}
-            {{- end }}
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.acmClusterServiceProvider.pullSecret }}
+                  name: {{ include "dcm.fullname" . }}-acm-cluster-pull-secret
+                  key: pull-secret
+                  {{- else }}
+                  name: {{ .Values.acmClusterServiceProvider.pullSecretRef }}
+                  key: pull-secret
+                  {{- end }}
             {{- if .Values.acmClusterServiceProvider.defaultInfraEnv }}
             - name: SP_DEFAULT_INFRA_ENV
               value: {{ .Values.acmClusterServiceProvider.defaultInfraEnv | quote }}
@@ -61,21 +159,25 @@ spec:
             - name: SP_AGENT_NAMESPACE
               value: {{ .Values.acmClusterServiceProvider.agentNamespace | quote }}
             {{- end }}
-            {{- if .Values.acmClusterServiceProvider.kubeconfig }}
+            {{- if or .Values.acmClusterServiceProvider.kubeconfig .Values.acmClusterServiceProvider.kubeconfigRef }}
             - name: KUBECONFIG
               value: /kubeconfig/kubeconfig
             {{- end }}
-          {{- if .Values.acmClusterServiceProvider.kubeconfig }}
+          {{- if or .Values.acmClusterServiceProvider.kubeconfig .Values.acmClusterServiceProvider.kubeconfigRef }}
           volumeMounts:
             - name: kubeconfig
               mountPath: /kubeconfig
               readOnly: true
           {{- end }}
-      {{- if .Values.acmClusterServiceProvider.kubeconfig }}
+      {{- if or .Values.acmClusterServiceProvider.kubeconfig .Values.acmClusterServiceProvider.kubeconfigRef }}
       volumes:
         - name: kubeconfig
           secret:
+            {{- if .Values.acmClusterServiceProvider.kubeconfig }}
             secretName: {{ include "dcm.fullname" . }}-acm-cluster-kubeconfig
+            {{- else }}
+            secretName: {{ .Values.acmClusterServiceProvider.kubeconfigRef }}
+            {{- end }}
       {{- end }}
 ---
 apiVersion: v1

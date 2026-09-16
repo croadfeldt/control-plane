@@ -119,30 +119,36 @@ func (s *catalogItemInstanceService) createInstance(ctx context.Context, id, pat
 		return nil, fmt.Errorf("%w: catalog item has no resources", ErrCatalogItemSpecConflict)
 	}
 
-	resourceIDs := make([]string, len(resolved))
-	for i, res := range resolved {
-		resourceIDs[i] = res.ResourceId
+	pmResources := make([]placement.ResourceInput, 0, len(resolved))
+	for _, res := range resolved {
+		pmResources = append(pmResources, placement.ResourceInput{
+			Name:              res.Name,
+			Spec:              res.Spec,
+			RequiresResources: append([]string(nil), res.RequiresResources...),
+		})
 	}
 
-	storeModel := catalogItemInstanceToStoreModel(id, path, req, resourceIDs)
+	// generate run id
+	runID := uuid.New().String()
+
+	// Persist instance with run_id
+	storeModel := catalogItemInstanceToStoreModel(id, path, req, runID)
 	createdModel, err := s.store.CatalogItemInstance().Create(ctx, storeModel)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "Failed to create catalog item instance in store", "id", id, "error", err)
 		return nil, mapCatalogItemInstanceStoreError(err)
 	}
 
-	// TODO: Placement for multi-resources
-	// Call Placement Manager with the first resolved resource
-	// until multi-resource placement is wired.
-	res := resolved[0]
-	s.logger.DebugContext(ctx, "Calling placement manager to create resource",
+	s.logger.DebugContext(ctx, "Calling placement to create a run",
 		"id", id,
-		"resource_name", res.Name,
+		"run_id", runID,
+		"resource_count", len(pmResources),
 	)
-	_, err = s.pmClient.CreateResource(ctx, placement.CreateResourceRequest{
-		CatalogItemInstanceID: id,
-		Spec:                  res.Spec,
-	}, res.ResourceId)
+	_, err = s.pmClient.CreateRun(ctx, placement.CreateRunRequest{
+		CatalogItemInstanceId: id,
+		RunId:                 runID,
+		Resources:             pmResources,
+	})
 	if err != nil {
 		mapped := mapPlacementError(err, ErrPlacementManagerCreateFailed)
 		if rbErr := s.rollbackCatalogItemInstanceCreate(id); rbErr != nil {
@@ -163,6 +169,7 @@ func (s *catalogItemInstanceService) createInstance(ctx context.Context, id, pat
 	s.logger.InfoContext(ctx, "Catalog item instance created",
 		"id", id,
 		"catalog_item_id", req.Spec.CatalogItemId,
+		"run_id", runID,
 		"resource_count", len(resolved),
 	)
 	apiType := catalogItemInstanceToAPIType(createdModel)
@@ -182,9 +189,9 @@ func (s *catalogItemInstanceService) Get(ctx context.Context, id string) (*v1alp
 	return &apiType, nil
 }
 
-// Rehydrate rehydrates a catalog item instance by generating a new resource ID
+// Rehydrate rehydrates a catalog item instance by generating a new run ID
 // and delegating to the Placement Manager.
-// Uses DB-first CAS (compare-and-swap) to prevent concurrent rehydrates: the resource_id is updated
+// Uses DB-first CAS (compare-and-swap) to prevent concurrent rehydrates: the run id is updated
 // in the DB before calling PM, so only one concurrent caller can proceed.
 func (s *catalogItemInstanceService) Rehydrate(ctx context.Context, id string) (*v1alpha1.CatalogItemInstance, error) {
 	// Look up existing instance
@@ -198,17 +205,16 @@ func (s *catalogItemInstanceService) Rehydrate(ctx context.Context, id string) (
 		return nil, mapCatalogItemStoreError(err)
 	}
 
-	// TODO: Rehydrate for multi-resources
-	if len(instance.Spec.ResourceIDs) == 0 {
-		return nil, ErrCatalogItemInstanceResourceIDsEmpty
+	if len(instance.RunID) == 0 {
+		return nil, ErrCatalogItemInstanceRunIDEmpty
 	}
-	oldResourceID := instance.Spec.ResourceIDs[0]
-	newResourceID := uuid.New().String()
+	oldRunID := instance.RunID
+	newRunID := uuid.New().String()
 
 	// DB first — CAS rejects concurrent callers here
-	updatedModel, err := s.store.CatalogItemInstance().UpdateResourceID(ctx, id, oldResourceID, newResourceID)
+	updatedModel, err := s.store.CatalogItemInstance().UpdateRunID(ctx, id, oldRunID, newRunID)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "Failed to update resource ID in store",
+		s.logger.ErrorContext(ctx, "Failed to update run ID in store",
 			"id", id,
 			"error", err,
 		)
@@ -216,15 +222,15 @@ func (s *catalogItemInstanceService) Rehydrate(ctx context.Context, id string) (
 	}
 
 	// Call Placement Manager rehydrate
-	s.logger.DebugContext(ctx, "Calling placement manager to rehydrate resource",
+	s.logger.DebugContext(ctx, "Calling placement manager to rehydrate run",
 		"id", id,
-		"old_resource_id", oldResourceID,
-		"new_resource_id", newResourceID,
+		"old_run_id", oldRunID,
+		"new_run_id", newRunID,
 	)
-	_, err = s.pmClient.RehydrateResource(ctx, oldResourceID, newResourceID)
+	_, err = s.pmClient.RehydrateResource(ctx, oldRunID, newRunID)
 	if err != nil {
 		mapped := mapPlacementError(err, ErrPlacementManagerRehydrateFailed)
-		if rbErr := s.rollbackRehydrateResourceID(id, newResourceID, oldResourceID); rbErr != nil {
+		if rbErr := s.rollbackRehydrateRunID(id, newRunID, oldRunID); rbErr != nil {
 			s.logger.ErrorContext(ctx, "Placement manager rehydrate failed and rollback update failed",
 				"id", id,
 				"placement_error", err,
@@ -232,7 +238,7 @@ func (s *catalogItemInstanceService) Rehydrate(ctx context.Context, id string) (
 			)
 			return nil, fmt.Errorf("%w; additionally, rollback failed: %v", mapped, rbErr)
 		}
-		s.logger.ErrorContext(ctx, "Placement manager rehydrate failed, rolled back resource ID",
+		s.logger.ErrorContext(ctx, "Placement manager rehydrate failed, rolled back run ID",
 			"id", id,
 			"error", err,
 		)
@@ -241,7 +247,7 @@ func (s *catalogItemInstanceService) Rehydrate(ctx context.Context, id string) (
 
 	s.logger.InfoContext(ctx, "Catalog item instance rehydrated",
 		"id", id,
-		"new_resource_id", newResourceID,
+		"new_run_id", newRunID,
 	)
 
 	apiType := catalogItemInstanceToAPIType(updatedModel)
@@ -259,13 +265,16 @@ func (s *catalogItemInstanceService) Delete(ctx context.Context, id string) erro
 	if err != nil {
 		return mapCatalogItemStoreError(err)
 	}
-	// TODO: Placement deletion for multi-resources
-	// Call Placement Manager with the first resource
-	// until multi-resource placement deletion is wired.
-	s.logger.DebugContext(ctx, "Calling placement manager to delete resource", "id", id, "resource_id", instance.Spec.ResourceIDs[0])
-	if err := s.pmClient.DeleteResource(ctx, instance.Spec.ResourceIDs[0]); err != nil {
+	if instance.RunID == "" {
+		return fmt.Errorf("%w: catalog item instance has no run id", ErrPlacementManagerDeleteFailed)
+	}
+	s.logger.DebugContext(ctx, "Calling placement manager to delete run", "id", id, "run_id", instance.RunID)
+	if err := s.pmClient.DeleteRun(ctx, instance.RunID); err != nil {
 		s.logger.ErrorContext(ctx, "Placement manager delete failed", "id", id, "error", err)
-		return fmt.Errorf("%w: %s", ErrPlacementManagerDeleteFailed, err.Error())
+		// mapPlacementError, not a direct wrap: distinguishes
+		// policy-rejected/provider-error/policy-dependency (406/422/424)
+		// from a generic placement failure, matching create/rehydrate.
+		return mapPlacementError(err, ErrPlacementManagerDeleteFailed)
 	}
 
 	err = s.store.CatalogItemInstance().Delete(ctx, id)
@@ -286,10 +295,10 @@ func (s *catalogItemInstanceService) rollbackCatalogItemInstanceCreate(id string
 	return s.store.CatalogItemInstance().Delete(rbCtx, id)
 }
 
-func (s *catalogItemInstanceService) rollbackRehydrateResourceID(id, newResourceID, oldResourceID string) error {
+func (s *catalogItemInstanceService) rollbackRehydrateRunID(id, newRunID, oldRunID string) error {
 	rbCtx, cancel := context.WithTimeout(context.Background(), catalogItemInstanceRollbackTimeout)
 	defer cancel()
-	_, err := s.store.CatalogItemInstance().UpdateResourceID(rbCtx, id, newResourceID, oldResourceID)
+	_, err := s.store.CatalogItemInstance().UpdateRunID(rbCtx, id, newRunID, oldRunID)
 	return err
 }
 

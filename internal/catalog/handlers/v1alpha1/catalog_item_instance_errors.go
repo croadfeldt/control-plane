@@ -35,7 +35,8 @@ func mapCreateCatalogItemInstanceErrorToHTTP(err error) server.CreateCatalogItem
 		errors.Is(err, service.ErrInvalidCELExpression),
 		errors.Is(err, service.ErrCELResourceNotFound),
 		errors.Is(err, service.ErrCELSelfReference),
-		errors.Is(err, service.ErrCELServiceTypeOutputNotFound):
+		errors.Is(err, service.ErrCELServiceTypeOutputNotFound),
+		errors.Is(err, service.ErrCELRequiresResourceMissing):
 		return server.CreateCatalogItemInstance400JSONResponse(v1alpha1.Error{
 			Type:   v1alpha1.INVALIDARGUMENT,
 			Status: 400,
@@ -111,7 +112,7 @@ func mapRehydrateCatalogItemInstanceErrorToHTTP(err error) server.RehydrateCatal
 				Detail: stringPtr("this instance was modified by another request; please retry"),
 			},
 		}
-	case errors.Is(err, service.ErrCatalogItemInstanceResourceIDsEmpty):
+	case errors.Is(err, service.ErrCatalogItemInstanceRunIDEmpty):
 		return server.RehydrateCatalogItemInstance422JSONResponse{
 			ProviderErrorJSONResponse: server.ProviderErrorJSONResponse{
 				Type:   v1alpha1.FAILEDPRECONDITION,

@@ -89,7 +89,7 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 		mockSvc         service.Service
 		testTime        time.Time
 		testID          string
-		testResourceIDs = []string{"test-resource-id"}
+		testRunID       = "test-run-id"
 		testPath        string
 		testApiVersion  = "v1alpha1"
 		testCatalogItem = "small-vm"
@@ -99,7 +99,7 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 		ctx = context.Background()
 		testTime = time.Now()
 		testID = "test-instance-id"
-		testResourceIDs = []string{"test-resource-id"}
+		testRunID = "test-run-id"
 		testPath = "catalog-item-instances/" + testID
 		mockCIIService = &mockCatalogItemInstanceService{}
 		mockSvc = &mockCatalogItemInstanceServiceWrapper{catalogItemInstanceService: mockCIIService}
@@ -118,10 +118,10 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 						Path:        &testPath,
 						ApiVersion:  testApiVersion,
 						DisplayName: "My Instance",
+						RunId:       &testRunID,
 						Spec: v1alpha1API.CatalogItemInstanceSpec{
 							CatalogItemId: testCatalogItem,
 							UserValues:    []v1alpha1API.UserValue{{Path: "spec.vcpu.count", Value: 4}},
-							ResourceIds:   &testResourceIDs,
 						},
 						CreateTime: &testTime,
 						UpdateTime: &testTime,
@@ -162,7 +162,6 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 						Spec: v1alpha1API.CatalogItemInstanceSpec{
 							CatalogItemId: testCatalogItem,
 							UserValues:    []v1alpha1API.UserValue{},
-							ResourceIds:   &testResourceIDs,
 						},
 						CreateTime: &testTime,
 						UpdateTime: &testTime,
@@ -174,6 +173,7 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 					Body: &v1alpha1API.CatalogItemInstance{
 						ApiVersion:  testApiVersion,
 						DisplayName: "Custom ID",
+						RunId:       &testRunID,
 						Spec: v1alpha1API.CatalogItemInstanceSpec{
 							CatalogItemId: testCatalogItem,
 							UserValues:    []v1alpha1API.UserValue{},
@@ -317,10 +317,10 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 								Path:        &testPath,
 								ApiVersion:  testApiVersion,
 								DisplayName: "Instance 1",
+								RunId:       &testRunID,
 								Spec: v1alpha1API.CatalogItemInstanceSpec{
 									CatalogItemId: testCatalogItem,
 									UserValues:    []v1alpha1API.UserValue{},
-									ResourceIds:   &testResourceIDs,
 								},
 							},
 						},
@@ -395,10 +395,10 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 						Path:        &testPath,
 						ApiVersion:  testApiVersion,
 						DisplayName: "Test Instance",
+						RunId:       &testRunID,
 						Spec: v1alpha1API.CatalogItemInstanceSpec{
 							CatalogItemId: testCatalogItem,
 							UserValues:    []v1alpha1API.UserValue{},
-							ResourceIds:   &testResourceIDs,
 						},
 						CreateTime: &testTime,
 						UpdateTime: &testTime,
@@ -462,7 +462,7 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 	Describe("RehydrateCatalogItemInstance", func() {
 		Context("with valid request", func() {
 			It("should rehydrate instance and return 200", func() {
-				newResourceIDs := []string{"new-resource-id"}
+				newRunID := "new-run-id"
 				mockCIIService.rehydrateFunc = func(_ context.Context, id string) (*v1alpha1API.CatalogItemInstance, error) {
 					Expect(id).To(Equal(testID))
 					return &v1alpha1API.CatalogItemInstance{
@@ -470,10 +470,10 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 						Path:        &testPath,
 						ApiVersion:  testApiVersion,
 						DisplayName: "Rehydrated Instance",
+						RunId:       &newRunID,
 						Spec: v1alpha1API.CatalogItemInstanceSpec{
 							CatalogItemId: testCatalogItem,
 							UserValues:    []v1alpha1API.UserValue{},
-							ResourceIds:   &newResourceIDs,
 						},
 						CreateTime: &testTime,
 						UpdateTime: &testTime,
@@ -490,7 +490,7 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 
 				rehydrated := response.(server.RehydrateCatalogItemInstance200JSONResponse)
 				Expect(*rehydrated.Uid).To(Equal(testID))
-				Expect(*rehydrated.Spec.ResourceIds).To(Equal(newResourceIDs))
+				Expect(*rehydrated.RunId).To(Equal(newRunID))
 			})
 		})
 

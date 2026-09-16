@@ -2,17 +2,13 @@ package resource_manager_test
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"time"
 
+	agentmodel "github.com/dcm-project/control-plane/internal/agent/store/model"
 	server "github.com/dcm-project/control-plane/internal/sp/api/resource_manager"
 	rmhandlers "github.com/dcm-project/control-plane/internal/sp/handlers/resource_manager"
 	rmsvc "github.com/dcm-project/control-plane/internal/sp/service/resource_manager"
 	"github.com/dcm-project/control-plane/internal/sp/store"
 	"github.com/dcm-project/control-plane/internal/sp/store/model"
-	"github.com/go-resty/resty/v2"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -23,11 +19,9 @@ import (
 
 var _ = Describe("Resource Manager Handler", func() {
 	var (
-		db             *gorm.DB
-		handler        *rmhandlers.Handler
-		ctx            context.Context
-		mockProvider   *httptest.Server
-		providerCalled bool
+		db      *gorm.DB
+		handler *rmhandlers.Handler
+		ctx     context.Context
 	)
 
 	BeforeEach(func() {
@@ -36,123 +30,41 @@ var _ = Describe("Resource Manager Handler", func() {
 			Logger: logger.Default.LogMode(logger.Silent),
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(db.AutoMigrate(&model.Provider{}, &model.ServiceTypeInstance{})).To(Succeed())
-
-		// Create a mock provider server
-		providerCalled = false
-		mockProvider = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			providerCalled = true
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"id":     uuid.New().String(),
-				"status": "PROVISIONING",
-			})
-		}))
-
-		// Create a provider in the database
-		provider := model.Provider{
-			ID:          uuid.New().String(),
-			Name:        "test-provider",
-			ServiceType: "vm",
-			Endpoint:    mockProvider.URL,
-		}
-		Expect(db.Create(&provider).Error).NotTo(HaveOccurred())
+		Expect(db.AutoMigrate(&agentmodel.Agent{}, &model.ServiceTypeInstance{})).To(Succeed())
 
 		dataStore := store.NewStore(db)
-		instanceService := rmsvc.NewInstanceService(dataStore, resty.New().
-			SetTimeout(5*time.Second).
-			SetRetryCount(0))
+		instanceService := rmsvc.NewInstanceService(dataStore, nil, nil)
 		handler = rmhandlers.NewHandler(instanceService)
 		ctx = context.Background()
 	})
 
 	AfterEach(func() {
-		mockProvider.Close()
 		sqlDB, _ := db.DB()
 		_ = sqlDB.Close()
 	})
 
 	Describe("CreateInstance", func() {
-		It("creates and returns 201", func() {
+		// This endpoint never receives an agent_name from the caller - it's
+		// resolved upstream by placement/SPRM - so it always calls
+		// CreateInstance with agentName="", which must be rejected.
+		It("returns 400 because this endpoint never supplies an agent name", func() {
 			req := server.CreateInstanceRequestObject{
 				Body: &server.ServiceTypeInstance{
-					ProviderName: "test-provider",
-					Spec:         map[string]interface{}{"cpu": 2, "memory": "4GB", "service_type": "vm"},
+					Spec: map[string]interface{}{"cpu": 2, "memory": "4GB", "service_type": "vm"},
 				},
 			}
 
 			resp, err := handler.CreateInstance(ctx, req)
 
 			Expect(err).NotTo(HaveOccurred())
-			jsonResp, ok := resp.(server.CreateInstance201JSONResponse)
-			Expect(ok).To(BeTrue())
-			Expect(jsonResp.ProviderName).To(Equal("test-provider"))
-			Expect(jsonResp.Id).NotTo(BeNil())
-			Expect(providerCalled).To(BeTrue())
-		})
-
-		It("creates with specified ID", func() {
-			specifiedID := uuid.New().String()
-			req := server.CreateInstanceRequestObject{
-				Params: server.CreateInstanceParams{Id: &specifiedID},
-				Body: &server.ServiceTypeInstance{
-					ProviderName: "test-provider",
-					Spec:         map[string]interface{}{"cpu": 1, "service_type": "vm"},
-				},
-			}
-
-			resp, err := handler.CreateInstance(ctx, req)
-
-			Expect(err).NotTo(HaveOccurred())
-			jsonResp, ok := resp.(server.CreateInstance201JSONResponse)
-			Expect(ok).To(BeTrue())
-			Expect(*jsonResp.Id).To(Equal(specifiedID))
-		})
-
-		It("returns 409 for duplicate ID", func() {
-			specifiedID := uuid.New().String()
-			req := server.CreateInstanceRequestObject{
-				Params: server.CreateInstanceParams{Id: &specifiedID},
-				Body: &server.ServiceTypeInstance{
-					ProviderName: "test-provider",
-					Spec:         map[string]interface{}{"cpu": 1, "service_type": "vm"},
-				},
-			}
-
-			// First creation should succeed
-			resp1, err := handler.CreateInstance(ctx, req)
-			Expect(err).NotTo(HaveOccurred())
-			_, ok := resp1.(server.CreateInstance201JSONResponse)
-			Expect(ok).To(BeTrue())
-
-			// Second creation with same ID should fail
-			resp2, err := handler.CreateInstance(ctx, req)
-			Expect(err).NotTo(HaveOccurred())
-			_, ok = resp2.(server.CreateInstance409ApplicationProblemPlusJSONResponse)
-			Expect(ok).To(BeTrue())
-		})
-
-		It("returns 404 for non-existent provider", func() {
-			req := server.CreateInstanceRequestObject{
-				Body: &server.ServiceTypeInstance{
-					ProviderName: "non-existent-provider",
-					Spec:         map[string]interface{}{"cpu": 1, "service_type": "vm"},
-				},
-			}
-
-			resp, err := handler.CreateInstance(ctx, req)
-
-			Expect(err).NotTo(HaveOccurred())
-			_, ok := resp.(server.CreateInstance404ApplicationProblemPlusJSONResponse)
+			_, ok := resp.(server.CreateInstance400ApplicationProblemPlusJSONResponse)
 			Expect(ok).To(BeTrue())
 		})
 
 		It("returns 400 when spec is missing service_type", func() {
 			req := server.CreateInstanceRequestObject{
 				Body: &server.ServiceTypeInstance{
-					ProviderName: "test-provider",
-					Spec:         map[string]interface{}{"cpu": 2},
+					Spec: map[string]interface{}{"cpu": 2},
 				},
 			}
 
@@ -161,14 +73,12 @@ var _ = Describe("Resource Manager Handler", func() {
 			Expect(err).NotTo(HaveOccurred())
 			_, ok := resp.(server.CreateInstance400ApplicationProblemPlusJSONResponse)
 			Expect(ok).To(BeTrue())
-			Expect(providerCalled).To(BeFalse())
 		})
 
 		It("returns 400 when spec.service_type is not a string", func() {
 			req := server.CreateInstanceRequestObject{
 				Body: &server.ServiceTypeInstance{
-					ProviderName: "test-provider",
-					Spec:         map[string]interface{}{"cpu": 2, "service_type": 42},
+					Spec: map[string]interface{}{"cpu": 2, "service_type": 42},
 				},
 			}
 
@@ -177,14 +87,12 @@ var _ = Describe("Resource Manager Handler", func() {
 			Expect(err).NotTo(HaveOccurred())
 			_, ok := resp.(server.CreateInstance400ApplicationProblemPlusJSONResponse)
 			Expect(ok).To(BeTrue())
-			Expect(providerCalled).To(BeFalse())
 		})
 
 		It("returns 400 when spec.service_type is an empty string", func() {
 			req := server.CreateInstanceRequestObject{
 				Body: &server.ServiceTypeInstance{
-					ProviderName: "test-provider",
-					Spec:         map[string]interface{}{"cpu": 2, "service_type": ""},
+					Spec: map[string]interface{}{"cpu": 2, "service_type": ""},
 				},
 			}
 
@@ -193,24 +101,21 @@ var _ = Describe("Resource Manager Handler", func() {
 			Expect(err).NotTo(HaveOccurred())
 			_, ok := resp.(server.CreateInstance400ApplicationProblemPlusJSONResponse)
 			Expect(ok).To(BeTrue())
-			Expect(providerCalled).To(BeFalse())
 		})
 	})
 
 	Describe("GetInstance", func() {
 		It("returns instance", func() {
-			// Create an instance first
-			createReq := server.CreateInstanceRequestObject{
-				Body: &server.ServiceTypeInstance{
-					ProviderName: "test-provider",
-					Spec:         map[string]interface{}{"cpu": 2, "service_type": "vm"},
-				},
-			}
-			createResp, _ := handler.CreateInstance(ctx, createReq)
-			created := createResp.(server.CreateInstance201JSONResponse)
+			instanceID := uuid.New().String()
+			db.Create(&model.ServiceTypeInstance{
+				ID:          instanceID,
+				ServiceType: "vm",
+				Status:      "pending",
+				Spec:        map[string]any{"cpu": 2, "service_type": "vm"},
+			})
 
 			req := server.GetInstanceRequestObject{
-				InstanceId: *created.Id,
+				InstanceId: instanceID,
 			}
 
 			resp, err := handler.GetInstance(ctx, req)
@@ -218,7 +123,7 @@ var _ = Describe("Resource Manager Handler", func() {
 			Expect(err).NotTo(HaveOccurred())
 			jsonResp, ok := resp.(server.GetInstance200JSONResponse)
 			Expect(ok).To(BeTrue())
-			Expect(jsonResp.ProviderName).To(Equal("test-provider"))
+			Expect(*jsonResp.Id).To(Equal(instanceID))
 		})
 
 		It("returns 404 for non-existent instance", func() {
@@ -247,16 +152,13 @@ var _ = Describe("Resource Manager Handler", func() {
 		})
 
 		It("returns instances", func() {
-			// Create instances first
 			for i := 0; i < 3; i++ {
-				createReq := server.CreateInstanceRequestObject{
-					Body: &server.ServiceTypeInstance{
-						ProviderName: "test-provider",
-						Spec:         map[string]interface{}{"cpu": i + 1, "service_type": "vm"},
-					},
-				}
-				_, err := handler.CreateInstance(ctx, createReq)
-				Expect(err).NotTo(HaveOccurred())
+				db.Create(&model.ServiceTypeInstance{
+					ID:          uuid.New().String(),
+					ServiceType: "vm",
+					Status:      "pending",
+					Spec:        map[string]any{"cpu": 1, "service_type": "vm"},
+				})
 			}
 
 			resp, err := handler.ListInstances(ctx, server.ListInstancesRequestObject{})
@@ -267,67 +169,53 @@ var _ = Describe("Resource Manager Handler", func() {
 			Expect(*jsonResp.Instances).To(HaveLen(3))
 		})
 
-		It("filters by service_type", func() {
-			containerProvider := model.Provider{
-				ID:          uuid.New().String(),
-				Name:        "container-provider",
-				ServiceType: "container",
-				Endpoint:    mockProvider.URL,
-			}
-			Expect(db.Create(&containerProvider).Error).NotTo(HaveOccurred())
+		It("filters by service type and agent name independently, without swapping them", func() {
+			agentA, agentB := "agent-a", "agent-b"
+			vmID, dbID := uuid.New().String(), uuid.New().String()
+			db.Create(&model.ServiceTypeInstance{
+				ID:          vmID,
+				ServiceType: "vm",
+				AgentName:   &agentA,
+				Status:      "pending",
+				Spec:        map[string]any{"cpu": 1, "service_type": "vm"},
+			})
+			db.Create(&model.ServiceTypeInstance{
+				ID:          dbID,
+				ServiceType: "db",
+				AgentName:   &agentB,
+				Status:      "pending",
+				Spec:        map[string]any{"cpu": 1, "service_type": "db"},
+			})
 
-			// Create vm instances with service_type in spec
-			for i := 0; i < 2; i++ {
-				createReq := server.CreateInstanceRequestObject{
-					Body: &server.ServiceTypeInstance{
-						ProviderName: "test-provider",
-						Spec:         map[string]interface{}{"cpu": i + 1, "service_type": "vm"},
-					},
-				}
-				_, err := handler.CreateInstance(ctx, createReq)
-				Expect(err).NotTo(HaveOccurred())
-			}
-
-			// Create container instance with service_type in spec
-			createReq := server.CreateInstanceRequestObject{
-				Body: &server.ServiceTypeInstance{
-					ProviderName: "container-provider",
-					Spec:         map[string]interface{}{"image": "nginx", "service_type": "container"},
-				},
-			}
-			_, err := handler.CreateInstance(ctx, createReq)
-			Expect(err).NotTo(HaveOccurred())
-
-			vmType := "vm"
+			serviceType := "vm"
 			resp, err := handler.ListInstances(ctx, server.ListInstancesRequestObject{
-				Params: server.ListInstancesParams{ServiceType: &vmType},
+				Params: server.ListInstancesParams{ServiceType: &serviceType},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			jsonResp, ok := resp.(server.ListInstances200JSONResponse)
 			Expect(ok).To(BeTrue())
-			Expect(*jsonResp.Instances).To(HaveLen(2))
+			Expect(*jsonResp.Instances).To(HaveLen(1))
+			Expect(*(*jsonResp.Instances)[0].Id).To(Equal(vmID))
 
-			containerType := "container"
 			resp, err = handler.ListInstances(ctx, server.ListInstancesRequestObject{
-				Params: server.ListInstancesParams{ServiceType: &containerType},
+				Params: server.ListInstancesParams{AgentName: &agentB},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			jsonResp, ok = resp.(server.ListInstances200JSONResponse)
 			Expect(ok).To(BeTrue())
 			Expect(*jsonResp.Instances).To(HaveLen(1))
+			Expect(*(*jsonResp.Instances)[0].Id).To(Equal(dbID))
+			Expect(*(*jsonResp.Instances)[0].AgentName).To(Equal(agentB))
 		})
 
 		It("respects max page size and returns next page token", func() {
-			// Create 5 instances
 			for i := 0; i < 5; i++ {
-				createReq := server.CreateInstanceRequestObject{
-					Body: &server.ServiceTypeInstance{
-						ProviderName: "test-provider",
-						Spec:         map[string]interface{}{"cpu": i + 1, "service_type": "vm"},
-					},
-				}
-				_, err := handler.CreateInstance(ctx, createReq)
-				Expect(err).NotTo(HaveOccurred())
+				db.Create(&model.ServiceTypeInstance{
+					ID:          uuid.New().String(),
+					ServiceType: "vm",
+					Status:      "pending",
+					Spec:        map[string]any{"cpu": 1, "service_type": "vm"},
+				})
 			}
 
 			// First page: request 2 items
@@ -381,18 +269,16 @@ var _ = Describe("Resource Manager Handler", func() {
 
 	Describe("DeleteInstance", func() {
 		It("deletes instance and returns 204", func() {
-			// Create an instance first
-			createReq := server.CreateInstanceRequestObject{
-				Body: &server.ServiceTypeInstance{
-					ProviderName: "test-provider",
-					Spec:         map[string]interface{}{"cpu": 2, "service_type": "vm"},
-				},
-			}
-			createResp, _ := handler.CreateInstance(ctx, createReq)
-			created := createResp.(server.CreateInstance201JSONResponse)
+			instanceID := uuid.New().String()
+			db.Create(&model.ServiceTypeInstance{
+				ID:          instanceID,
+				ServiceType: "vm",
+				Status:      "pending",
+				Spec:        map[string]any{"cpu": 2, "service_type": "vm"},
+			})
 
 			req := server.DeleteInstanceRequestObject{
-				InstanceId: *created.Id,
+				InstanceId: instanceID,
 			}
 
 			resp, err := handler.DeleteInstance(ctx, req)
@@ -402,7 +288,7 @@ var _ = Describe("Resource Manager Handler", func() {
 			Expect(ok).To(BeTrue())
 
 			// Verify it's deleted
-			getResp, _ := handler.GetInstance(ctx, server.GetInstanceRequestObject{InstanceId: *created.Id})
+			getResp, _ := handler.GetInstance(ctx, server.GetInstanceRequestObject{InstanceId: instanceID})
 			_, ok = getResp.(server.GetInstance404ApplicationProblemPlusJSONResponse)
 			Expect(ok).To(BeTrue())
 		})

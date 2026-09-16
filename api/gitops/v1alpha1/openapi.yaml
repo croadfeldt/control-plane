@@ -1,0 +1,564 @@
+openapi: 3.0.4
+
+info:
+  title: DCM GitOps Manager API
+  version: v1alpha1
+  description: |
+    The DCM GitOps Manager API provides resources for configuring Git-driven
+    CatalogItemInstance lifecycle management.
+
+    ## Resources
+
+    - **GitRepositories**: Configure connections to Git repositories containing
+      CatalogItemInstance YAML definitions. A separate `dcm-gitops` process polls
+      configured repositories and reconciles DCM state.
+  contact: {}
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: /api/v1alpha1
+
+paths:
+  /git-repositories:
+    get:
+      operationId: listGitRepositories
+      summary: List git repositories
+      description: |
+        Retrieves a paginated list of git repository configurations.
+        Supports standard pagination using page tokens.
+      parameters:
+        - name: page_token
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Token for retrieving the next page of results.
+            Obtained from the next_page_token field of a previous response.
+
+        - name: max_page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 1000
+            default: 100
+          description: |
+            Maximum number of items to return per page.
+            If not specified, defaults to 100.
+
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitRepositoryList'
+
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      operationId: createGitRepository
+      summary: Create a git repository
+      description: |
+        Creates a new git repository configuration.
+
+        Supports user-specified IDs via the 'id' query parameter for idempotency.
+        If the ID is not provided, the server will generate one.
+      parameters:
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$'
+          description: |
+            Optional user-specified ID for the git repository.
+            Must follow DNS-1123 label format (lowercase alphanumeric with hyphens).
+            If omitted, the server generates an ID.
+          example: production-apps
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitRepository'
+
+      responses:
+        '201':
+          description: Git repository created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitRepository'
+
+        '400':
+          description: Invalid request body or validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+        '409':
+          $ref: '#/components/responses/AlreadyExists'
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /git-repositories/{gitRepositoryId}:
+    get:
+      operationId: getGitRepository
+      summary: Get a git repository
+      description: |
+        Retrieves a single git repository configuration by its ID.
+      parameters:
+        - $ref: '#/components/parameters/GitRepositoryIdPath'
+
+      responses:
+        '200':
+          description: Git repository found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitRepository'
+
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    put:
+      operationId: updateGitRepository
+      summary: Update a git repository
+      description: |
+        Replaces a git repository configuration.
+      parameters:
+        - $ref: '#/components/parameters/GitRepositoryIdPath'
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitRepository'
+
+      responses:
+        '200':
+          description: Git repository updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitRepository'
+
+        '400':
+          description: Invalid request body or validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      operationId: deleteGitRepository
+      summary: Delete a git repository
+      description: |
+        Deletes a git repository configuration.
+      parameters:
+        - $ref: '#/components/parameters/GitRepositoryIdPath'
+
+      responses:
+        '204':
+          description: Git repository deleted successfully
+
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  parameters:
+    GitRepositoryIdPath:
+      name: gitRepositoryId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+      description: Unique identifier for the git repository
+      example: production-apps
+
+  schemas:
+    GitRepository:
+      type: object
+      x-aep-resource:
+        type: gitops-manager.dcm.io/git-repository
+        singular: git-repository
+        plural: git-repositories
+        patterns:
+          - git-repositories/{git_repository_id}
+      required:
+        - api_version
+        - display_name
+        - spec
+      properties:
+        uid:
+          type: string
+          description: |
+            Unique identifier for the git repository. This field is output-only and
+            immutable after creation. The ID can be optionally specified via
+            query parameter on creation; if not provided, the server generates a UUID.
+
+            Follows AEP-122 resource ID conventions.
+          readOnly: true
+          pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+          minLength: 1
+          maxLength: 63
+          example: production-apps
+
+        api_version:
+          type: string
+          pattern: '^v[0-9]+[a-z]+[0-9]+$'
+          description: |
+            Version of the GitRepository schema (e.g., v1alpha1).
+            Immutable after creation.
+          example: v1alpha1
+
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 63
+          description: |
+            User-friendly display name for the git repository configuration.
+          example: Production Apps
+
+        spec:
+          $ref: '#/components/schemas/GitRepositorySpec'
+
+        status:
+          $ref: '#/components/schemas/GitRepositoryStatus'
+
+        path:
+          type: string
+          readOnly: true
+          pattern: '^git-repositories/[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+          description: |
+            Resource path in the format: git-repositories/{gitRepositoryId}
+          example: git-repositories/production-apps
+
+        create_time:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Timestamp when the resource was created (RFC 3339)
+          example: '2026-06-10T10:30:00Z'
+
+        update_time:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Timestamp when the resource was last modified (RFC 3339)
+          example: '2026-06-10T12:45:00Z'
+
+    GitRepositorySpec:
+      type: object
+      description: |
+        Specification for a git repository connection.
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          minLength: 1
+          description: |
+            Git repository URL.
+          example: "https://git.example.com/team/dcm-apps.git"
+
+        ref:
+          type: object
+          description: |
+            Git reference to watch.
+          properties:
+            branch:
+              type: string
+              default: main
+              description: |
+                Branch to watch.
+              example: main
+
+        path:
+          type: string
+          default: "."
+          description: |
+            Directory within the repo. Only YAML files directly at this
+            path root are read (not subdirectories).
+          example: "apps/production/"
+
+        interval_seconds:
+          type: integer
+          format: int32
+          minimum: 10
+          default: 60
+          description: |
+            Polling interval in seconds (minimum 10s).
+          example: 60
+
+        reconciliation:
+          type: object
+          description: |
+            Reconciliation behavior configuration.
+          properties:
+            retry_policy:
+              type: object
+              properties:
+                max_retries:
+                  type: integer
+                  format: int32
+                  minimum: 0
+                  default: 3
+                  description: |
+                    Maximum number of retries on submit failure.
+                  example: 3
+
+                backoff_seconds:
+                  type: integer
+                  format: int32
+                  minimum: 1
+                  default: 30
+                  description: |
+                    Backoff between retries in seconds.
+                  example: 30
+
+    GitRepositoryStatus:
+      type: object
+      description: |
+        Sync status for a git repository.
+      properties:
+        sync_state:
+          type: string
+          enum:
+            - PENDING
+            - SYNCED
+            - IN_PROGRESS
+            - ERROR
+          description: |
+            Current sync state.
+            - PENDING: Initial state, no sync has occurred yet.
+            - SYNCED: DCM state matches Git at lastSyncedCommit.
+            - IN_PROGRESS: Lifecycle changes from Git are being applied.
+            - ERROR: Sync failed (auth, network, parse errors).
+          example: SYNCED
+
+        last_synced_commit:
+          type: string
+          description: |
+            The Git commit SHA that was last successfully synced.
+          example: "abc123def456"
+
+        message:
+          type: string
+          description: |
+            Human-readable message about the current status.
+            Typically contains error details when sync_state is ERROR.
+          example: "All instances synced successfully"
+
+        last_sync_time:
+          type: string
+          format: date-time
+          description: |
+            Timestamp of the last sync attempt (RFC 3339).
+          example: '2026-06-10T12:45:00Z'
+
+    GitRepositoryList:
+      type: object
+      required:
+        - results
+        - next_page_token
+      properties:
+        results:
+          type: array
+          description: |
+            Array of git repository resources.
+            May be empty if no results match the query.
+          items:
+            $ref: '#/components/schemas/GitRepository'
+
+        next_page_token:
+          type: string
+          description: |
+            Token for retrieving the next page of results.
+            Empty string indicates this is the last page.
+          example: eyJvZmZzZXQiOjEwMH0=
+
+    Error:
+      type: object
+      description: |
+        Error response following RFC 7807 Problem Details for HTTP APIs
+        and AEP-193 Error Responses specification.
+      required:
+        - type
+        - status
+        - title
+      properties:
+        type:
+          type: string
+          description: |
+            Machine-readable error code.
+          enum:
+            - INVALID_ARGUMENT
+            - UNAUTHENTICATED
+            - NOT_FOUND
+            - ALREADY_EXISTS
+            - PERMISSION_DENIED
+            - FAILED_PRECONDITION
+            - INTERNAL
+            - UNAVAILABLE
+          example: INVALID_ARGUMENT
+
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code (matches the response status)
+          example: 400
+
+        title:
+          type: string
+          description: |
+            Short, human-readable summary of the error type.
+          example: Invalid request parameters
+
+        detail:
+          type: string
+          description: |
+            Human-readable explanation specific to this occurrence of the error.
+          example: Field 'spec.url' must not be empty
+
+        instance:
+          type: string
+          description: |
+            Unique identifier for this specific error occurrence.
+          example: 7934df3e-4b63-429b-b0f5-b8d350ec165e
+
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: INVALID_ARGUMENT
+            status: 400
+            title: Invalid request parameters
+            detail: Field 'spec.url' must not be empty
+            instance: 7934df3e-4b63-429b-b0f5-b8d350ec165e
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: UNAUTHENTICATED
+            status: 401
+            title: Authentication required
+            detail: Valid authentication credentials are required to access this resource
+            instance: 6c23de2d-3a52-428a-a605-a7d240db054d
+
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: PERMISSION_DENIED
+            status: 403
+            title: Access forbidden
+            detail: User does not have permission to access this resource
+            instance: 8a45ef4f-5c74-53ac-c1f6-c9e461fd276f
+
+    NotFound:
+      description: Not Found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: NOT_FOUND
+            status: 404
+            title: Resource not found
+            detail: GitRepository 'production-apps' does not exist
+            instance: 9b56fg5g-6d85-64bd-d2g7-d0f572ge387g
+
+    AlreadyExists:
+      description: Already Exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: ALREADY_EXISTS
+            status: 409
+            title: Resource already exists
+            detail: GitRepository with id 'production-apps' already exists
+            instance: 0c67gh6h-7e96-75ce-e3h8-e1g683hf498h
+
+    InternalServerError:
+      description: Internal Server Error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: INTERNAL
+            status: 500
+            title: Internal server error
+            detail: An unexpected error occurred while processing the request
+            instance: 2e89ij8j-9g18-97eg-g5j0-g3i805jh610j

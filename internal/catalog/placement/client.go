@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/dcm-project/control-plane/internal/placement/types"
 )
 
 // PlacementError represents a structured error from the Placement Manager,
@@ -25,24 +27,34 @@ func (e *PlacementError) Error() string {
 	return fmt.Sprintf("placement manager returned status %d: %s", e.StatusCode, e.Body)
 }
 
-// CreateResourceRequest is the request body for creating a resource in the Placement Manager
-type CreateResourceRequest struct {
-	CatalogItemInstanceID string         `json:"catalog_item_instance_id"`
-	Spec                  map[string]any `json:"spec"`
+// CreateRunRequest is the request body for creating a placement run.
+type CreateRunRequest = types.CreateRunRequest
+
+// ResourceInput is one node in a CreateRun request graph.
+type ResourceInput = types.ResourceInput
+
+// Run is the response from CreateRun.
+type Run struct {
+	RunID                 string     `json:"run_id"`
+	Path                  string     `json:"path,omitempty"`
+	CatalogItemInstanceID string     `json:"catalog_item_instance_id"`
+	Resources             []Resource `json:"resources"`
 }
 
-// Resource is the response from the Placement Manager
+// Resource is a slim resource view for placement.
 type Resource struct {
-	ID   string         `json:"id"`
-	Path string         `json:"path"`
-	Spec map[string]any `json:"spec"`
+	ID                string         `json:"id,omitempty"`
+	Name              string         `json:"name,omitempty"`
+	Path              string         `json:"path,omitempty"`
+	Spec              map[string]any `json:"spec,omitempty"`
+	RequiresResources []string       `json:"requires_resources,omitempty"`
 }
 
-// Client defines the interface for interacting with the Placement Manager
+// Client defines the interface for interacting with Placement.
 type Client interface {
-	CreateResource(ctx context.Context, req CreateResourceRequest, id string) (*Resource, error)
-	DeleteResource(ctx context.Context, resourceID string) error
-	RehydrateResource(ctx context.Context, resourceID string, newResourceID string) (*Resource, error)
+	CreateRun(ctx context.Context, req CreateRunRequest) (*Run, error)
+	DeleteRun(ctx context.Context, runID string) error
+	RehydrateResource(ctx context.Context, runID string, newRunID string) (*Resource, error)
 }
 
 type client struct {
@@ -51,15 +63,8 @@ type client struct {
 	logger     *slog.Logger
 }
 
-type resourceResponseBody struct {
-	ID                    *string        `json:"id,omitempty"`
-	Path                  *string        `json:"path,omitempty"`
-	CatalogItemInstanceID string         `json:"catalog_item_instance_id,omitempty"`
-	Spec                  map[string]any `json:"spec,omitempty"`
-}
-
 type rehydrateRequestBody struct {
-	NewResourceID string `json:"new_resource_id"`
+	NewRunID string `json:"new_run_id"`
 }
 
 // NewClient creates a remote placement client for subsystem tests and split
@@ -90,18 +95,15 @@ func apiBaseURL(baseURL string) (string, error) {
 	return url.JoinPath(strings.TrimRight(baseURL, "/"), "api", "v1alpha1")
 }
 
-// CreateResource creates a resource in the Placement Manager
-func (c *client) CreateResource(ctx context.Context, req CreateResourceRequest, id string) (*Resource, error) {
-	c.logger.InfoContext(ctx, "Creating resource in placement manager",
-		"catalog_item_instance_id", req.CatalogItemInstanceID,
-		"resource_id", id,
+// CreateRun creates a placement run in the Placement Manager.
+func (c *client) CreateRun(ctx context.Context, req CreateRunRequest) (*Run, error) {
+	runId := req.RunId
+	c.logger.InfoContext(ctx, "Creating run in placement manager",
+		"catalog_item_instance_id", req.CatalogItemInstanceId,
+		"run_id", runId,
 	)
 
-	endpoint := c.baseURL + "/resources"
-	if id != "" {
-		endpoint = endpoint + "?id=" + url.QueryEscape(id)
-	}
-
+	endpoint := c.baseURL + "/runs"
 	payload, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal placement create request: %w", err)
@@ -115,38 +117,37 @@ func (c *client) CreateResource(ctx context.Context, req CreateResourceRequest, 
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		c.logger.ErrorContext(ctx, "Placement manager create resource call failed", "resource_id", id, "error", err)
+		c.logger.ErrorContext(ctx, "Placement manager create run call failed", "run_id", runId, "error", err)
 		return nil, fmt.Errorf("failed to call placement manager: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read placement create response: %w", err)
+		return nil, fmt.Errorf("failed to read placement create run response: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != http.StatusAccepted {
 		c.logger.ErrorContext(ctx, "Placement manager returned unexpected status",
-			"resource_id", id,
 			"status", resp.StatusCode,
 		)
 		return nil, &PlacementError{StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
 
-	var parsed resourceResponseBody
+	var parsed Run
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return nil, fmt.Errorf("failed to decode placement create response: %w", err)
+		return nil, fmt.Errorf("failed to decode placement create run response: %w", err)
 	}
 
-	c.logger.InfoContext(ctx, "Resource created in placement manager", "resource_id", id)
-	return mapResourceResponse(&parsed), nil
+	c.logger.InfoContext(ctx, "Run created in placement manager", "run_id", parsed.RunID)
+	return &parsed, nil
 }
 
-// DeleteResource deletes a resource from the Placement Manager
-func (c *client) DeleteResource(ctx context.Context, resourceID string) error {
-	c.logger.InfoContext(ctx, "Deleting resource from placement manager", "resource_id", resourceID)
+// DeleteRun deletes a placement run by run_id.
+func (c *client) DeleteRun(ctx context.Context, runID string) error {
+	c.logger.InfoContext(ctx, "Deleting run from placement manager", "run_id", runID)
 
-	endpoint, err := url.JoinPath(c.baseURL, "resources", resourceID)
+	endpoint, err := url.JoinPath(c.baseURL, "runs", runID)
 	if err != nil {
 		return fmt.Errorf("failed to build placement delete URL: %w", err)
 	}
@@ -158,8 +159,8 @@ func (c *client) DeleteResource(ctx context.Context, resourceID string) error {
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		c.logger.ErrorContext(ctx, "Placement manager delete resource call failed",
-			"resource_id", resourceID,
+		c.logger.ErrorContext(ctx, "Placement manager delete run call failed",
+			"run_id", runID,
 			"error", err,
 		)
 		return fmt.Errorf("failed to call placement manager: %w", err)
@@ -173,25 +174,25 @@ func (c *client) DeleteResource(ctx context.Context, resourceID string) error {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		c.logger.ErrorContext(ctx, "Placement manager delete returned unexpected status",
-			"resource_id", resourceID,
+			"run_id", runID,
 			"status", resp.StatusCode,
 		)
 		return fmt.Errorf("placement manager returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	c.logger.InfoContext(ctx, "Resource deleted from placement manager", "resource_id", resourceID)
+	c.logger.InfoContext(ctx, "Run deleted from placement manager", "run_id", runID)
 	return nil
 }
 
-// RehydrateResource rehydrates a resource in the Placement Manager
-func (c *client) RehydrateResource(ctx context.Context, resourceID string, newResourceID string) (*Resource, error) {
-	c.logger.InfoContext(ctx, "Rehydrating resource in placement manager",
-		"resource_id", resourceID,
-		"new_resource_id", newResourceID,
+// RehydrateResource rehydrates a placement run in the Placement Manager.
+func (c *client) RehydrateResource(ctx context.Context, runID string, newRunID string) (*Resource, error) {
+	c.logger.InfoContext(ctx, "Rehydrating run in placement manager",
+		"run_id", runID,
+		"new_run_id", newRunID,
 	)
 
-	endpoint := c.baseURL + "/resources/" + url.PathEscape(resourceID) + ":rehydrate"
-	payload, err := json.Marshal(rehydrateRequestBody{NewResourceID: newResourceID})
+	endpoint := c.baseURL + "/runs/" + url.PathEscape(runID) + ":rehydrate"
+	payload, err := json.Marshal(rehydrateRequestBody{NewRunID: newRunID})
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal placement rehydrate request: %w", err)
 	}
@@ -204,8 +205,8 @@ func (c *client) RehydrateResource(ctx context.Context, resourceID string, newRe
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		c.logger.ErrorContext(ctx, "Placement manager rehydrate resource call failed",
-			"resource_id", resourceID,
+		c.logger.ErrorContext(ctx, "Placement manager rehydrate run call failed",
+			"run_id", runID,
 			"error", err,
 		)
 		return nil, fmt.Errorf("failed to call placement manager: %w", err)
@@ -217,33 +218,22 @@ func (c *client) RehydrateResource(ctx context.Context, resourceID string, newRe
 		return nil, fmt.Errorf("failed to read placement rehydrate response: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusAccepted {
 		c.logger.ErrorContext(ctx, "Placement manager returned unexpected status",
-			"resource_id", resourceID,
+			"run_id", runID,
 			"status", resp.StatusCode,
 		)
 		return nil, &PlacementError{StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
 
-	var parsed resourceResponseBody
+	var parsed Resource
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to decode placement rehydrate response: %w", err)
 	}
 
-	c.logger.InfoContext(ctx, "Resource rehydrated in placement manager",
-		"resource_id", resourceID,
-		"new_resource_id", newResourceID,
+	c.logger.InfoContext(ctx, "Run rehydrated in placement manager",
+		"run_id", runID,
+		"new_run_id", newRunID,
 	)
-	return mapResourceResponse(&parsed), nil
-}
-
-func mapResourceResponse(r *resourceResponseBody) *Resource {
-	res := &Resource{Spec: r.Spec}
-	if r.ID != nil {
-		res.ID = *r.ID
-	}
-	if r.Path != nil {
-		res.Path = *r.Path
-	}
-	return res
+	return &parsed, nil
 }

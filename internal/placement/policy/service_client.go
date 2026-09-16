@@ -19,8 +19,15 @@ func NewServiceClient(eval policyservice.EvaluationService) Client {
 }
 
 func (c *serviceClient) Evaluate(ctx context.Context, req EvaluateRequest) (*EvaluateResponse, error) {
+	availableAgents := make([]policyservice.AgentInfo, len(req.AvailableAgents))
+	for i, a := range req.AvailableAgents {
+		availableAgents[i] = policyservice.AgentInfo{Name: a.Name, Environment: a.Environment, ServiceTypes: a.ServiceTypes, Cost: a.Cost}
+	}
+
 	response, err := c.eval.EvaluateRequest(ctx, &policyservice.EvaluationRequest{
 		ServiceInstance: req.Spec,
+		AvailableAgents: availableAgents,
+		ExcludeAgents:   req.ExcludeAgents,
 	})
 	if err != nil {
 		return nil, mapEvaluationError(err)
@@ -28,9 +35,9 @@ func (c *serviceClient) Evaluate(ctx context.Context, req EvaluateRequest) (*Eva
 
 	status := string(response.Status)
 	return &EvaluateResponse{
-		Status:           status,
-		SelectedProvider: response.SelectedProvider,
-		EvaluatedSpec:    response.EvaluatedServiceInstance,
+		Status:        status,
+		SelectedAgent: response.SelectedAgent,
+		EvaluatedSpec: response.EvaluatedServiceInstance,
 	}, nil
 }
 

@@ -11,15 +11,16 @@ import (
 	externalRef0 "github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes"
 )
 
-// Defines values for KubernetesProviderHintsAccessMode.
+// Defines values for StorageSpecAccessMode.
 const (
-	ReadOnlyMany  KubernetesProviderHintsAccessMode = "ReadOnlyMany"
-	ReadWriteMany KubernetesProviderHintsAccessMode = "ReadWriteMany"
-	ReadWriteOnce KubernetesProviderHintsAccessMode = "ReadWriteOnce"
+	ReadOnlyMany     StorageSpecAccessMode = "read_only_many"
+	ReadWriteMany    StorageSpecAccessMode = "read_write_many"
+	ReadWriteOnce    StorageSpecAccessMode = "read_write_once"
+	ReadWriteOncePod StorageSpecAccessMode = "read_write_once_pod"
 )
 
-// Valid indicates whether the value is a known member of the KubernetesProviderHintsAccessMode enum.
-func (e KubernetesProviderHintsAccessMode) Valid() bool {
+// Valid indicates whether the value is a known member of the StorageSpecAccessMode enum.
+func (e StorageSpecAccessMode) Valid() bool {
 	switch e {
 	case ReadOnlyMany:
 		return true
@@ -27,19 +28,21 @@ func (e KubernetesProviderHintsAccessMode) Valid() bool {
 		return true
 	case ReadWriteOnce:
 		return true
+	case ReadWriteOncePod:
+		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for KubernetesProviderHintsVolumeMode.
+// Defines values for StorageSpecVolumeMode.
 const (
-	Block      KubernetesProviderHintsVolumeMode = "Block"
-	Filesystem KubernetesProviderHintsVolumeMode = "Filesystem"
+	Block      StorageSpecVolumeMode = "block"
+	Filesystem StorageSpecVolumeMode = "filesystem"
 )
 
-// Valid indicates whether the value is a known member of the KubernetesProviderHintsVolumeMode enum.
-func (e KubernetesProviderHintsVolumeMode) Valid() bool {
+// Valid indicates whether the value is a known member of the StorageSpecVolumeMode enum.
+func (e StorageSpecVolumeMode) Valid() bool {
 	switch e {
 	case Block:
 		return true
@@ -50,38 +53,17 @@ func (e KubernetesProviderHintsVolumeMode) Valid() bool {
 	}
 }
 
-// KubernetesProviderHints Kubernetes-specific PVC settings supplied under
-// provider_hints.kubernetes.
-//
-// Catalog administrators typically set these as non-editable defaults.
-type KubernetesProviderHints struct {
-	// AccessMode PVC access mode.
-	//
-	// ReadWriteOnce is typical for block storage; ReadWriteMany for
-	// shared filesystem StorageClasses (e.g. CephFS, NFS).
-	AccessMode *KubernetesProviderHintsAccessMode `json:"access_mode,omitempty"`
-
-	// StorageClass StorageClass name (overrides SP default)
-	StorageClass *string `json:"storage_class,omitempty"`
-
-	// VolumeMode PVC volume mode
-	VolumeMode *KubernetesProviderHintsVolumeMode `json:"volume_mode,omitempty"`
-}
-
-// KubernetesProviderHintsAccessMode PVC access mode.
-//
-// ReadWriteOnce is typical for block storage; ReadWriteMany for
-// shared filesystem StorageClasses (e.g. CephFS, NFS).
-type KubernetesProviderHintsAccessMode string
-
-// KubernetesProviderHintsVolumeMode PVC volume mode
-type KubernetesProviderHintsVolumeMode string
-
 // StorageSpec defines model for StorageSpec.
 type StorageSpec struct {
-	// Capacity Volume size using Kubernetes-style quantity suffixes.
+	// AccessMode Attachment concurrency (Kubernetes PVC accessModes: RWO/ROX/RWX/RWOP).
+	AccessMode StorageSpecAccessMode `json:"access_mode"`
+
+	// Attached Whether the volume is currently attached to a consumer.
 	//
-	// Examples: 100Gi, 1Ti, 500G
+	// UDLM realized output: populated by the provider when the resource reaches Realized; read-only on the request.
+	Attached *bool `json:"attached,omitempty"`
+
+	// Capacity Requested capacity, Kubernetes quantity form (e.g. 100Gi). SNIA Swordfish CapacityBytes maps here.
 	Capacity string `json:"capacity"`
 
 	// CreateTime Timestamp when the resource was created (RFC 3339)
@@ -89,6 +71,9 @@ type StorageSpec struct {
 
 	// Id Unique identifier for the resource.
 	Id *string `json:"id,omitempty"`
+
+	// LayoutEntry The Storage.Layout entry name this volume realizes — the join key paired with the realizes_layout_entry edge. Instance edges carry no qualifier (the dependencies[] of a record is a closed shape, state-record.schema.json), so the entry binding lives HERE: set exactly when realizes_layout_entry is declared, matching an entry name in the referenced layout. Reconvergence joins on this value to populate the layout's realized_volumes map.
+	LayoutEntry *string `json:"layout_entry,omitempty"`
 
 	// Metadata Resource metadata for identification and governance.
 	// Used by all service type specifications.
@@ -106,6 +91,9 @@ type StorageSpec struct {
 	// Values are provider-specific configuration objects.
 	ProviderHints *externalRef0.ProviderHints `json:"provider_hints,omitempty"`
 
+	// RetainOnRelease Reclaim policy: true = Retain (keep data after the consumer releases it), false = Delete.
+	RetainOnRelease *bool `json:"retain_on_release,omitempty"`
+
 	// ServiceType Service type identifier.
 	// Makes the payload self-describing and enables routing/validation.
 	ServiceType externalRef0.ServiceType `json:"service_type"`
@@ -116,16 +104,27 @@ type StorageSpec struct {
 	// StatusMessage Human-readable message providing details about the current status
 	StatusMessage *string `json:"status_message,omitempty"`
 
+	// StorageClass Resource reference to a Storage.Class (common-elements §2.5, DCM ADR-025). Authored by handle; deferred resolution supported (claim-before-define).
+	StorageClass *string `json:"storage_class,omitempty"`
+
 	// UpdateTime Timestamp when the resource was last updated (RFC 3339)
 	UpdateTime *time.Time `json:"update_time,omitempty"`
 
-	// VolumeName Bound volume identifier assigned by the provider
-	// (for example the PersistentVolume name).
+	// VolumeHandle Provider volume handle/id once Realized (CSI volumeHandle / Swordfish Volume Id).
 	//
-	// Empty until the volume is bound.
-	VolumeName           *string                `json:"volume_name,omitempty"`
+	// UDLM realized output: populated by the provider when the resource reaches Realized; read-only on the request.
+	VolumeHandle *string `json:"volume_handle,omitempty"`
+
+	// VolumeMode Filesystem-mounted vs raw block device (Kubernetes PVC volumeMode).
+	VolumeMode           *StorageSpecVolumeMode `json:"volume_mode,omitempty"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
+
+// StorageSpecAccessMode Attachment concurrency (Kubernetes PVC accessModes: RWO/ROX/RWX/RWOP).
+type StorageSpecAccessMode string
+
+// StorageSpecVolumeMode Filesystem-mounted vs raw block device (Kubernetes PVC volumeMode).
+type StorageSpecVolumeMode string
 
 // Getter for additional properties for StorageSpec. Returns the specified
 // element and whether it was found
@@ -152,6 +151,22 @@ func (a *StorageSpec) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
+	if raw, found := object["access_mode"]; found {
+		err = json.Unmarshal(raw, &a.AccessMode)
+		if err != nil {
+			return fmt.Errorf("error reading 'access_mode': %w", err)
+		}
+		delete(object, "access_mode")
+	}
+
+	if raw, found := object["attached"]; found {
+		err = json.Unmarshal(raw, &a.Attached)
+		if err != nil {
+			return fmt.Errorf("error reading 'attached': %w", err)
+		}
+		delete(object, "attached")
+	}
+
 	if raw, found := object["capacity"]; found {
 		err = json.Unmarshal(raw, &a.Capacity)
 		if err != nil {
@@ -174,6 +189,14 @@ func (a *StorageSpec) UnmarshalJSON(b []byte) error {
 			return fmt.Errorf("error reading 'id': %w", err)
 		}
 		delete(object, "id")
+	}
+
+	if raw, found := object["layout_entry"]; found {
+		err = json.Unmarshal(raw, &a.LayoutEntry)
+		if err != nil {
+			return fmt.Errorf("error reading 'layout_entry': %w", err)
+		}
+		delete(object, "layout_entry")
 	}
 
 	if raw, found := object["metadata"]; found {
@@ -200,6 +223,14 @@ func (a *StorageSpec) UnmarshalJSON(b []byte) error {
 		delete(object, "provider_hints")
 	}
 
+	if raw, found := object["retain_on_release"]; found {
+		err = json.Unmarshal(raw, &a.RetainOnRelease)
+		if err != nil {
+			return fmt.Errorf("error reading 'retain_on_release': %w", err)
+		}
+		delete(object, "retain_on_release")
+	}
+
 	if raw, found := object["service_type"]; found {
 		err = json.Unmarshal(raw, &a.ServiceType)
 		if err != nil {
@@ -224,6 +255,14 @@ func (a *StorageSpec) UnmarshalJSON(b []byte) error {
 		delete(object, "status_message")
 	}
 
+	if raw, found := object["storage_class"]; found {
+		err = json.Unmarshal(raw, &a.StorageClass)
+		if err != nil {
+			return fmt.Errorf("error reading 'storage_class': %w", err)
+		}
+		delete(object, "storage_class")
+	}
+
 	if raw, found := object["update_time"]; found {
 		err = json.Unmarshal(raw, &a.UpdateTime)
 		if err != nil {
@@ -232,12 +271,20 @@ func (a *StorageSpec) UnmarshalJSON(b []byte) error {
 		delete(object, "update_time")
 	}
 
-	if raw, found := object["volume_name"]; found {
-		err = json.Unmarshal(raw, &a.VolumeName)
+	if raw, found := object["volume_handle"]; found {
+		err = json.Unmarshal(raw, &a.VolumeHandle)
 		if err != nil {
-			return fmt.Errorf("error reading 'volume_name': %w", err)
+			return fmt.Errorf("error reading 'volume_handle': %w", err)
 		}
-		delete(object, "volume_name")
+		delete(object, "volume_handle")
+	}
+
+	if raw, found := object["volume_mode"]; found {
+		err = json.Unmarshal(raw, &a.VolumeMode)
+		if err != nil {
+			return fmt.Errorf("error reading 'volume_mode': %w", err)
+		}
+		delete(object, "volume_mode")
 	}
 
 	if len(object) != 0 {
@@ -259,6 +306,18 @@ func (a StorageSpec) MarshalJSON() ([]byte, error) {
 	var err error
 	object := make(map[string]json.RawMessage)
 
+	object["access_mode"], err = json.Marshal(a.AccessMode)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'access_mode': %w", err)
+	}
+
+	if a.Attached != nil {
+		object["attached"], err = json.Marshal(a.Attached)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'attached': %w", err)
+		}
+	}
+
 	object["capacity"], err = json.Marshal(a.Capacity)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling 'capacity': %w", err)
@@ -275,6 +334,13 @@ func (a StorageSpec) MarshalJSON() ([]byte, error) {
 		object["id"], err = json.Marshal(a.Id)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'id': %w", err)
+		}
+	}
+
+	if a.LayoutEntry != nil {
+		object["layout_entry"], err = json.Marshal(a.LayoutEntry)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'layout_entry': %w", err)
 		}
 	}
 
@@ -297,6 +363,13 @@ func (a StorageSpec) MarshalJSON() ([]byte, error) {
 		}
 	}
 
+	if a.RetainOnRelease != nil {
+		object["retain_on_release"], err = json.Marshal(a.RetainOnRelease)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'retain_on_release': %w", err)
+		}
+	}
+
 	object["service_type"], err = json.Marshal(a.ServiceType)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling 'service_type': %w", err)
@@ -316,6 +389,13 @@ func (a StorageSpec) MarshalJSON() ([]byte, error) {
 		}
 	}
 
+	if a.StorageClass != nil {
+		object["storage_class"], err = json.Marshal(a.StorageClass)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'storage_class': %w", err)
+		}
+	}
+
 	if a.UpdateTime != nil {
 		object["update_time"], err = json.Marshal(a.UpdateTime)
 		if err != nil {
@@ -323,10 +403,17 @@ func (a StorageSpec) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	if a.VolumeName != nil {
-		object["volume_name"], err = json.Marshal(a.VolumeName)
+	if a.VolumeHandle != nil {
+		object["volume_handle"], err = json.Marshal(a.VolumeHandle)
 		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'volume_name': %w", err)
+			return nil, fmt.Errorf("error marshaling 'volume_handle': %w", err)
+		}
+	}
+
+	if a.VolumeMode != nil {
+		object["volume_mode"], err = json.Marshal(a.VolumeMode)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'volume_mode': %w", err)
 		}
 	}
 

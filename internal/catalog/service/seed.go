@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 
+	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/cluster"
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/container"
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/database"
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/network"
+	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/storage"
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/three_tier_app_demo"
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/vm"
 	"github.com/dcm-project/control-plane/internal/catalog/store/model"
@@ -34,17 +36,35 @@ func defaultServiceTypes() []model.ServiceType {
 			},
 			Path: "service-types/three-tier-app-demo",
 		},
+		// The five UDLM-generated service types seed every spec field and every
+		// realized output declared by the registry flat spec (cmd/udlm-servicetype-gen),
+		// so CEL references such as ${db.connection_string} validate against the
+		// registry's outputs. Keep in step with api/catalog/v1alpha1/servicetypes/<slug>/spec.yaml.
 		{
 			ID:          "vm",
 			ApiVersion:  "v1alpha1",
 			ServiceType: "vm",
 			Spec: map[string]any{
-				"vcpu":     vm.Vcpu{},
-				"memory":   vm.Memory{},
-				"storage":  vm.Storage{},
-				"guest_os": vm.GuestOS{},
-				"access":   vm.Access{},
-				"ip":       []vm.VmEndpoint{},
+				"instance_size": "",
+				"cpu":           vm.Cpu{},
+				"memory":        vm.Memory{},
+				"storage":       vm.Storage{},
+				"storage_tier":  "",
+				"guest_os":      vm.VMSpec_GuestOs{},
+				"firmware":      vm.Firmware{},
+				"boot_order":    []string{},
+				"layout_ref":    "",
+				"networks":      []vm.Network{},
+				"placement":     vm.Placement{},
+				"run_state":     vm.RunState{},
+				// realized outputs
+				"provider_handle":    "",
+				"primary_ip":         "",
+				"hostname":           "",
+				"ip_addresses":       []string{},
+				"mac_addresses":      []string{},
+				"observed_run_state": "",
+				"target_segment":     "",
 			},
 			Path: "service-types/vm",
 		},
@@ -53,11 +73,16 @@ func defaultServiceTypes() []model.ServiceType {
 			ApiVersion:  "v1alpha1",
 			ServiceType: "container",
 			Spec: map[string]any{
-				"image":     container.Image{},
-				"resources": container.ContainerResources{},
+				"image":     container.ContainerSpec_Image{},
+				"command":   []string{},
+				"args":      []string{},
+				"resources": container.Resources{},
 				"process":   container.Process{},
 				"network":   container.Network{},
-				"endpoints": []container.ContainerEndpoint{},
+				"runtime":   container.Runtime{},
+				// realized outputs
+				"endpoint":     "",
+				"internal_dns": "",
 			},
 			Path: "service-types/container",
 		},
@@ -66,10 +91,15 @@ func defaultServiceTypes() []model.ServiceType {
 			ApiVersion:  "v1alpha1",
 			ServiceType: "database",
 			Spec: map[string]any{
-				"engine":            "",
-				"version":           "",
-				"resources":         database.DatabaseResources{},
+				"engine":    "",
+				"version":   "",
+				"resources": database.Resources{},
+				// realized outputs
+				"applied_version":   "",
 				"connection_string": "",
+				"host":              "",
+				"port":              0,
+				"username":          "",
 			},
 			Path: "service-types/database",
 		},
@@ -78,10 +108,13 @@ func defaultServiceTypes() []model.ServiceType {
 			ApiVersion:  "v1alpha1",
 			ServiceType: "cluster",
 			Spec: map[string]any{
-				"version":      "",
-				"api_endpoint": "",
-				"console_url":  "",
-				"kubeconfig":   "",
+				"release": "",
+				"network": cluster.Network{},
+				// realized outputs
+				"api_url":     "",
+				"console_url": "",
+				"kubeconfig":  "",
+				"cluster_id":  "",
 			},
 			Path: "service-types/cluster",
 		},
@@ -90,8 +123,15 @@ func defaultServiceTypes() []model.ServiceType {
 			ApiVersion:  "v1alpha1",
 			ServiceType: "storage",
 			Spec: map[string]any{
-				"capacity":    "",
-				"volume_name": "",
+				"capacity":          "",
+				"access_mode":       storage.StorageSpecAccessMode(""),
+				"volume_mode":       storage.StorageSpecVolumeMode(""),
+				"storage_class":     "",
+				"retain_on_release": false,
+				"layout_entry":      "",
+				// realized outputs
+				"volume_handle": "",
+				"attached":      false,
 			},
 			Path: "service-types/storage",
 		},

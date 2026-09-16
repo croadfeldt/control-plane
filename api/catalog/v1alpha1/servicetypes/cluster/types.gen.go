@@ -13,12 +13,19 @@ import (
 
 // ClusterSpec defines model for ClusterSpec.
 type ClusterSpec struct {
-	// ApiEndpoint Kubernetes API server endpoint for the provisioned cluster.
-	// Empty until the cluster is ready.
-	ApiEndpoint *string `json:"api_endpoint,omitempty"`
+	// ApiUrl Cluster API server URL once Realized.
+	//
+	// UDLM realized output: populated by the provider when the resource reaches Realized; read-only on the request.
+	ApiUrl *string `json:"api_url,omitempty"`
 
-	// ConsoleUrl Web console URL for the provisioned cluster.
-	// Empty until the cluster is ready.
+	// ClusterId Provider-assigned cluster identifier.
+	//
+	// UDLM realized output: populated by the provider when the resource reaches Realized; read-only on the request.
+	ClusterId *string `json:"cluster_id,omitempty"`
+
+	// ConsoleUrl Web console URL.
+	//
+	// UDLM realized output: populated by the provider when the resource reaches Realized; read-only on the request.
 	ConsoleUrl *string `json:"console_url,omitempty"`
 
 	// CreateTime Timestamp when the resource was created (RFC 3339)
@@ -27,18 +34,17 @@ type ClusterSpec struct {
 	// Id Unique identifier for the resource.
 	Id *string `json:"id,omitempty"`
 
-	// Kubeconfig Base64-encoded kubeconfig granting admin access to the
-	// provisioned cluster.
+	// Kubeconfig Admin kubeconfig.
 	//
-	// Empty while the cluster is provisioning or has failed.
-	// Populated when the cluster reaches a ready state.
+	// UDLM realized output: populated by the provider when the resource reaches Realized; read-only on the request. Sensitive: never logged, echoed, or diffed.
 	Kubeconfig *string `json:"kubeconfig,omitempty"`
 
 	// Metadata Resource metadata for identification and governance.
 	// Used by all service type specifications.
-	Metadata  externalRef0.ServiceMetadata `json:"metadata"`
-	Network   *Network                     `json:"network,omitempty"`
-	NodePools []NodePool                   `json:"node_pools"`
+	Metadata externalRef0.ServiceMetadata `json:"metadata"`
+
+	// Network Converted verbatim from the flat cluster spec.
+	Network *Network `json:"network,omitempty"`
 
 	// Path Resource path or location within the system hierarchy.
 	Path *string `json:"path,omitempty"`
@@ -52,7 +58,7 @@ type ClusterSpec struct {
 	// Values are provider-specific configuration objects.
 	ProviderHints *externalRef0.ProviderHints `json:"provider_hints,omitempty"`
 
-	// Release Platform release, e.g. 4.16 (OpenShift).
+	// Release Platform release, e.g. 1.30 (a Kubernetes minor release) or a distribution's release stream.
 	Release string `json:"release"`
 
 	// ServiceType Service type identifier.
@@ -70,23 +76,10 @@ type ClusterSpec struct {
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// Network defines model for Network.
+// Network Converted verbatim from the flat cluster spec.
 type Network struct {
 	PodCidr              *string                `json:"pod_cidr,omitempty"`
 	ServiceCidr          *string                `json:"service_cidr,omitempty"`
-	AdditionalProperties map[string]interface{} `json:"-"`
-}
-
-// NodePool defines model for NodePool.
-type NodePool struct {
-	Count int `json:"count"`
-
-	// HostType Resource Type name of the node shape (Compute.HostType — forthcoming).
-	HostType string `json:"host_type"`
-
-	// InstanceSize Provider-neutral node size class (small|medium|large) — sizes each node in the pool; the provider maps it to a concrete node shape at naturalization (common-elements §2.2, ADR-014).
-	InstanceSize         *string                `json:"instance_size,omitempty"`
-	Name                 string                 `json:"name"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
@@ -115,12 +108,20 @@ func (a *ClusterSpec) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	if raw, found := object["api_endpoint"]; found {
-		err = json.Unmarshal(raw, &a.ApiEndpoint)
+	if raw, found := object["api_url"]; found {
+		err = json.Unmarshal(raw, &a.ApiUrl)
 		if err != nil {
-			return fmt.Errorf("error reading 'api_endpoint': %w", err)
+			return fmt.Errorf("error reading 'api_url': %w", err)
 		}
-		delete(object, "api_endpoint")
+		delete(object, "api_url")
+	}
+
+	if raw, found := object["cluster_id"]; found {
+		err = json.Unmarshal(raw, &a.ClusterId)
+		if err != nil {
+			return fmt.Errorf("error reading 'cluster_id': %w", err)
+		}
+		delete(object, "cluster_id")
 	}
 
 	if raw, found := object["console_url"]; found {
@@ -169,14 +170,6 @@ func (a *ClusterSpec) UnmarshalJSON(b []byte) error {
 			return fmt.Errorf("error reading 'network': %w", err)
 		}
 		delete(object, "network")
-	}
-
-	if raw, found := object["node_pools"]; found {
-		err = json.Unmarshal(raw, &a.NodePools)
-		if err != nil {
-			return fmt.Errorf("error reading 'node_pools': %w", err)
-		}
-		delete(object, "node_pools")
 	}
 
 	if raw, found := object["path"]; found {
@@ -254,10 +247,17 @@ func (a ClusterSpec) MarshalJSON() ([]byte, error) {
 	var err error
 	object := make(map[string]json.RawMessage)
 
-	if a.ApiEndpoint != nil {
-		object["api_endpoint"], err = json.Marshal(a.ApiEndpoint)
+	if a.ApiUrl != nil {
+		object["api_url"], err = json.Marshal(a.ApiUrl)
 		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'api_endpoint': %w", err)
+			return nil, fmt.Errorf("error marshaling 'api_url': %w", err)
+		}
+	}
+
+	if a.ClusterId != nil {
+		object["cluster_id"], err = json.Marshal(a.ClusterId)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'cluster_id': %w", err)
 		}
 	}
 
@@ -298,13 +298,6 @@ func (a ClusterSpec) MarshalJSON() ([]byte, error) {
 		object["network"], err = json.Marshal(a.Network)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'network': %w", err)
-		}
-	}
-
-	if a.NodePools != nil {
-		object["node_pools"], err = json.Marshal(a.NodePools)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'node_pools': %w", err)
 		}
 	}
 
@@ -434,113 +427,6 @@ func (a Network) MarshalJSON() ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'service_cidr': %w", err)
 		}
-	}
-
-	for fieldName, field := range a.AdditionalProperties {
-		object[fieldName], err = json.Marshal(field)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
-		}
-	}
-	return json.Marshal(object)
-}
-
-// Getter for additional properties for NodePool. Returns the specified
-// element and whether it was found
-func (a NodePool) Get(fieldName string) (value interface{}, found bool) {
-	if a.AdditionalProperties != nil {
-		value, found = a.AdditionalProperties[fieldName]
-	}
-	return
-}
-
-// Setter for additional properties for NodePool
-func (a *NodePool) Set(fieldName string, value interface{}) {
-	if a.AdditionalProperties == nil {
-		a.AdditionalProperties = make(map[string]interface{})
-	}
-	a.AdditionalProperties[fieldName] = value
-}
-
-// Override default JSON handling for NodePool to handle AdditionalProperties
-func (a *NodePool) UnmarshalJSON(b []byte) error {
-	object := make(map[string]json.RawMessage)
-	err := json.Unmarshal(b, &object)
-	if err != nil {
-		return err
-	}
-
-	if raw, found := object["count"]; found {
-		err = json.Unmarshal(raw, &a.Count)
-		if err != nil {
-			return fmt.Errorf("error reading 'count': %w", err)
-		}
-		delete(object, "count")
-	}
-
-	if raw, found := object["host_type"]; found {
-		err = json.Unmarshal(raw, &a.HostType)
-		if err != nil {
-			return fmt.Errorf("error reading 'host_type': %w", err)
-		}
-		delete(object, "host_type")
-	}
-
-	if raw, found := object["instance_size"]; found {
-		err = json.Unmarshal(raw, &a.InstanceSize)
-		if err != nil {
-			return fmt.Errorf("error reading 'instance_size': %w", err)
-		}
-		delete(object, "instance_size")
-	}
-
-	if raw, found := object["name"]; found {
-		err = json.Unmarshal(raw, &a.Name)
-		if err != nil {
-			return fmt.Errorf("error reading 'name': %w", err)
-		}
-		delete(object, "name")
-	}
-
-	if len(object) != 0 {
-		a.AdditionalProperties = make(map[string]interface{})
-		for fieldName, fieldBuf := range object {
-			var fieldVal interface{}
-			err := json.Unmarshal(fieldBuf, &fieldVal)
-			if err != nil {
-				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
-			}
-			a.AdditionalProperties[fieldName] = fieldVal
-		}
-	}
-	return nil
-}
-
-// Override default JSON handling for NodePool to handle AdditionalProperties
-func (a NodePool) MarshalJSON() ([]byte, error) {
-	var err error
-	object := make(map[string]json.RawMessage)
-
-	object["count"], err = json.Marshal(a.Count)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'count': %w", err)
-	}
-
-	object["host_type"], err = json.Marshal(a.HostType)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'host_type': %w", err)
-	}
-
-	if a.InstanceSize != nil {
-		object["instance_size"], err = json.Marshal(a.InstanceSize)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'instance_size': %w", err)
-		}
-	}
-
-	object["name"], err = json.Marshal(a.Name)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'name': %w", err)
 	}
 
 	for fieldName, field := range a.AdditionalProperties {

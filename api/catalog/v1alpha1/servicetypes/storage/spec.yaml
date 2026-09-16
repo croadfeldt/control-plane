@@ -1,89 +1,72 @@
 openapi: 3.0.4
-
 info:
   title: DCM Storage Specification
-  description: |
-    Provider-agnostic storage volume specification.
-
-    This schema defines minimal portable fields for standalone persistent
-    volumes (block or file storage) across platforms.
-
-    Platform-specific configuration (Kubernetes StorageClass, volume mode,
-    access mode) should be specified via provider_hints.
+  description: |-
+    Generated from the UDLM registry by cmd/udlm-servicetype-gen — DO NOT hand-edit.
+    Provider-agnostic storage volume specification; the UDLM resource type is the source of truth.
   version: v1alpha1
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
-
 paths: {}
-
 components:
   schemas:
     StorageSpec:
       type: object
-      description: |
-        Provider-agnostic storage volume specification.
+      description: |-
+        A CONSUMABLE persistent storage volume — the block or file volume a workload attaches, as distinct from the Storage.Cluster that PROVISIONS it (the platform) and the physical device that backs it. Vendor-neutral Tier-1: provisioners (Ceph RBD/CephFS, cloud CSI drivers, NFS) are the provider, never the type. Adopts Kubernetes PersistentVolumeClaim/CSI + SNIA Swordfish Volume.
 
-        Includes common fields (service_type, metadata, provider_hints)
-        plus the portable capacity field.
+        Provider-agnostic storage volume specification, generated from the UDLM Storage.Volume (v0.11.6) resource type — the UDLM registry is the source of truth. Non-portable provider settings go under provider_hints (CommonFields). Regenerate with cmd/udlm-servicetype-gen; do not hand-edit.
 
-        Providers translate this abstract specification to their native format.
+        Realized outputs (read-only, provider-populated): volume_handle, attached.
       allOf:
-        - $ref: '../common.yaml#/components/schemas/CommonFields'
+        - $ref: ../common.yaml#/components/schemas/CommonFields
         - type: object
           required:
+            - access_mode
             - capacity
           properties:
             capacity:
               type: string
-              description: |
-                Volume size using Kubernetes-style quantity suffixes.
-
-                Examples: 100Gi, 1Ti, 500G
-              pattern: '^[0-9]+(\.[0-9]+)?(Ei|Pi|Ti|Gi|Mi|Ki|E|P|T|G|M|K)?$'
-              example: 100Gi
-
-            volume_name:
+              description: Requested capacity, Kubernetes quantity form (e.g. 100Gi). SNIA Swordfish CapacityBytes maps here.
+              pattern: ^[0-9]+(Ki|Mi|Gi|Ti|Pi|K|M|G|T|P)?B?$
+            access_mode:
               type: string
-              description: |
-                Bound volume identifier assigned by the provider
-                (for example the PersistentVolume name).
+              description: 'Attachment concurrency (Kubernetes PVC accessModes: RWO/ROX/RWX/RWOP).'
+              enum:
+                - read_write_once
+                - read_only_many
+                - read_write_many
+                - read_write_once_pod
+            volume_mode:
+              type: string
+              description: Filesystem-mounted vs raw block device (Kubernetes PVC volumeMode).
+              enum:
+                - filesystem
+                - block
+            storage_class:
+              type: string
+              format: udlm-ref-url
+              description: Resource reference to a Storage.Class (common-elements §2.5, DCM ADR-025). Authored by handle; deferred resolution supported (claim-before-define).
+            retain_on_release:
+              type: boolean
+              description: 'Reclaim policy: true = Retain (keep data after the consumer releases it), false = Delete.'
+            layout_entry:
+              type: string
+              description: 'The Storage.Layout entry name this volume realizes — the join key paired with the realizes_layout_entry edge. Instance edges carry no qualifier (the dependencies[] of a record is a closed shape, state-record.schema.json), so the entry binding lives HERE: set exactly when realizes_layout_entry is declared, matching an entry name in the referenced layout. Reconvergence joins on this value to populate the layout''s realized_volumes map.'
+              pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+            volume_handle:
+              type: string
+              description: |-
+                Provider volume handle/id once Realized (CSI volumeHandle / Swordfish Volume Id).
 
-                Empty until the volume is bound.
+                UDLM realized output: populated by the provider when the resource reaches Realized; read-only on the request.
               readOnly: true
-              example: pvc-abc123
+            attached:
+              type: boolean
+              description: |-
+                Whether the volume is currently attached to a consumer.
 
+                UDLM realized output: populated by the provider when the resource reaches Realized; read-only on the request.
+              readOnly: true
           additionalProperties: true
-
-    KubernetesProviderHints:
-      type: object
-      description: |
-        Kubernetes-specific PVC settings supplied under
-        provider_hints.kubernetes.
-
-        Catalog administrators typically set these as non-editable defaults.
-      additionalProperties: false
-      properties:
-        storage_class:
-          type: string
-          description: StorageClass name (overrides SP default)
-          example: gp3-csi
-        volume_mode:
-          type: string
-          description: PVC volume mode
-          enum:
-            - Filesystem
-            - Block
-          example: Filesystem
-        access_mode:
-          type: string
-          description: |
-            PVC access mode.
-
-            ReadWriteOnce is typical for block storage; ReadWriteMany for
-            shared filesystem StorageClasses (e.g. CephFS, NFS).
-          enum:
-            - ReadWriteOnce
-            - ReadOnlyMany
-            - ReadWriteMany
-          example: ReadWriteOnce

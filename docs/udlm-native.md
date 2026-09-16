@@ -24,6 +24,9 @@ model. Enhancement #91 asks to reconcile the auth actor model with UDLM `Identit
 4. Each increment names the enablement-map row it moves (croadfeldt/udlm
    `docs/uc-enablement-map.md`) and updates that row when it merges.
 5. An increment that upstream ships on its own is dropped here and taken from upstream.
+6. The fork's CI workflows list `udlm-native` beside `main` in their `pull_request` branch filters, so
+   PRs into the branch get the same checks. That is a three-line fork-only difference in
+   `.github/workflows/`; expect to re-apply it after a sync if upstream edits those lines.
 
 ## Increments, in blocking order
 

@@ -196,6 +196,26 @@ func TestWriterChain(t *testing.T) {
 	}
 }
 
+func TestWriterSkipsRepeatedRealizedReport(t *testing.T) {
+	ctx := context.Background()
+	w, st := testWriter(t)
+	entity := "5f7c9a41-8e3d-4b6a-9c15-7d2e4f8a1b03"
+	spec := map[string]any{"service_type": "vm", "cpu": map[string]any{"count": 1}}
+	w.Intent(ctx, IntentInput{EntityUUID: entity, Spec: spec})
+	w.Requested(ctx, RequestedInput{EntityUUID: entity, Spec: spec, AgentName: "a"})
+	out := map[string]any{"primary_ip": "10.0.0.1", "ip_addresses": []any{"10.0.0.1"}}
+	w.Realized(ctx, RealizedInput{EntityUUID: entity, Outputs: out, AgentName: "a"})
+	w.Realized(ctx, RealizedInput{EntityUUID: entity, Outputs: out, AgentName: "a"}) // retried callback
+	w.Realized(ctx, RealizedInput{EntityUUID: entity, Outputs: map[string]any{"primary_ip": "10.0.0.2", "ip_addresses": []any{"10.0.0.2"}}, AgentName: "a"})
+	recs, _ := st.ListByEntity(ctx, entity)
+	if len(recs) != 4 {
+		t.Fatalf("a repeated report must not add a record: got %d records", len(recs))
+	}
+	if recs[3].Body["generation"] != float64(2) {
+		t.Errorf("the changed report must supersede: generation %v", recs[3].Body["generation"])
+	}
+}
+
 func TestWriterDropsWhatItCannotType(t *testing.T) {
 	ctx := context.Background()
 	w, st := testWriter(t)

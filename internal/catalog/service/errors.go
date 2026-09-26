@@ -91,6 +91,13 @@ var (
 	// ErrCELRequiresResourceMissing indicates a CEL reference targets a resource not listed in requires_resources
 	ErrCELRequiresResourceMissing = errors.New("CEL reference resource must be listed in requires_resources")
 
+	// ErrCELOutputNotDeclared indicates a CEL reference names a field the source's UDLM class does not declare
+	// as a realized output (it may be an input, or nothing at all)
+	ErrCELOutputNotDeclared = errors.New("CEL reference is not a declared output of the source's UDLM class")
+
+	// ErrCELOutputTypeMismatch indicates the declared output's type cannot bind to the consumer field
+	ErrCELOutputTypeMismatch = errors.New("CEL reference output type does not match the consumer field")
+
 	// ErrPlacementManagerPolicyRejected indicates the Placement Manager rejected the request due to policy (406)
 	ErrPlacementManagerPolicyRejected = errors.New("placement manager request rejected by policy engine")
 

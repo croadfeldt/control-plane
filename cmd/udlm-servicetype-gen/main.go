@@ -121,10 +121,19 @@ func slugs() string {
 	return strings.Join(s, ", ")
 }
 
-// udlmType is the UDLM class and version a service type was generated from.
+// udlmType is the UDLM class and version a service type was generated from,
+// with the typed realized outputs the class declares.
 type udlmType struct {
 	resourceType string
 	version      string
+	outputs      map[string]outputInfo
+}
+
+// outputInfo is what the control plane needs to know about one declared output
+// to check a binding against it.
+type outputInfo struct {
+	typ       string // JSON Schema type; "" when the registry leaves it untyped
+	sensitive bool
 }
 
 // typeTableFile is the Go table of slug -> UDLM type, emitted beside the specs
@@ -149,7 +158,27 @@ func writeTypeTable(outDir string, types map[string]udlmType) error {
 	}
 	sb.WriteString("}\n\n")
 	sb.WriteString("// LookupUDLMType returns the UDLM class behind a service type slug.\n")
-	sb.WriteString("func LookupUDLMType(slug string) (UDLMType, bool) {\n\tt, ok := UDLMTypes[slug]\n\treturn t, ok\n}\n")
+	sb.WriteString("func LookupUDLMType(slug string) (UDLMType, bool) {\n\tt, ok := UDLMTypes[slug]\n\treturn t, ok\n}\n\n")
+	sb.WriteString("// UDLMOutput is one typed realized output a UDLM class declares (the E2 binding surface).\n")
+	sb.WriteString("type UDLMOutput struct {\n\t// Type is the JSON Schema type of the output; empty when the registry leaves it untyped.\n\tType string\n\t// Sensitive outputs are never logged, echoed, or diffed.\n\tSensitive bool\n}\n\n")
+	sb.WriteString("// UDLMOutputs maps a service type slug to the outputs its UDLM class declares, by name.\n")
+	sb.WriteString("var UDLMOutputs = map[string]map[string]UDLMOutput{\n")
+	for _, s := range slugs {
+		fmt.Fprintf(&sb, "\t%q: {\n", s)
+		names := make([]string, 0, len(types[s].outputs))
+		for n := range types[s].outputs {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			o := types[s].outputs[n]
+			fmt.Fprintf(&sb, "\t\t%q: {Type: %q, Sensitive: %t},\n", n, o.typ, o.sensitive)
+		}
+		sb.WriteString("\t},\n")
+	}
+	sb.WriteString("}\n\n")
+	sb.WriteString("// LookupUDLMOutput returns one declared output of a service type's UDLM class.\n")
+	sb.WriteString("func LookupUDLMOutput(slug, name string) (UDLMOutput, bool) {\n\to, ok := UDLMOutputs[slug][name]\n\treturn o, ok\n}\n")
 	return os.WriteFile(filepath.Join(outDir, typeTableFile), []byte(sb.String()), 0o644)
 }
 
@@ -217,7 +246,7 @@ func generate(m mapping, udlmDir, outDir string) (udlmType, error) {
 	if err := os.WriteFile(filepath.Join(dir, "spec.yaml"), data, 0o644); err != nil {
 		return udlmType{}, err
 	}
-	return udlmType{resourceType: resourceType, version: udlmVersion}, nil
+	return udlmType{resourceType: resourceType, version: udlmVersion, outputs: declaredOutputs(mapGet(root, "outputs"))}, nil
 }
 
 type generator struct {
@@ -443,6 +472,22 @@ func (g *generator) hoist(name string, obj *yaml.Node) *yaml.Node {
 	ref := mappingNode()
 	appendKV(ref, "$ref", scalarNode("#/components/schemas/"+name))
 	return ref
+}
+
+// declaredOutputs reads the flat spec's outputs block into the type table's form.
+func declaredOutputs(outputs *yaml.Node) map[string]outputInfo {
+	out := map[string]outputInfo{}
+	if outputs == nil || outputs.Kind != yaml.MappingNode {
+		return out
+	}
+	for i := 0; i+1 < len(outputs.Content); i += 2 {
+		name, sch := outputs.Content[i].Value, outputs.Content[i+1]
+		out[name] = outputInfo{
+			typ:       scalarValue(mapGet(sch, "type")),
+			sensitive: scalarValue(mapGet(sch, "sensitive")) == "true",
+		}
+	}
+	return out
 }
 
 // appendOutputs adds the flat spec's typed realized outputs to props as readOnly

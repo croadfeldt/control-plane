@@ -71,6 +71,9 @@ func TestGenerateTransform(t *testing.T) {
 	if got.resourceType != "Test.Widget" || got.version != "1.2.3" {
 		t.Errorf("generate should report the UDLM type it read, got %+v", got)
 	}
+	if got.outputs["handle"].typ != "string" || !got.outputs["secret"].sensitive || got.outputs["addresses"].typ != "array" {
+		t.Errorf("generate should report the declared outputs, got %+v", got.outputs)
+	}
 
 	raw, err := os.ReadFile(filepath.Join(out, "widget", "spec.yaml"))
 	if err != nil {

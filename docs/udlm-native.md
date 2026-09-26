@@ -36,7 +36,7 @@ model. Enhancement #91 asks to reconcile the auth actor model with UDLM `Identit
 | 2 | **Per-state records, shadow-written.** On `catalogItemInstanceService.Create` write one `intent_record` per resource. When placement selects an agent and dispatches (`PlacementService.CreateRun`), write a `requested_record` that carries `intent_ref`, `provider`, and `assembly`. When the status consumer applies a `RUNNING` event (`PlacementService.OnResourceRunning`), write a `realized_record` that carries `requested_ref`, `provider`, `fields`, and `outputs`. Records share `entity_uuid`; each has its own v7 `record_uuid`; a later realized record `supersedes` the earlier one. Stored in a new `udlm_records` table as JSON, validated against the schema before insert. Existing rows are untouched, so nothing upstream breaks. | new package `internal/udlm/records` and a store; hooks at the three call sites | 1, 5, 10, 13 | in review |
 | 3 | **Entity view read API.** `GET /api/v1alpha1/udlm/entities/{entity_uuid}` returns the computed view (latest record per state), `.../records` lists the chain, `GET /api/v1alpha1/udlm/entities` pages through entities. Read only. | `api/udlm/v1alpha1`, `internal/udlm/handlers` | 1, 5 | in review |
 | 4 | **Field-level provenance.** Intent fields attributed to the actor, requested fields that placement changed attributed to `dcm/placement` with the previous value, realized outputs attributed to the agent with the status event's time; a changed output on a later event supersedes the record and appends to that output's provenance, an unchanged one keeps its origin entry. The placement run is noted on the realized record. | increment 2's writer | 5, 14 | in review |
-| 5 | **Typed output binding.** A CEL reference `${name.output}` is checked against the registry's declared `outputs` for the source type, including its type. A reference spliced into a larger string is reported, since the model binds by typed reference, not by string assembly. | `internal/catalog/service/cel_validation.go`, reading the generated specs' read-only fields | 2, 7 | independent of 2 |
+| 5 | **Typed output binding.** A CEL reference `${name.output}` is checked against the outputs the source's UDLM class declares (a table the generator emits from the registry), including its type against the consumer field, and a path into an output must fit the output's type. A reference spliced into a larger string was already refused. | `internal/catalog/service/cel_validation.go`, `servicetypes/udlm_types.gen.go` | 2, 7 | in review |
 | 6 | **Agent registration as capability advertisement.** The agent registration payload gains the fields provider-contract §8.1a names (resource types with versions, capacity), mapped from `service_types`. | `api/agent/v1alpha1`, `internal/agent` | 17 | after upstream's environment-agent settles |
 | 7 | **Policy verdict three-state and override.** The policy response distinguishes refused (permanent) from pending (transient), and an `override` policy type is honored per policy-contract §18. | `internal/policy`, `internal/placement/policy` | 11, 16, 19 | after 2 |
 | 8 | **Identity reconciliation** with UDLM `Identity.*` (upstream enhancement #91). | `internal/auth` | none in the release set | when #91 moves |
@@ -70,6 +70,21 @@ Differences from the design notes below, all forced by where the data actually i
   against the vendored schema and verifies.
 - Config: `UDLM_RECORDS_DISABLED` (default false), `UDLM_DEFAULT_TENANT_UUID` (a v4 placeholder
   until requests carry a tenant).
+
+## Increment 5 as built
+
+- The generator emits `UDLMOutputs` (slug to output name to type and sensitivity) beside the type
+  table, read from each flat spec's `outputs`.
+- For a source whose service type has a UDLM class, the registry is the authority: a reference must
+  name a declared output (a source *input* such as `${db.engine}` is refused as not an output; an
+  unknown name stays "not found"), an index or key path into an output must fit the output's type
+  (indexing a string is refused; indexing a declared array is accepted even though the seeded
+  template's array is empty), and a plain reference's type must bind to the consumer field's type
+  when the consumer's template declares that field (integer and number bind to a numeric field). A
+  sensitive output being bound is logged for audit.
+- Service types with no UDLM class (the hand-authored `network`, custom types) keep the
+  template-only check. Splicing a reference into a larger string was already refused by the
+  reference grammar.
 
 ## Increment 4 as built
 

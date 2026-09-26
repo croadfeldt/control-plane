@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/dcm-project/control-plane/internal/auth"
 )
 
 // ConformsTo is the UDLM spec line the records declare.
@@ -73,6 +75,21 @@ type RealizedInput struct {
 	EntityUUID string
 	Outputs    map[string]any // the status event's output_spec
 	AgentName  string
+	RunID      string    // the placement run, noted on the record
+	At         time.Time // the status event's timestamp; zero means now
+}
+
+// anonymousActor is the provenance source when no actor is on the context.
+const anonymousActor = "dcm/actors/anonymous"
+
+// actorID names the authenticated identity on the context, or the anonymous
+// placeholder. The auth middleware sets one on every request, even when auth
+// is disabled.
+func actorID(ctx context.Context) string {
+	if info, ok := auth.ActorInfoFromContext(ctx); ok && info.ActorID != "" {
+		return "dcm/actors/" + info.ActorID
+	}
+	return anonymousActor
 }
 
 // Intent writes an intent_record. It is the chain root for the entity.
@@ -87,6 +104,10 @@ func (w *Writer) Intent(ctx context.Context, in IntentInput) {
 		}
 		rec := w.base("intent_record", "Intent", in.EntityUUID, t, "dcm-control-plane")
 		rec["fields"] = fields
+		at := stringOf(rec["at"])
+		if prov := setAll(fields, "actor", actorID(ctx), at); len(prov) > 0 {
+			rec["provenance"] = prov
+		}
 		if in.Name != "" {
 			rec["metadata"] = map[string]any{"display_name": in.Name}
 		}
@@ -113,11 +134,20 @@ func (w *Writer) Requested(ctx context.Context, in RequestedInput) {
 		rec := w.base("requested_record", "Requested", in.EntityUUID, t, "dcm-control-plane")
 		rec["intent_ref"] = intent.RecordUUID
 		rec["fields"] = fields
-		rec["assembly"] = map[string]any{
-			"applied": []any{
-				map[string]any{"source": map[string]any{"kind": "policy", "id": "dcm/placement"}},
-			},
+		intentFields, _ := intent.Body["fields"].(map[string]any)
+		prov, changed := diffProvenance(intentFields, fields, "policy", "dcm/placement", stringOf(rec["at"]))
+		if len(prov) > 0 {
+			rec["provenance"] = prov
 		}
+		applied := map[string]any{"source": map[string]any{"kind": "policy", "id": "dcm/placement"}}
+		if len(changed) > 0 {
+			paths := make([]any, len(changed))
+			for i, c := range changed {
+				paths[i] = c
+			}
+			applied["fields"] = paths
+		}
+		rec["assembly"] = map[string]any{"applied": []any{applied}}
 		rec["metadata"] = map[string]any{
 			"notes": []any{map[string]any{
 				"at":     rec["at"],
@@ -143,19 +173,42 @@ func (w *Writer) Realized(ctx context.Context, in RealizedInput) {
 		}
 		t := Type{ResourceType: requested.ResourceType, Version: stringOf(requested.Body["type_version"])}
 		rec := w.base("realized_record", "Realized", in.EntityUUID, t, "agent-status-event")
+		if !in.At.IsZero() {
+			rec["at"] = in.At.UTC().Format("2006-01-02T15:04:05Z")
+		}
 		rec["requested_ref"] = requested.RecordUUID
 		rec["fields"] = requested.Body["fields"]
-		outputs := in.Outputs
-		if outputs == nil {
-			outputs = map[string]any{}
+		outputs := map[string]any{}
+		if in.Outputs != nil {
+			normalized, err := roundTrip(in.Outputs)
+			if err != nil {
+				return nil, err
+			}
+			outputs = normalized.(map[string]any)
 		}
 		rec["outputs"] = outputs
-		rec["provider"] = "dcm/agents/" + in.AgentName
+		providerID := "dcm/agents/" + in.AgentName
+		rec["provider"] = providerID
+		var prevOutputs, prevProv map[string]any
 		if prev, err := w.store.Latest(ctx, in.EntityUUID, "Realized"); err == nil {
 			rec["supersedes"] = []any{prev.RecordUUID}
 			rec["generation"] = prev.Generation + 1
+			prevOutputs, _ = prev.Body["outputs"].(map[string]any)
+			prevProv, _ = prev.Body["provenance"].(map[string]any)
 		} else if !errors.Is(err, ErrNotFound) {
 			return nil, err
+		}
+		if prov := outputsProvenance(prevOutputs, outputs, prevProv, providerID, stringOf(rec["at"])); len(prov) > 0 {
+			rec["provenance"] = prov
+		}
+		if in.RunID != "" {
+			rec["metadata"] = map[string]any{
+				"notes": []any{map[string]any{
+					"at":     rec["at"],
+					"author": "dcm/placement",
+					"text":   "placement run " + in.RunID,
+				}},
+			}
 		}
 		return rec, nil
 	})
@@ -196,7 +249,13 @@ func (w *Writer) typedFields(spec map[string]any) (Type, map[string]any, error) 
 			fields[k] = v
 		}
 	}
-	return t, fields, nil
+	// JSON-typed from here on, so a diff against a stored record (which is
+	// JSON-typed) compares like with like.
+	normalized, err := roundTrip(fields)
+	if err != nil {
+		return Type{}, nil, err
+	}
+	return t, normalized.(map[string]any), nil
 }
 
 // write runs build, then validates, seals onto the entity's chain, and stores.

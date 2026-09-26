@@ -233,6 +233,7 @@ func (c *StatusConsumer) handleMessage(ctx context.Context, msg jetstream.Msg) {
 				ResourceID: payload.Id,
 				Status:     normalizedStatus,
 				OutputSpec: payload.OutputSpec,
+				Timestamp:  payload.Timestamp,
 			}); err != nil {
 				slog.Error("Placement OnResourceRunning failed", "instance_id", payload.Id, "error", err)
 			}

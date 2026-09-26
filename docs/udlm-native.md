@@ -35,7 +35,7 @@ model. Enhancement #91 asks to reconcile the auth actor model with UDLM `Identit
 | 1 | Service types generated from the registry's served flat specs, with UDLM `outputs` as read-only fields | `cmd/udlm-servicetype-gen`, `api/catalog/v1alpha1/servicetypes/` | 1, 6 | merged to main (#4) |
 | 2 | **Per-state records, shadow-written.** On `catalogItemInstanceService.Create` write one `intent_record` per resource. When placement selects an agent and dispatches (`PlacementService.CreateRun`), write a `requested_record` that carries `intent_ref`, `provider`, and `assembly`. When the status consumer applies a `RUNNING` event (`PlacementService.OnResourceRunning`), write a `realized_record` that carries `requested_ref`, `provider`, `fields`, and `outputs`. Records share `entity_uuid`; each has its own v7 `record_uuid`; a later realized record `supersedes` the earlier one. Stored in a new `udlm_records` table as JSON, validated against the schema before insert. Existing rows are untouched, so nothing upstream breaks. | new package `internal/udlm/records` and a store; hooks at the three call sites | 1, 5, 10, 13 | in review |
 | 3 | **Entity view read API.** `GET /api/v1alpha1/udlm/entities/{entity_uuid}` returns the computed view (latest record per state), `.../records` lists the chain, `GET /api/v1alpha1/udlm/entities` pages through entities. Read only. | `api/udlm/v1alpha1`, `internal/udlm/handlers` | 1, 5 | in review |
-| 4 | **Provenance on realized fields.** Each field in a realized record's `fields` and `outputs` carries the agent, the run id, and the event time from the status event that produced it. A changed value on a later event supersedes the record and advances that field's provenance. | increment 2's realized writer | 5, 14 | after 2 |
+| 4 | **Field-level provenance.** Intent fields attributed to the actor, requested fields that placement changed attributed to `dcm/placement` with the previous value, realized outputs attributed to the agent with the status event's time; a changed output on a later event supersedes the record and appends to that output's provenance, an unchanged one keeps its origin entry. The placement run is noted on the realized record. | increment 2's writer | 5, 14 | in review |
 | 5 | **Typed output binding.** A CEL reference `${name.output}` is checked against the registry's declared `outputs` for the source type, including its type. A reference spliced into a larger string is reported, since the model binds by typed reference, not by string assembly. | `internal/catalog/service/cel_validation.go`, reading the generated specs' read-only fields | 2, 7 | independent of 2 |
 | 6 | **Agent registration as capability advertisement.** The agent registration payload gains the fields provider-contract §8.1a names (resource types with versions, capacity), mapped from `service_types`. | `api/agent/v1alpha1`, `internal/agent` | 17 | after upstream's environment-agent settles |
 | 7 | **Policy verdict three-state and override.** The policy response distinguishes refused (permanent) from pending (transient), and an `override` policy type is honored per policy-contract §18. | `internal/policy`, `internal/placement/policy` | 11, 16, 19 | after 2 |
@@ -70,6 +70,28 @@ Differences from the design notes below, all forced by where the data actually i
   against the vendored schema and verifies.
 - Config: `UDLM_RECORDS_DISABLED` (default false), `UDLM_DEFAULT_TENANT_UUID` (a v4 placeholder
   until requests carry a tenant).
+
+## Increment 4 as built
+
+Provenance follows the registry's worked example (`example-vm-app01-*`) rather than the design note's
+"every field on realized": the example attributes the intent's fields to the actor, the requested
+record's *changed* fields to the policy that changed them, and the realized record's *outputs* to the
+provider. So:
+
+- **Intent**: every leaf path of `fields` gets one entry, `source.kind: actor`, `source.id:
+  dcm/actors/<actor id>` from the request context (the auth middleware sets an actor even when auth is
+  disabled; `dcm/actors/anonymous` otherwise).
+- **Requested**: every leaf path whose value differs from the latest intent record gets an entry from
+  `dcm/placement` (`set` with `previous_value` when the intent had one, `remove` when the path
+  disappeared). `assembly.applied[0].fields` lists the same paths.
+- **Realized**: every `outputs.<path>` gets an entry from `dcm/agents/<name>` with the status event's
+  timestamp (the consumer now passes it through; `at` on the record is the event time). When a later
+  event supersedes the record, an unchanged output keeps its earlier entries, a changed one appends an
+  entry with `previous_value` and the next `sequence`, a vanished one appends a `remove`. The placement
+  run id is an attributed note on the record.
+- Leaf paths are dot-paths into objects; arrays and scalars are leaves, as in the example
+  (`outputs.ip_addresses`, `cpu.count`). Fields and outputs are JSON-normalized before diffing so a
+  stored record and a fresh spec compare like with like.
 
 ## Increment 3 as built
 

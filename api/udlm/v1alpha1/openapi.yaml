@@ -1,0 +1,265 @@
+openapi: 3.0.4
+info:
+  contact: {}
+  description: |
+    DCM UDLM API - read access to the UDLM per-state records the control plane
+    writes beside its own rows (intent, requested, realized), and to the entity
+    view computed from them: the latest record of each state, folded into one
+    document the way the UDLM registry's entity_view tool folds it.
+
+    Records are immutable and are never written through this API.
+  title: UDLM API
+  version: v1alpha1
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: /api/v1alpha1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: udlm
+    description: UDLM records and entity views
+
+paths:
+  /udlm/entities:
+    get:
+      tags:
+        - udlm
+      summary: List entities that have UDLM records
+      operationId: listUdlmEntities
+      description: Returns one summary per entity, ordered by entity uuid.
+      parameters:
+        - name: max_page_size
+          in: query
+          description: Maximum number of results per page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: page_token
+          in: query
+          description: Token for pagination
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntitySummaryList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/DefaultError'
+
+  /udlm/entities/{entityUuid}:
+    get:
+      tags:
+        - udlm
+      summary: Get the entity view
+      operationId: getUdlmEntity
+      description: |
+        The computed read model for one entity: the latest record of each state
+        under `states`, envelope fields from the most-realized record, and the
+        carried blocks (status, dependencies, metadata, integrity, ...) taken from
+        the state the registry's entity_view tool takes them from.
+      parameters:
+        - $ref: '#/components/parameters/EntityUuidPath'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/DefaultError'
+
+  /udlm/entities/{entityUuid}/records:
+    get:
+      tags:
+        - udlm
+      summary: List the entity's records
+      operationId: listUdlmEntityRecords
+      description: Every per-state record for the entity, oldest first, each as stored.
+      parameters:
+        - $ref: '#/components/parameters/EntityUuidPath'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StateRecordList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/DefaultError'
+
+components:
+  parameters:
+    EntityUuidPath:
+      name: entityUuid
+      in: path
+      required: true
+      description: The entity's uuid (v4), shared by all of its records
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: No records for this entity
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    DefaultError:
+      description: Unexpected error
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    EntitySummary:
+      type: object
+      description: One entity that has at least one UDLM record
+      required:
+        - entity_uuid
+        - tenant_uuid
+        - resource_type
+        - type_version
+        - lifecycle_state
+        - record_count
+      properties:
+        entity_uuid:
+          type: string
+        tenant_uuid:
+          type: string
+        resource_type:
+          type: string
+          description: The UDLM class, e.g. Machine.VM
+        type_version:
+          type: string
+        lifecycle_state:
+          type: string
+          description: The entity's current position in the four-state model
+          enum: [Intent, Requested, Realized, Discovered]
+        record_count:
+          type: integer
+        latest_at:
+          type: string
+          description: The `at` of the newest record
+
+    EntitySummaryList:
+      type: object
+      required:
+        - entities
+      properties:
+        entities:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntitySummary'
+        next_page_token:
+          type: string
+
+    StateRecord:
+      type: object
+      description: |
+        One UDLM per-state record exactly as stored. The shape is the registry's
+        registry/state-record.schema.json; this API does not restate it.
+      required:
+        - record_type
+        - state
+        - entity_uuid
+        - record_uuid
+      properties:
+        record_type:
+          type: string
+          enum: [intent_record, requested_record, realized_record, discovered_record]
+        state:
+          type: string
+          enum: [Intent, Requested, Realized, Discovered]
+        entity_uuid:
+          type: string
+        record_uuid:
+          type: string
+      additionalProperties: true
+
+    StateRecordList:
+      type: object
+      required:
+        - records
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/StateRecord'
+
+    EntityView:
+      type: object
+      description: |
+        The computed entity view. The shape is the registry's
+        registry/entity-view.schema.json; this API does not restate it.
+      required:
+        - uuid
+        - entity_uuid
+        - lifecycle_state
+        - states
+      properties:
+        uuid:
+          type: string
+        entity_uuid:
+          type: string
+        lifecycle_state:
+          type: string
+          enum: [Intent, Requested, Realized, Discovered]
+        states:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+
+    Error:
+      type: object
+      description: RFC 7807 compliant error response
+      required:
+        - type
+        - title
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

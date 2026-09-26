@@ -37,6 +37,7 @@ include make/policy.mk
 include make/sp.mk
 include make/agent.mk
 include make/gitops.mk
+include make/udlm.mk
 
 # Same as Containerfile: static build, no CGO (Postgres in prod/compose).
 # For SQLite local dev use make run (go run with CGO).
@@ -52,7 +53,7 @@ build-gitops:
 UDLM_DIR ?= ../udlm
 OAPI_CODEGEN_VERSION ?= v2.7.0
 SERVICE_TYPES := vm container database cluster storage
-UDLM_SCHEMAS := state-record.schema.json common-elements.schema.json policy.schema.json
+UDLM_SCHEMAS := state-record.schema.json entity-view.schema.json common-elements.schema.json policy.schema.json
 generate:
 	@mkdir -p internal/udlm/schema
 	@for f in $(UDLM_SCHEMAS); do cp $(UDLM_DIR)/registry/$$f internal/udlm/schema/$$f; done

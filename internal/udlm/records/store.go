@@ -38,6 +38,8 @@ type Store interface {
 	Tail(ctx context.Context, entityUUID string) (*StateRecord, error)
 	// ListByEntity returns every record for an entity, oldest first.
 	ListByEntity(ctx context.Context, entityUUID string) ([]StateRecord, error)
+	// ListEntities pages through the entities that have records.
+	ListEntities(ctx context.Context, pageSize int, pageToken string) ([]EntitySummary, string, error)
 }
 
 type gormStore struct{ db *gorm.DB }
@@ -80,4 +82,61 @@ func (s *gormStore) ListByEntity(ctx context.Context, entityUUID string) ([]Stat
 		Order("created_at ASC, record_uuid ASC").
 		Find(&recs).Error
 	return recs, err
+}
+
+// EntitySummary is one row of ListEntities.
+type EntitySummary struct {
+	EntityUUID   string
+	TenantUUID   string
+	ResourceType string
+	TypeVersion  string
+	RecordCount  int
+	Latest       *StateRecord // the newest record of any state
+	Lifecycle    string       // from the states present
+}
+
+// ListEntities pages through entities that have records, ordered by entity
+// uuid; pageToken is the last entity uuid of the previous page.
+func (s *gormStore) ListEntities(ctx context.Context, pageSize int, pageToken string) ([]EntitySummary, string, error) {
+	if pageSize <= 0 {
+		pageSize = 100
+	}
+	var ids []string
+	q := s.db.WithContext(ctx).Model(&StateRecord{}).Distinct("entity_uuid").Order("entity_uuid ASC").Limit(pageSize + 1)
+	if pageToken != "" {
+		q = q.Where("entity_uuid > ?", pageToken)
+	}
+	if err := q.Pluck("entity_uuid", &ids).Error; err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(ids) > pageSize {
+		ids = ids[:pageSize]
+		next = ids[len(ids)-1]
+	}
+	out := make([]EntitySummary, 0, len(ids))
+	for _, id := range ids {
+		recs, err := s.ListByEntity(ctx, id)
+		if err != nil {
+			return nil, "", err
+		}
+		if len(recs) == 0 {
+			continue
+		}
+		bodies := make([]map[string]any, len(recs))
+		for i := range recs {
+			bodies[i] = recs[i].Body
+		}
+		latest := recs[len(recs)-1]
+		out = append(out, EntitySummary{
+			EntityUUID:   id,
+			TenantUUID:   latest.TenantUUID,
+			ResourceType: latest.ResourceType,
+			TypeVersion:  stringOf(latest.Body["type_version"]),
+			RecordCount:  len(recs),
+			Latest:       &latest,
+			Lifecycle:    LifecycleState(bodies),
+		})
+	}
+	return out, next, nil
 }

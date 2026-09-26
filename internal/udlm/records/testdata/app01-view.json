@@ -1,0 +1,467 @@
+{
+  "adopted_standards": [
+    {
+      "effective_version": "2024.4",
+      "provider_version": "2024.4",
+      "requested_version": ">=2023.1",
+      "resolved_at": "2026-09-03T14:03:40Z",
+      "standard": "Redfish/ComputerSystem",
+      "translated": false
+    }
+  ],
+  "conforms_to": "udlm/0.1",
+  "correlation_ids": [
+    {
+      "scheme": "libvirt-domain-uuid",
+      "value": "4e2a7c19-6b3d-4f8e-a1c5-9d0b2e7f3a64"
+    },
+    {
+      "scheme": "mac",
+      "value": "52:54:00:ab:12:34"
+    }
+  ],
+  "dependencies": [
+    {
+      "edge_type": "contained_by",
+      "resolved_at": "2026-09-03T14:03:40Z",
+      "strength": "hard",
+      "target_handle": "lab/host/host-a",
+      "target_uuid": "8a4d1e6f-2b3c-4d5e-9f0a-1b2c3d4e5f60"
+    },
+    {
+      "edge_type": "depends_on",
+      "resolved_at": "2026-09-03T14:03:40Z",
+      "strength": "hard",
+      "target_handle": "lab/storage/vol/app-01-root",
+      "target_uuid": "9f1b3d5e-7a8c-4b0d-9e4f-8b0c2d4e6a71"
+    },
+    {
+      "bound_field": "outputs.primary_ip",
+      "edge_type": "depends_on",
+      "resolved_at": "2026-09-03T14:03:40Z",
+      "strength": "hard",
+      "target_field": "address",
+      "target_handle": "lab/net/ip/192.0.2.55",
+      "target_uuid": "a1c3e5f7-9b0d-4c2e-8f6a-0c2d4e6a8b93"
+    }
+  ],
+  "entity_uuid": "2f7c9a41-8e3d-4b6a-9c15-7d2e4f8a1b03",
+  "expected_observation": {
+    "cadence": "PT15M",
+    "on_exceeded": "finding"
+  },
+  "generation": 1,
+  "handle": "lab/vm/app-01",
+  "integrity": {
+    "algorithm": "sha256-jcs",
+    "head": "sha256:73554999e7dd2b597cb30e8dd9836450613158b3b4a64a169ce6c34a3e1f1d93",
+    "previous": "sha256:e8889df6cff24766f2dc1697342d6f7949a23c1a1364b45e6fdfb2f3eaa6b264"
+  },
+  "lifecycle_state": "Realized",
+  "metadata": {
+    "display_name": "app-01 (KVM guest on host-a)"
+  },
+  "observed_generation": 1,
+  "portability": {
+    "classification": "portable",
+    "portability_breaking": false,
+    "portability_notes": "Realized entirely from Type-scope elements; strip outputs, provider and correlation ids and `fields` is a valid new intent."
+  },
+  "provenance": {
+    "cpu.cores_per_socket": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/policy/cpu-topology-default",
+          "kind": "policy"
+        },
+        "timestamp": "2026-09-03T14:02:14Z"
+      }
+    ],
+    "cpu.count": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ],
+    "cpu.sockets": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/policy/cpu-topology-default",
+          "kind": "policy"
+        },
+        "timestamp": "2026-09-03T14:02:14Z"
+      }
+    ],
+    "firmware.secure_boot": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ],
+    "firmware.type": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ],
+    "firmware.vtpm": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/policy/firmware-baseline",
+          "kind": "policy"
+        },
+        "timestamp": "2026-09-03T14:02:14Z"
+      }
+    ],
+    "guest_os": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ],
+    "layout_ref": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ],
+    "memory.size": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ],
+    "networks[0].network_ref": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/policy/network-placement",
+          "kind": "policy"
+        },
+        "timestamp": "2026-09-03T14:02:14Z"
+      }
+    ],
+    "networks[0].vlan": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ],
+    "outputs.ip_addresses": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/providers/libvirt-host-a",
+          "kind": "provider"
+        },
+        "timestamp": "2026-09-03T14:03:40Z"
+      }
+    ],
+    "outputs.mac_addresses": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/providers/libvirt-host-a",
+          "kind": "provider"
+        },
+        "timestamp": "2026-09-03T14:03:40Z"
+      }
+    ],
+    "placement.location_ref": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/layers/tenant-location",
+          "kind": "layer"
+        },
+        "timestamp": "2026-09-03T14:02:14Z"
+      }
+    ],
+    "run_state.desired_state": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ]
+  },
+  "resource_type": "Machine.VM",
+  "sovereignty": {
+    "classification": "internal",
+    "locality": {
+      "fault_domain": "rack-3/host-a",
+      "topology_ref": "c2e4a6b8-0d1f-4a3c-9e5b-7f9a1c3e5d70"
+    },
+    "zone": "us-mn-sovereign"
+  },
+  "states": {
+    "intent": {
+      "at": "2026-09-03T14:02:11Z",
+      "fields": {
+        "cpu": {
+          "count": 4
+        },
+        "firmware": {
+          "secure_boot": true,
+          "type": "uefi"
+        },
+        "guest_os": {
+          "type": "linux-server-9",
+          "version": "9.6"
+        },
+        "layout_ref": "lab/storage/layout/app-01",
+        "memory": {
+          "size": "16Gi"
+        },
+        "networks": [
+          {
+            "name": "eth0",
+            "vlan": "lab/net/vlan-20"
+          }
+        ],
+        "run_state": {
+          "desired_state": "running"
+        }
+      },
+      "origin": "declared",
+      "time_source": "dcm-api"
+    },
+    "realized": {
+      "at": "2026-09-03T14:03:40Z",
+      "fields": {
+        "cpu": {
+          "cores_per_socket": 4,
+          "count": 4,
+          "sockets": 1
+        },
+        "firmware": {
+          "secure_boot": true,
+          "type": "uefi",
+          "vtpm": false
+        },
+        "guest_os": {
+          "type": "linux-server-9",
+          "version": "9.6"
+        },
+        "layout_ref": "lab/storage/layout/app-01",
+        "memory": {
+          "size": "16Gi"
+        },
+        "networks": [
+          {
+            "name": "eth0",
+            "network_ref": "lab/net/dmz",
+            "vlan": "lab/net/vlan-20"
+          }
+        ],
+        "placement": {
+          "location_ref": "lab/facility/rack-3"
+        },
+        "run_state": {
+          "desired_state": "running"
+        }
+      },
+      "origin": "declared",
+      "outputs": {
+        "hostname": "app-01.lab.example",
+        "ip_addresses": [
+          "192.0.2.55"
+        ],
+        "mac_addresses": [
+          "52:54:00:ab:12:34"
+        ],
+        "observed_run_state": "running",
+        "primary_ip": "192.0.2.55",
+        "provider_handle": "app-01"
+      },
+      "provider": "lab/providers/libvirt-host-a",
+      "time_source": "provider-callback"
+    },
+    "requested": {
+      "assembly": {
+        "applied": [
+          {
+            "fields": [
+              "placement.location_ref"
+            ],
+            "source": {
+              "id": "lab/layers/tenant-location",
+              "kind": "layer"
+            },
+            "version": "1.0.0"
+          },
+          {
+            "fields": [
+              "cpu.sockets",
+              "cpu.cores_per_socket"
+            ],
+            "source": {
+              "id": "lab/policy/cpu-topology-default",
+              "kind": "policy"
+            },
+            "version": "1.2.0"
+          },
+          {
+            "fields": [
+              "firmware.vtpm"
+            ],
+            "source": {
+              "id": "lab/policy/firmware-baseline",
+              "kind": "policy"
+            },
+            "version": "1.0.0"
+          },
+          {
+            "fields": [
+              "networks[0].network_ref"
+            ],
+            "source": {
+              "id": "lab/policy/network-placement",
+              "kind": "policy"
+            },
+            "version": "2.1.0"
+          }
+        ],
+        "excluded_layers": [],
+        "unapplied": []
+      },
+      "at": "2026-09-03T14:02:14Z",
+      "fields": {
+        "cpu": {
+          "cores_per_socket": 4,
+          "count": 4,
+          "sockets": 1
+        },
+        "firmware": {
+          "secure_boot": true,
+          "type": "uefi",
+          "vtpm": false
+        },
+        "guest_os": {
+          "type": "linux-server-9",
+          "version": "9.6"
+        },
+        "layout_ref": "lab/storage/layout/app-01",
+        "memory": {
+          "size": "16Gi"
+        },
+        "networks": [
+          {
+            "name": "eth0",
+            "network_ref": "lab/net/dmz",
+            "vlan": "lab/net/vlan-20"
+          }
+        ],
+        "placement": {
+          "location_ref": "lab/facility/rack-3"
+        },
+        "run_state": {
+          "desired_state": "running"
+        }
+      },
+      "origin": "declared",
+      "policies": [
+        {
+          "decision": "allow",
+          "fields": [
+            "cpu.sockets",
+            "cpu.cores_per_socket"
+          ],
+          "policy": "lab/policy/cpu-topology-default",
+          "policy_type": "transformation",
+          "version": "1.2.0"
+        },
+        {
+          "decision": "allow",
+          "fields": [
+            "firmware.vtpm"
+          ],
+          "policy": "lab/policy/firmware-baseline",
+          "policy_type": "transformation",
+          "version": "1.0.0"
+        },
+        {
+          "decision": "allow",
+          "fields": [
+            "networks[0].network_ref"
+          ],
+          "policy": "lab/policy/network-placement",
+          "policy_type": "transformation",
+          "version": "2.1.0"
+        },
+        {
+          "decision": "pass",
+          "policy": "lab/policy/tenant-quota",
+          "policy_type": "validation",
+          "reason": "4 vCPU / 16Gi within the tenant's remaining quota",
+          "version": "3.0.0"
+        }
+      ],
+      "time_source": "dcm-api"
+    }
+  },
+  "status": {
+    "conditions": [
+      {
+        "last_transition_time": "2026-09-03T14:03:52Z",
+        "reason": "GuestAgentConnected",
+        "status": "True",
+        "type": "Ready"
+      }
+    ],
+    "state": "Running"
+  },
+  "tenant_uuid": "75ccf4ff-3e8d-4963-bc51-459ae1014cb7",
+  "type_ref": "https://udlm.dev/registry/udlm/0.1/class/Machine.VM/2.0.0",
+  "type_version": "2.0.0",
+  "uuid": "2f7c9a41-8e3d-4b6a-9c15-7d2e4f8a1b03"
+}

@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -75,10 +76,12 @@ var _ = Describe("UDLM per-state records", func() {
 		Expect(recs[0].ResourceType).To(Equal("Machine.VM"))
 		Expect(recs[1].Body["intent_ref"]).To(Equal(recs[0].RecordUUID))
 
+		eventTime := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
 		Expect(placementSvc.OnResourceRunning(ctx, types.ResourceStatusEvent{
 			ResourceID: entity,
 			Status:     types.ResourceStatusRunning,
 			OutputSpec: map[string]any{"primary_ip": "10.0.0.5"},
+			Timestamp:  eventTime,
 		})).To(Succeed())
 
 		recs, err = recordStore.ListByEntity(ctx, entity)
@@ -89,6 +92,10 @@ var _ = Describe("UDLM per-state records", func() {
 		Expect(realized["requested_ref"]).To(Equal(recs[1].RecordUUID))
 		Expect(realized["provider"]).To(Equal("dcm/agents/default-agent"))
 		Expect(realized["outputs"]).To(HaveKeyWithValue("primary_ip", "10.0.0.5"))
+		Expect(realized["at"]).To(Equal("2026-09-26T10:00:00Z"))
+		Expect(realized["provenance"]).To(HaveKey("outputs.primary_ip"))
+		Expect(recs[0].Body["provenance"]).To(HaveKey("cpu.count"))
+		Expect(recs[2].Body["metadata"].(map[string]any)["notes"].([]any)[0].(map[string]any)["text"]).To(Equal("placement run " + run.RunId))
 		for i := range recs {
 			Expect(records.Validate(recs[i].Body)).To(Succeed(), "record %d", i)
 			Expect(records.Verify(recs[i].Body)).To(Succeed(), "record %d", i)

@@ -48,6 +48,8 @@ func (s *PlacementService) OnResourceRunning(ctx context.Context, event types.Re
 		EntityUUID: resourceID,
 		Outputs:    event.OutputSpec,
 		AgentName:  agentName,
+		RunID:      resource.RunID,
+		At:         event.Timestamp,
 	})
 
 	// Step 2: Reload the full run

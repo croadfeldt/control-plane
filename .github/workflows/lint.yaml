@@ -2,9 +2,9 @@ name: Lint
 
 on:
   push:
-    branches: [main, 'release/v*']
+    branches: [main, udlm-native, 'release/v*']
   pull_request:
-    branches: [main, 'release/v*']
+    branches: [main, udlm-native, 'release/v*']
 
 jobs:
   lint:

@@ -9,7 +9,7 @@ on:
       - 'make/helm.mk'
       - '.github/workflows/helm.yaml'
   pull_request:
-    branches: [main, 'release/v*']
+    branches: [main, udlm-native, 'release/v*']
     paths:
       - 'deploy/helm/**'
       - 'deploy/keycloak/realm-export.json'

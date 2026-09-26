@@ -1,0 +1,386 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://udlm.dev/registry/udlm/0.1/common-elements.schema.json",
+  "title": "UDLM Common Elements — canonical shared $defs",
+  "description": "Machine-referenceable canonical shapes for concepts reused across resource types (the $defs source for `common-elements.md` §2). A type references a shared shape via `$ref: common-elements.schema.json#/$defs/<Name>` rather than reinventing it — this is what makes the single-source rule enforceable for value shapes (SPEC-DESIGN §33). Prose definitions + the normalization plan live in `registry/common-elements.md`; this file is the normative machine mirror.",
+  "$defs": {
+    "Quantity": {
+      "$comment": "common-elements.md §2.1",
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+)?(m|[KMGTPE]i?B?)?$",
+      "description": "A magnitude + explicit unit as one string (Kubernetes resource.Quantity form): decimal SI (K/M/G/T/P/E), binary (Ki/Mi/Gi/Ti/Pi/Ei), optional trailing B (MB/GiB), or milli (m). Never a bare number whose unit is implied by the field name. Use for memory, storage, bandwidth, power (\"650W\" — unit carried by the field), etc. Examples: \"32GB\", \"1.5Gi\", \"500m\", \"200GB\", \"100PB\"."
+    },
+    "ComputeResources": {
+      "$comment": "common-elements.md §2.2 — the compute-sizing keystone",
+      "type": "object",
+      "description": "Canonical compute sizing. Reused by anything that sizes compute (VM, cluster node pool, database instance). `vcpu`/`cores`/`memory_gib` are non-canonical synonyms — normalize to cpu.count + memory.size.",
+      "properties": {
+        "instance_size": {
+          "type": "string",
+          "description": "Provider-neutral, ordinally-comparable size class (e.g. small|medium|large|xlarge) — a portable \"roughly this big\", in place of or alongside explicit cpu/memory. UDLM owns the comparable vocabulary; the provider maps it to concrete cores/RAM at naturalization (DCM ADR-023)."
+        },
+        "cpu": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "vCPU / logical core count."
+            }
+          },
+          "additionalProperties": false
+        },
+        "memory": {
+          "type": "object",
+          "properties": {
+            "size": {
+              "$ref": "#/$defs/Quantity"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "StorageCapacity": {
+      "$comment": "common-elements.md §2.3",
+      "type": "object",
+      "description": "A sized storage allocation. `size` is a Quantity; `storage_class` names the provider tier.",
+      "properties": {
+        "size": {
+          "$ref": "#/$defs/Quantity"
+        },
+        "storage_class": {
+          "type": "string",
+          "description": "Provider storage class/tier, e.g. ceph-rbd."
+        }
+      },
+      "additionalProperties": false
+    },
+    "StorageUsage": {
+      "$comment": "common-elements.md §2.3 (usage detail — for pools/datasets/clusters that report utilization)",
+      "type": "object",
+      "description": "Capacity + utilization, all Quantity. Used where a storage type reports allocated/free/usable (pool/dataset/cluster) rather than just a requested size.",
+      "properties": {
+        "size": {
+          "$ref": "#/$defs/Quantity"
+        },
+        "used": {
+          "$ref": "#/$defs/Quantity"
+        },
+        "allocated": {
+          "$ref": "#/$defs/Quantity"
+        },
+        "free": {
+          "$ref": "#/$defs/Quantity"
+        },
+        "usable": {
+          "$ref": "#/$defs/Quantity"
+        }
+      },
+      "additionalProperties": false
+    },
+    "cidr": {
+      "$comment": "common-elements.md §2.4",
+      "type": "string",
+      "pattern": "^(([0-9]{1,3}\\.){3}[0-9]{1,3}/(3[0-2]|[12]?[0-9])|[0-9a-fA-F:]+/(12[0-8]|1[01][0-9]|[0-9]{1,2}))$",
+      "description": "A CIDR block — IPv4 (\"192.0.2.0/24\") or IPv6 (\"2001:db8::/32\"). Structural octet+prefix-length validation, replacing the weak per-type `^[0-9./]+$`."
+    },
+    "ip_family": {
+      "$comment": "common-elements.md §2.4 (canonicalizes network.ip-address's `family`)",
+      "type": "string",
+      "enum": [
+        "ipv4",
+        "ipv6",
+        "dual"
+      ],
+      "description": "Address family. Canonical name is `ip_family` (not `family`)."
+    },
+    "ip_address": {
+      "$comment": "common-elements.md §2.4",
+      "type": "string",
+      "pattern": "^(([0-9]{1,3}\\.){3}[0-9]{1,3}|[0-9a-fA-F:]+:[0-9a-fA-F:]*)$",
+      "description": "A single IP address — IPv4 or IPv6 (typically an outputs value)."
+    },
+    "Reference": {
+      "$comment": "common-elements.md §2.5 (docs/spec/contracts/identifier-scheme.md); resolution model in DCM ADR-025",
+      "type": "string",
+      "format": "udlm-ref-url",
+      "description": "A typed cross-entity pointer to another RESOURCE, written as a URF reference (identifier-scheme §9): `[//authority/]path[@pin]`, resolving to exactly one target (cardinality-1 — more than one match refuses `ambiguous`). Authored by handle (`estate/jobs/nightly-backup` — AEP-124 author-by-handle), resolved to the uuid form (`uuid/<v4>@sha256:…`) at reserve; both ends are the same grammar. The former six-field object (target_handle/target_uuid/resource_type/target_version/target_digest/target_authority) is REMOVED — each field is now an axis of the URL: the path carries handle-or-uuid, `@` carries version-or-digest (ADR-051's pin grammar verbatim), `//` carries the authority, and a type constraint rides as a query term (`?resource_type==Machine.VM`). Distinct from a data_reference (DCM ADR-012), which points at immutable reference-data.",
+      "examples": [
+        "cexample/jobs/nightly-backup",
+        "cexample/hosts/host-01@1.2.0",
+        "//peer.example/cexample/providers/directory",
+        "uuid/4c1f8e2a-9b3d-4a67-8c2e-d51f097b3a44@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      ]
+    },
+    "Condition": {
+      "$comment": "common-elements.md §2.6 (adopts the OSAC/Kubernetes condition envelope)",
+      "type": "object",
+      "description": "A status condition. `status[].conditions[]` is the canonical realized/discovered signal across all types.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Condition type, e.g. Ready."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "True",
+            "False",
+            "Unknown"
+          ]
+        },
+        "last_transition_time": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "Timestamp": {
+      "$comment": "common-elements.md §2.7",
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 / ISO 8601 UTC timestamp. Standard realized fields: create_time, update_time, last_transition_time."
+    },
+    "policy_domain": {
+      "title": "Precedence scope",
+      "description": "The precedence ladder a policy, layer or constraint is scoped to — resource_type overrides tenant overrides platform overrides system, with entity the narrowest. Declared ONCE here because policy.schema.json, layer.schema.json and evaluation-context.schema.json each held a literal copy: three files, one ladder, and nothing checking they agreed. A precedence order that differs between the policy and the layer that carries it is not a disagreement anyone would notice until a decision came out wrong.",
+      "type": "string",
+      "enum": [
+        "system",
+        "platform",
+        "tenant",
+        "resource_type",
+        "entity"
+      ]
+    },
+    "edge_type": {
+      "title": "Relationship edge type",
+      "description": "The four edges of the model's graph. `depends_on` needs it to work, `contained_by` is part of it, `binds_to` borrows it across a boundary, `references` merely points at it. Nature is DERIVED from this plus `strength` — never stored (ADR-027 addendum). Declared once here; `kind`/`dependency_type`/`relationship_type` are rejected vocabulary (tests/check_model_vocabulary.py). Its home is registry/edge-types.yaml, which carries each edge's DERIVED inverse as well as its name; this enum is a projection of that file's `edge_type` column and the single-source gate proves the two still agree (VOC-002).",
+      "type": "string",
+      "enum": [
+        "depends_on",
+        "contained_by",
+        "binds_to",
+        "references"
+      ],
+      "x-generated-from": "registry/edge-types.yaml#/edge_types/*/edge_type"
+    },
+    "family": {
+      "title": "Entity family",
+      "description": "The four families every entity belongs to: Resource (a thing that is realized), Process (something that runs), Knowledge (curated, never provisioned), Access (who may do what). The authored class surface and the generated flat-spec meta-schema each carried a copy, which is one vocabulary with two homes and no gate between them. Capitalized deliberately — the family is a proper noun in the prose tier (`docs/spec/foundations/`), and the two copies this replaces both used that casing.",
+      "type": "string",
+      "enum": [
+        "Resource",
+        "Process",
+        "Knowledge",
+        "Access"
+      ]
+    },
+    "artifact_kind": {
+      "title": "Registry artifact kind",
+      "description": "What kind of registry artifact a revision names. Shared by the regeneration manifest and the finding-routing record — the two halves of the same loop (what was regenerated, and what a finding was routed to), so a term added to one and not the other silently breaks the join between them.",
+      "type": "string",
+      "enum": [
+        "base_class",
+        "type_class",
+        "provider_class",
+        "shared_data_element",
+        "capability",
+        "provider_definition",
+        "generated_type_spec"
+      ]
+    },
+    "curation_state": {
+      "title": "Curation state",
+      "description": "The vocabulary-intake ladder (ADR-039). A term enters as `proposed`, is examined `under-review`, and becomes `canonical` when the curation ladder promotes it; `deprecated` marks one on the way out that still resolves. How strictly an estate binds an unpromoted term is a PROFILE floor (ADR-007), not a field here — homelab may mint on write, sovereign refuses anything but canonical. Declared once here; Knowledge.TaxonomyTerm and Knowledge.Capability still carry literal copies pending the SharedDataElement that lets them narrow (#520).",
+      "type": "string",
+      "enum": [
+        "proposed",
+        "under-review",
+        "canonical",
+        "deprecated"
+      ]
+    },
+    "contributor_type": {
+      "title": "Contributor type",
+      "description": "Who authored a governed record — the federated-contribution model's actor classes (federated-contribution-model §3). Shared by every record a contributor can author; declared once because a class present on one record kind and missing from another would mean the same review rules could not be applied uniformly.",
+      "type": "string",
+      "enum": [
+        "platform_admin",
+        "tenant_admin",
+        "consumer",
+        "provider",
+        "system"
+      ]
+    },
+    "contribution_review": {
+      "title": "Review required for a contribution",
+      "description": "How much review a governed record's change needs before it lands. `none` is for a consumer's own request layer — a direct declaration nobody else reviews; every other class flows through the GitOps PR model, and `dual_approval` is the two-person floor a profile can require (federated-contribution-model §3). Declared once: a review level available on one governed record kind and absent from another is a hole in the contribution model, not a difference.",
+      "type": "string",
+      "enum": [
+        "auto",
+        "per_profile",
+        "none",
+        "dual_approval"
+      ]
+    },
+    "constraint_clause": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "description": "One clause of a constraint envelope. Carries discrete `values`, or a `min`/`max` range (optionally with `step`), or both. An optional `when` scopes the clause to other selections — that is how a grouped matrix is expressed (`m5` allows one memory range, `r5` another). A clause with no `when` always applies; the envelope is the UNION of the clauses that apply.\n\nONE GRAMMAR, TWO TIERS. A Class element's `supports` declares what a provider can satisfy; a layer's `limits` declares what its descendants may set. Same shape on purpose — the containment question is identical (`is this narrower than that?`), so it is answered by one routine rather than two that drift.\n\nDATA, NOT LOGIC, and that is the load-bearing choice. Declaring the matrix as data keeps containment DECIDABLE: `when` is equality only, because a general expression language would make 'is the child inside the parent' undecidable in general, and an envelope nobody can check is a comment.",
+      "properties": {
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Discrete supported values. Use where the offer is a fixed set rather than a continuum (fixed memory sizes, named shapes, specific image versions). Each entry MUST satisfy the element's own `schema` — `supports` narrows the offer, it never widens what is valid."
+        },
+        "min": {
+          "description": "Inclusive lower bound. Same type as the element's schema — a Quantity element takes a Quantity string (`8Gi`), a numeric element a number."
+        },
+        "max": {
+          "description": "Inclusive upper bound, same typing as `min`."
+        },
+        "step": {
+          "description": "OPTIONAL granularity within [min, max] — e.g. memory offered in 8Gi increments. A selection between steps is not supported."
+        },
+        "when": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ],
+            "description": "The required value of that element — a SCALAR. Equality is the whole grammar, and the type restriction is what enforces it: an object value would smuggle in an operator (`{$gt: x}`, `{in: [...]}`), and the moment a clause can express an operator, `is the child inside the parent?` stops being decidable. A prose statement that a field is equality-only is not a constraint; this is."
+          },
+          "description": "OPTIONAL — scopes this clause to other selections. Keys are element names at or above this scope; values are the selections that must hold (including governed-vocabulary terms). Equality only, deliberately: a general expression language here would make containment undecidable, which is the whole reason the matrix is data rather than schema logic."
+        },
+        "reason": {
+          "type": "string",
+          "description": "OPTIONAL — why the offer is bounded here (a hardware limit, a licensing tier, a policy floor). Carried for the human reading the menu; never evaluated."
+        }
+      },
+      "title": "Constraint clause"
+    },
+    "capability_disposition": {
+      "title": "Capability disposition",
+      "description": "A platform admin's decision about one declared provider capability. `pending` is where every declared capability starts — unusable, and not an error state: absence of a decision is absence of a grant, so a capability nobody has looked at behaves exactly like one refused. That is what default-deny means as a data shape (ADR-PROV-003).\n\nShared by the registration verdict (the current disposition) and the audit record's `capability_admit` event (the act that set it), so \"was this admission authorized\" is answered by matching a permit against a record rather than by translating between two vocabularies.",
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "provisional",
+        "denied"
+      ]
+    },
+    "TimeSync": {
+      "title": "Time synchronization claim",
+      "description": "What clock accuracy a node or provider can HOLD — UTC-traceable, a bound, and the mechanism class that achieves it (ADR-005 Decision 2).\n\nA CLAIM, MATCHED AT PLACEMENT. The same shape as `sovereignty_declaration`: a provider advertises what it can hold, an accreditation or attestation is what makes the claim honorable, and placement admits a workload only where the claim clears the bound in effect. An unattested claim is self-asserted — usable where a profile permits that, and not where it does not.\n\nUDLM DEFINES THE SHAPE AND NO VALUE. The platform mandates no fixed tolerance: a profile adopts one by reference (FINRA CAT, MiFID II RTS 25, a national regime), and an implementation may declare its own in place of the profile's — a homelab that can hold 250 ms declares 250 ms rather than claiming 50 ms it cannot keep. Nothing is lost by allowing that, because the declared bound is what placement admits against: a looser declaration simply fails admission for the workloads needing tighter. A bound honestly declared and enforced is a fact the model can act on; one asserted to clear a floor is not.\n\nWHY A BOUND AND NOT A GRADE. `max_divergence` is a measurable quantity a second implementation can meet, which is what makes a time claim portable across an estate boundary — the same reason a governed term denotes a requirements floor rather than a label (ADR-036).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_divergence",
+        "mechanism",
+        "utc_traceable"
+      ],
+      "properties": {
+        "max_divergence": {
+          "type": "string",
+          "pattern": "^P(?!$)(\\d+Y)?(\\d+M)?(\\d+D)?(T(?!$)(\\d+H)?(\\d+M)?(\\d+(\\.\\d+)?S)?)?$",
+          "description": "The bound this party can hold from UTC, as an ISO 8601 duration — the repo's one time-quantity form (`PT1H`, `P30D`). Fractional seconds carry the small end: `PT0.05S` is 50 ms, `PT0.0001S` is 100 µs.\n\nNOT a `Quantity`: that shape is the Kubernetes byte/SI form (`32GB`, `500m`) and has no time unit at all, so `50ms` would be unrepresentable and `50m` would silently mean fifty milli-somethings. NOT a bare number: these bounds span six orders of magnitude, and the unit is the part a reader most needs.",
+          "examples": [
+            "PT0.05S",
+            "PT1S",
+            "PT0.0001S"
+          ]
+        },
+        "mechanism": {
+          "type": "string",
+          "enum": [
+            "ntp",
+            "ptp",
+            "gnss",
+            "atomic",
+            "none"
+          ],
+          "description": "The mechanism CLASS achieving the bound. A class, not a product: what matters for placement is whether the approach can hold the bound, and naming a product would make the claim unportable. `none` is honest and permitted — a node with no synchronization says so, and then clears no bound tighter than its drift."
+        },
+        "utc_traceable": {
+          "type": "boolean",
+          "description": "Whether the source chains to UTC (NIST / BIPM or a national standard). Required in every profile — a bound against an untraceable reference is a bound against nothing, since two parties could both hold 1 ms of different clocks."
+        },
+        "attested_by": {
+          "type": "string",
+          "description": "OPTIONAL — the accreditation or attestation backing this claim. Absent means SELF-ASSERTED, which is a real and usable posture rather than an error: a profile decides whether a self-asserted claim is honored, exactly as it does for a sovereignty claim."
+        },
+        "measured_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+          "description": "OPTIONAL — when the divergence was last measured. A time claim decays: a bound measured a year ago says little about now, and this is what lets a consumer judge that (the `expected_observation` question applied to a claim rather than a resource)."
+        }
+      }
+    },
+    "volatile_output": {
+      "title": "Volatile output marker",
+      "description": "Declares that this output's VALUE changes between two realizations of the same intent — a timestamp, a generated identifier, an assigned port. The output is real and typed; what it is not is comparable.\n\nWHY IT MUST BE DECLARED RATHER THAN INFERRED (ADR-046). Promotion is gated on a typed-output diff: compile the same intent under both revisions and compare. A volatile output differs every time, so an undeclared one makes the diff perpetually dirty — and a gate that is always red is a gate everyone learns to override. The failure is not a false alarm; it is the loss of the signal.\n\nAT THE DECLARATION, BY THE PARTY WHO KNOWS. Whoever declares the output knows whether it is generated; nobody downstream reliably does. Excluding it at diff time instead would be an ad-hoc exclusion, which is the thing ADR-046 rules against — a promotion could then be waved through by excluding whatever happened to differ.\n\nIT NARROWS NOTHING. A volatile output is still typed, still published, still consumable. This says only that its value is not evidence of compatibility, which is why it is an annotation on the output rather than a different kind of output.",
+      "type": "boolean",
+      "default": false
+    },
+    "provenance_source_kind": {
+      "title": "Provenance source kind",
+      "description": "Which class of writer set a value (data-model-core §6/§7): `layer` = layer assembly wrote it; `policy` = a policy set, enriched or locked it; `actor` = an authenticated identity wrote it directly; `provider` = the realizing provider reported it; `discovery` = a discovery cycle observed it; `rehydration` = a rehydration pipeline restored it; `override` = an authorized override set it.\n\nDeclared once and shared by the record's readable provenance block and the seal's citable `udlm_provenance` facet. They describe the same act from two sides, so two spellings would make them incomparable — which is precisely the join a verifier needs when checking that what the record says happened matches what the ledger sealed.",
+      "type": "string",
+      "enum": [
+        "layer",
+        "policy",
+        "actor",
+        "provider",
+        "discovery",
+        "rehydration",
+        "override"
+      ]
+    },
+    "four_state": {
+      "enum": [
+        "Intent",
+        "Requested",
+        "Realized",
+        "Discovered"
+      ],
+      "description": "The four states of an entity — the kinds a per-state record can be (state-record.schema.json `state`, ruling 071) and the stages a type's lifecycle may declare (resource-type-spec.schema.json `lifecycle.states`). One home (VOC-001). `lifecycle_state` on the merged read model adds Decommissioned and is data-model-core §3's five-value enum."
+    },
+    "policy_decision": {
+      "enum": [
+        "allow",
+        "deny",
+        "pass",
+        "fail"
+      ],
+      "description": "What a policy evaluation decided (policy-contract §8, the validation output shape). One home (VOC-001): policy.schema.json's validation output and the requested record's `policies[]` both reference it. A transformation policy's effect is what it changed, recorded per field in provenance; its decision here is allow or pass."
+    },
+    "lifecycle_state": {
+      "enum": [
+        "Intent",
+        "Requested",
+        "Realized",
+        "Discovered",
+        "Decommissioned"
+      ],
+      "description": "The five-value lifecycle state of an entity (data-model-core §3): the four states plus the tombstone. One home (VOC-001); the entity view's `lifecycle_state` and a composite's per-constituent state reference it."
+    }
+  }
+}

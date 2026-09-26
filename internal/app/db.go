@@ -13,6 +13,7 @@ import (
 	placementmodel "github.com/dcm-project/control-plane/internal/placement/store/model"
 	policymodel "github.com/dcm-project/control-plane/internal/policy/store/model"
 	spmodel "github.com/dcm-project/control-plane/internal/sp/store/model"
+	udlmrecords "github.com/dcm-project/control-plane/internal/udlm/records"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -81,6 +82,7 @@ func openDB(cfg *Config) (*gorm.DB, error) {
 		&placementmodel.Resource{},
 		&policymodel.Policy{},
 		&spmodel.ServiceTypeInstance{},
+		&udlmrecords.StateRecord{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate schema: %w", err)
 	}

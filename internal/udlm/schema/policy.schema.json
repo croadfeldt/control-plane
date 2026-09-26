@@ -1,0 +1,546 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://udlm.dev/registry/udlm/0.1/policy.schema.json",
+  "title": "the control plane Policy record",
+  "description": "Machine-validatable Policy record (docs/spec/contracts/policy-contract.md; DCM ADR-006). Every Policy implements one base contract; what varies by policy_type is the `output` schema — what the policy PRODUCES when its match conditions are satisfied. UDLM carries the record; the control plane's Policy Engine evaluates it (core-tenets G3). data-model-core.md §2 [D8.3].",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_type",
+    "uuid",
+    "conforms_to",
+    "name",
+    "version",
+    "tenant_uuid",
+    "policy_type",
+    "match",
+    "output"
+  ],
+  "properties": {
+    "record_type": {
+      "const": "policy",
+      "description": "Dispatch discriminator (data-model-core §2). record_type is the authoritative record kind; realized entities use resource_type, groups use group_class."
+    },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "RFC 9562 v4 identity (docs/spec/contracts/identifier-scheme.md)."
+    },
+    "handle": {
+      "type": "string",
+      "pattern": "^([a-z0-9][a-z0-9-]{0,61}[a-z0-9]/)*[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$",
+      "description": "Advisory human identity; uuid is authoritative."
+    },
+    "conforms_to": {
+      "type": "string",
+      "pattern": "^udlm/[0-9]+\\.[0-9]+$"
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "Owning tenant (TEN-001; data-model-core §5 [D3]). A system-domain policy is owned by the platform tenant."
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": [
+            "active",
+            "deprecated",
+            "retired"
+          ]
+        },
+        "deprecation_date": {
+          "type": "string"
+        },
+        "sunset_date": {
+          "type": "string"
+        },
+        "replacement_uuid": {
+          "type": "string"
+        },
+        "deprecation_reason": {
+          "type": "string"
+        },
+        "migration_guidance": {
+          "type": "string"
+        }
+      }
+    },
+    "policy_type": {
+      "enum": [
+        "validation",
+        "transformation",
+        "recovery",
+        "orchestration_flow",
+        "governance_matrix_rule",
+        "placement",
+        "lifecycle",
+        "itsm_action",
+        "override"
+      ],
+      "description": "The policy's kind — determines the `output` schema (policy-contract.md §8-17). 'gating' is the renamed 'gatekeeper' (2026-07 rename). validation/transformation/recovery/orchestration_flow/governance_matrix_rule/lifecycle are the contract's core set; placement (DCM ADR-019) and itsm_action (§17) extend it."
+    },
+    "policy_class": {
+      "enum": [
+        "compliance",
+        "structural",
+        "operational"
+      ],
+      "description": "For validation policies: compliance-class (allow/deny, all must pass) vs structural-class (pass/fail field validation). Operational for others where the contract distinguishes."
+    },
+    "concern_type": {
+      "type": "string",
+      "description": "security | compliance | operational | recovery_posture | zero_trust_posture | data_authorization_boundary | orchestration_flow (policy-contract.md; open string — profile policy-group vocabularies extend it)."
+    },
+    "domain": {
+      "$ref": "common-elements.schema.json#/$defs/policy_domain",
+      "description": "Precedence scope. resource_type override wins over tenant wins over profile default (policy-contract domain precedence)."
+    },
+    "match": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "facts"
+      ],
+      "description": "What the policy binds to — the FACTS it consumes, never how it compares them. UDLM specifies the policy-engine contract, not the predicate language (§7.2a: an external engine is 'a Provider of policy decisions, bound by the contract, not by shared storage'). The comparison lives in the engine's own rule body, in the engine's own language; UDLM carries the DEPENDENCY, which is what makes a policy analyzable without evaluating it — impact analysis when a fact changes, and a refusal when a policy binds to data the model does not carry.",
+      "properties": {
+        "facts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          },
+          "description": "The facts this policy reads, each a canonical term in the `policy-fact` taxonomy (registry/taxonomies/policy-fact.yaml) or a dot-path under one of its OPEN subtrees (`request-payload` — any spec dot-path; `reserved` — reserved.<component>.<fact>). Enforced by tests/check_policy_facts.py (PFACT-001). Declaring a fact is not a predicate: it says the policy READS this, not what it concludes.",
+          "examples": [
+            [
+              "data_classification",
+              "sovereignty_zone"
+            ],
+            [
+              "quota.exceeded"
+            ],
+            [
+              "graph.has_cycle",
+              "graph.cycle_severity"
+            ]
+          ]
+        },
+        "rule": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "engine"
+          ],
+          "description": "The engine-native rule body — OPAQUE to UDLM, which never parses, validates, or interprets it. Same treatment a provider's internal implementation gets (T9: the substrate never translates into a provider's native spec). Carried so a policy record stays a complete governed artifact under §6 lifecycle, provenance, and audit; a peer that does not run this engine can still read the record's identity, facts, decision shape, and audit obligations without being able to evaluate it. OPTIONAL BY CONTRACT, not by oversight: under §7.2a's delegated mode the implementation \"does not see or store the external engine's policies — only the data in and the decision out\", so a policy record bound to an external engine legitimately declares its facts and carries no body. When the body is absent the engine still MUST be named, because a peer's refuse-or-evaluate decision depends on it and not on whether the body happens to travel.",
+          "properties": {
+            "engine": {
+              "type": "string",
+              "description": "Which engine dialect the body is written in — a canonical term from the `policy-engine` taxonomy (registry/taxonomies/policy-engine.yaml), enforced by tests/check_policy_boundary.py (PBND-004). A peer reads this to decide whether it can evaluate the rule at all, and refuses rather than guessing when it cannot — a decision a free string cannot support, since `rego`/`Rego`/`opa` would be three answers to one question. The vocabulary is OPEN (a new engine is a curation-ladder contribution, ADR-039) but each term is canonical. `builtin` names the evaluating implementation's own engine: not portable, and knowably so."
+            },
+            "body": {
+              "type": "string",
+              "description": "The rule source, verbatim. Never parsed by UDLM."
+            },
+            "ref": {
+              "type": "string",
+              "format": "udlm-ref-url",
+              "description": "A URF reference to the rule, for bodies that live outside the record."
+            }
+          }
+        }
+      }
+    },
+    "enforcement": {
+      "enum": [
+        "hard",
+        "soft"
+      ],
+      "description": "hard = blocking; soft = advisory (policy-contract §enforcement)."
+    },
+    "lifecycle_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "operations": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "initial_provisioning",
+              "modification",
+              "rehydration",
+              "decommission",
+              "discovery",
+              "all"
+            ]
+          }
+        }
+      },
+      "description": "Which lifecycle operations the policy evaluates on (policy-contract §default lifecycle scope). Compliance-class validation + governance_matrix must include 'all' at standard/prod; fsi/sovereign cannot scope out any operation."
+    },
+    "reconciliation": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Participation in the reserve-phase reconciliation loop (ADR-011 §1; ADR-006 re-entrant evaluation; policy-contract §7.6). During reserve, holds land incrementally and each yields new reserved facts (a reserved segment, a placement). A PARTICIPATING policy is re-evaluated as those facts arrive, so placement / cycle / quota / governance-matrix rules act on the enriched reserved graph as it converges — not just once at the end. A non-participating policy is evaluated once, at the commit barrier (default). Default barrier-only keeps cheap static checks from re-running every iteration. Re-evaluation MUST be idempotent (ADR-006 soundness).",
+      "properties": {
+        "participates": {
+          "type": "boolean",
+          "default": false,
+          "description": "true = re-evaluated on each qualifying reserve-phase change during reconciliation; false (default) = evaluated once at the commit barrier."
+        },
+        "reevaluate_on": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "reservation_added",
+              "reservation_changed",
+              "reservation_released",
+              "fact_updated"
+            ]
+          },
+          "description": "When participates=true, which reserve-phase changes re-trigger this policy. Omitted = all. A policy that only cares about newly reserved facts sets [fact_updated] to avoid needless re-runs."
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "description": "What the policy produces when it fires (policy-contract §8-17). The required inner shape is conditional on policy_type (see allOf below). Additional per-type fields are permitted (extension surface).",
+      "additionalProperties": true
+    },
+    "audit_on": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Which decisions produce audit records (e.g. ALLOW, DENY, STRIP_FIELD)."
+    },
+    "notification_on": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "notification_urgency": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "compliance_basis": {
+      "type": "string",
+      "description": "Regulatory citation this policy enforces."
+    },
+    "review_required_before": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+      "description": "RFC 3339 UTC 'Z' review deadline (common-elements §8.1)."
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "at",
+              "author",
+              "text"
+            ],
+            "properties": {
+              "at": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+              },
+              "author": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "schedule": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind"
+        ],
+        "description": "One temporal clause. CARRIES TIMING ONLY.\n\nA schedule clause governs WHEN, never WHETHER (ADR-053 Decision 2). The evidence gate is a separate `match` rule, and no schedule clause — `expedite` included — can reference it away. Expedite compresses the calendar; it never skips the diff. A policy that gated *whether* from a schedule clause would let a deadline decide a safety question, which is the failure this shape makes unrepresentable rather than merely discouraged.",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "window",
+              "freeze",
+              "expedite",
+              "precondition"
+            ],
+            "description": "`window` — allowed execution times. `freeze` — a dated suspension that QUEUES rather than runs, so a frozen change is deferred and not lost. `expedite` — compress the calendar under elevated approval, with the audit record flagged. `precondition` — proceed only when a named predecessor stage's evidence is present (declared multi-estate chains)."
+          },
+          "effective_from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+          },
+          "effective_until": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+          },
+          "recurrence": {
+            "type": "string",
+            "description": "For a `window`: when it recurs. Inline, or sourced from a calendar the policy names — a sourced calendar keeps one estate's holidays out of the substrate."
+          },
+          "calendar_ref": {
+            "type": "string",
+            "description": "A sourced calendar, as a URF reference. UDLM carries the reference; whose calendar it is, is the estate's."
+          },
+          "predecessor_stage": {
+            "type": "string",
+            "description": "For a `precondition`: the stage whose evidence must be present."
+          },
+          "approval": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "approver",
+              "accepts_digest",
+              "at"
+            ],
+            "description": "A sign-off bound to the evidence it accepts — the accreditation shape, not a parallel one (ADR-053). An approval that names no digest accepts nothing in particular: the evidence can be regenerated afterwards and the signature still reads as covering it.",
+            "properties": {
+              "approver": {
+                "type": "string",
+                "description": "The authority signing off."
+              },
+              "authority_level": {
+                "type": "string",
+                "description": "The authority this approval was given at. An `expedite` clause requires one the policy declares elevated — otherwise compressing the calendar would need no more standing than following it."
+              },
+              "accepts_digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "description": "The digest of the evidence accepted — the ADR-046 promotion diff, typically. Binds the signature to bytes rather than to an intention."
+              },
+              "scope": {
+                "type": "string",
+                "description": "What the approval covers."
+              },
+              "at": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+              }
+            }
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why this clause exists. Carried for the human reading a deferral; never evaluated."
+          }
+        }
+      },
+      "description": "Temporal clauses on a `validation` or `orchestration_flow` policy — added to the existing clause structure rather than made a new `policy_type` (ADR-053 Decision 1), because when a change may run is a property of the gate, not a different kind of gate.\n\nTYPED ADOPTION DEBT IS DERIVED FROM THESE, never stored: `pin_behind` (ordinary lag, nothing holding it), `windowed` (held by a `window`), `frozen` (held by a `freeze`). The verdict names the clause and the next transition, so an estate that is behind can show it is PROVABLY ON-POLICY behind rather than merely late. Storing the verdict would let it disagree with the clauses that produce it (DRV-001)."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "policy_type": {
+            "const": "validation"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "output": {
+            "required": [
+              "decision"
+            ],
+            "properties": {
+              "decision": {
+                "$ref": "common-elements.schema.json#/$defs/policy_decision"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "policy_type": {
+            "const": "transformation"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "output": {
+            "required": [
+              "mutations"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "policy_type": {
+            "const": "gating"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "output": {
+            "required": [
+              "decision"
+            ],
+            "properties": {
+              "decision": {
+                "enum": [
+                  "permit",
+                  "block",
+                  "dual_approval"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "policy_type": {
+            "const": "recovery"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "output": {
+            "required": [
+              "action"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "policy_type": {
+            "const": "orchestration_flow"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "output": {
+            "required": [
+              "ordered"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "policy_type": {
+            "const": "governance_matrix_rule"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "output": {
+            "required": [
+              "decision"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "policy_type": {
+            "const": "placement"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "output": {
+            "required": [
+              "constraints"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "policy_type": {
+            "const": "override"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "output": {
+            "required": [
+              "scope",
+              "expires_at"
+            ],
+            "properties": {
+              "target_policy_uuid": {
+                "type": "string",
+                "description": "The soft policy this override suppresses (policy-contract §18.1). Hard-enforcement policies are unoverridable (POL-003)."
+              },
+              "scope": {
+                "description": "The narrowed match scope the override applies to — never global (§18.1)."
+              },
+              "expires_at": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+                "description": "Mandatory expiry — overrides are time-bounded (POL-009). RFC 3339 UTC 'Z'."
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

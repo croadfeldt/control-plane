@@ -16,6 +16,7 @@ import (
 	"github.com/dcm-project/control-plane/internal/placement/store"
 	"github.com/dcm-project/control-plane/internal/placement/store/model"
 	"github.com/dcm-project/control-plane/internal/placement/types"
+	"github.com/dcm-project/control-plane/internal/udlm/records"
 	"github.com/google/uuid"
 )
 
@@ -27,6 +28,7 @@ type PlacementService struct {
 	policy      policy.Client
 	sprm        sprm.Client
 	agentClient placementagent.Client
+	records     *records.Writer // nil = no UDLM records written
 }
 
 // NewPlacementService creates a new PlacementService with the given store, policy client, and SPRM client.
@@ -40,6 +42,16 @@ func NewPlacementService(store store.Store, policyClient policy.Client, sprmClie
 		opt(ps)
 	}
 	return ps
+}
+
+// WithRecordWriter sets the UDLM per-state record writer. Records are shadow
+// writes beside the placement rows: an intent record when a run's resources are
+// stored, a requested record when a resource is dispatched, a realized record
+// when the agent reports it running. A nil writer writes nothing.
+func WithRecordWriter(w *records.Writer) func(*PlacementService) {
+	return func(ps *PlacementService) {
+		ps.records = w
+	}
 }
 
 // WithAgentClient sets the agent client used to list ready agents for
@@ -132,6 +144,16 @@ func (s *PlacementService) CreateRun(ctx context.Context, req *types.CreateRunRe
 		return nil, NewInternalError(fmt.Sprintf("failed to create database records for run %s: %v", runID, err))
 	}
 
+	// UDLM intent records: one per resource, now that the ids exist. The intent
+	// is the spec as the catalog resolved it, before policy touched it.
+	for _, p := range prepared {
+		s.records.Intent(ctx, records.IntentInput{
+			EntityUUID: p.resource.ID,
+			Spec:       p.resource.Spec,
+			Name:       p.resource.Name,
+		})
+	}
+
 	// step 5: provision dag_level 0 synchronously; higher levels are progressed by
 	// OnResourceRunning status callbacks.
 	slices.SortFunc(prepared, func(a, b preparedResource) int {
@@ -174,6 +196,11 @@ func (s *PlacementService) CreateRun(ctx context.Context, req *types.CreateRunRe
 			return nil, handleSPRMError(err)
 		}
 		provisionedIDs = append(provisionedIDs, p.resource.ID)
+		s.records.Requested(ctx, records.RequestedInput{
+			EntityUUID: p.resource.ID,
+			Spec:       p.evaluatedSpec,
+			AgentName:  *p.resource.AgentName,
+		})
 	}
 
 	log.Info("Run created successfully",

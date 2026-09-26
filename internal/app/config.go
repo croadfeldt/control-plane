@@ -21,6 +21,17 @@ type Config struct {
 	SP       SPConfig
 	Agent    AgentConfig
 	Wiring   WiringConfig
+	UDLM     UDLMConfig
+}
+
+// UDLMConfig governs the UDLM per-state records the control plane shadow-writes
+// (internal/udlm/records).
+type UDLMConfig struct {
+	// RecordsDisabled turns the shadow writes off entirely.
+	RecordsDisabled bool `envconfig:"UDLM_RECORDS_DISABLED" default:"false"`
+	// DefaultTenantUUID is recorded as tenant_uuid until requests carry a tenant.
+	// Must be a v4 UUID (the state-record schema pattern).
+	DefaultTenantUUID string `envconfig:"UDLM_DEFAULT_TENANT_UUID" default:"00000000-0000-4000-8000-000000000000"`
 }
 
 type AgentConfig struct {

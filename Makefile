@@ -52,7 +52,11 @@ build-gitops:
 UDLM_DIR ?= ../udlm
 OAPI_CODEGEN_VERSION ?= v2.7.0
 SERVICE_TYPES := vm container database cluster storage
+UDLM_SCHEMAS := state-record.schema.json common-elements.schema.json policy.schema.json
 generate:
+	@mkdir -p internal/udlm/schema
+	@for f in $(UDLM_SCHEMAS); do cp $(UDLM_DIR)/registry/$$f internal/udlm/schema/$$f; done
+	@printf 'croadfeldt/udlm %s\n' "$$(git -C $(UDLM_DIR) rev-parse HEAD)" > internal/udlm/schema/SOURCE
 	go run ./cmd/udlm-servicetype-gen -udlm $(UDLM_DIR) -out api/catalog/v1alpha1/servicetypes -type all
 	@for st in $(SERVICE_TYPES); do \
 		echo "oapi-codegen $$st"; \

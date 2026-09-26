@@ -64,8 +64,12 @@ func TestGenerateTransform(t *testing.T) {
 	out := filepath.Join(root, "out")
 
 	m := mapping{slug: "widget", schema: "Widget", udlmFile: "test.widget.json", title: "Test Widget", shortDesc: "widget"}
-	if err := generate(m, root, out); err != nil {
+	got, err := generate(m, root, out)
+	if err != nil {
 		t.Fatalf("generate: %v", err)
+	}
+	if got.resourceType != "Test.Widget" || got.version != "1.2.3" {
+		t.Errorf("generate should report the UDLM type it read, got %+v", got)
 	}
 
 	raw, err := os.ReadFile(filepath.Join(out, "widget", "spec.yaml"))

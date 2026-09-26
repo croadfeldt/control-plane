@@ -11,6 +11,7 @@ import (
 	"github.com/dcm-project/control-plane/internal/placement/sprm"
 	"github.com/dcm-project/control-plane/internal/placement/store"
 	"github.com/dcm-project/control-plane/internal/placement/types"
+	"github.com/dcm-project/control-plane/internal/udlm/records"
 )
 
 // OnResourceRunning progresses create orchestration for a run after a resource
@@ -38,6 +39,16 @@ func (s *PlacementService) OnResourceRunning(ctx context.Context, event types.Re
 	if err := s.store.Resource().UpdateStatus(ctx, resourceID, types.ResourceStatusRunning); err != nil {
 		return NewInternalError(fmt.Sprintf("failed to set RUNNING status for resource %s: %v", resourceID, err))
 	}
+	// UDLM realized record: what the agent reported, against the requested record it fulfilled.
+	agentName := ""
+	if resource.AgentName != nil {
+		agentName = *resource.AgentName
+	}
+	s.records.Realized(ctx, records.RealizedInput{
+		EntityUUID: resourceID,
+		Outputs:    event.OutputSpec,
+		AgentName:  agentName,
+	})
 
 	// Step 2: Reload the full run
 	resources, err := s.store.Resource().ListByRunID(ctx, resource.RunID)
@@ -119,6 +130,11 @@ func (s *PlacementService) OnResourceRunning(ctx context.Context, event types.Re
 			)
 			return handleSPRMError(err)
 		}
+		s.records.Requested(ctx, records.RequestedInput{
+			EntityUUID: r.ID,
+			Spec:       evaluated.EvaluatedSpec,
+			AgentName:  evaluated.SelectedAgent,
+		})
 	}
 	return nil
 }

@@ -33,7 +33,7 @@ model. Enhancement #91 asks to reconcile the auth actor model with UDLM `Identit
 | # | Increment | Where it lands | Rows moved | Status |
 |---|---|---|---|---|
 | 1 | Service types generated from the registry's served flat specs, with UDLM `outputs` as read-only fields | `cmd/udlm-servicetype-gen`, `api/catalog/v1alpha1/servicetypes/` | 1, 6 | merged to main (#4) |
-| 2 | **Per-state records, shadow-written.** On `catalogItemInstanceService.Create` write one `intent_record` per resource. When placement selects an agent and dispatches (`PlacementService.CreateRun`), write a `requested_record` that carries `intent_ref`, `provider`, and `assembly`. When the status consumer applies a `RUNNING` event (`PlacementService.OnResourceRunning`), write a `realized_record` that carries `requested_ref`, `provider`, `fields`, and `outputs`. Records share `entity_uuid`; each has its own v7 `record_uuid`; a later realized record `supersedes` the earlier one. Stored in a new `udlm_records` table as JSON, validated against the schema before insert. Existing rows are untouched, so nothing upstream breaks. | new package `internal/udlm/records` and a store; hooks at the three call sites | 1, 5, 10, 13 | next |
+| 2 | **Per-state records, shadow-written.** On `catalogItemInstanceService.Create` write one `intent_record` per resource. When placement selects an agent and dispatches (`PlacementService.CreateRun`), write a `requested_record` that carries `intent_ref`, `provider`, and `assembly`. When the status consumer applies a `RUNNING` event (`PlacementService.OnResourceRunning`), write a `realized_record` that carries `requested_ref`, `provider`, `fields`, and `outputs`. Records share `entity_uuid`; each has its own v7 `record_uuid`; a later realized record `supersedes` the earlier one. Stored in a new `udlm_records` table as JSON, validated against the schema before insert. Existing rows are untouched, so nothing upstream breaks. | new package `internal/udlm/records` and a store; hooks at the three call sites | 1, 5, 10, 13 | in review |
 | 3 | **Entity view read API.** `GET /udlm/v1alpha1/entities/{entity_uuid}` returns the computed view (latest record per state), and `.../records` lists the chain. Read only. | `api/udlm/v1alpha1`, `internal/udlm/handlers` | 1, 5 | after 2 |
 | 4 | **Provenance on realized fields.** Each field in a realized record's `fields` and `outputs` carries the agent, the run id, and the event time from the status event that produced it. A changed value on a later event supersedes the record and advances that field's provenance. | increment 2's realized writer | 5, 14 | after 2 |
 | 5 | **Typed output binding.** A CEL reference `${name.output}` is checked against the registry's declared `outputs` for the source type, including its type. A reference spliced into a larger string is reported, since the model binds by typed reference, not by string assembly. | `internal/catalog/service/cel_validation.go`, reading the generated specs' read-only fields | 2, 7 | independent of 2 |
@@ -44,6 +44,32 @@ model. Enhancement #91 asks to reconcile the auth actor model with UDLM `Identit
 Audit chain (rows 15, 21) and graph queries over stored edges (rows 7, 8, 9) are not scheduled here. The
 audit chain needs a writer that does not exist in either tree; graph ordering exists upstream inside a
 run and should be lifted to stored edges there, not re-implemented here.
+
+## Increment 2 as built
+
+Differences from the design notes below, all forced by where the data actually is:
+
+- **All three records are written from placement**, not the catalog. Resource ids are minted in
+  `PlacementService.CreateRun`, so the intent record is written there once the rows exist, from the
+  spec the catalog handed over. Requested records are written at each dispatch (level 0 in `CreateRun`,
+  later levels in `OnResourceRunning`), realized records when the status consumer reports `RUNNING`.
+- **One chain per entity, across states.** Intent is the root; each later record's `integrity.previous`
+  is the newest record's head, whatever its state. A second realized record supersedes the first and
+  bumps `generation`.
+- **The selected agent is noted, not bound, on the requested record.** The schema forbids `provider`
+  there; the requested record carries `assembly.applied` with a `dcm/placement` policy source and an
+  attributed note naming the agent. The realized record carries `provider: dcm/agents/<name>`.
+- **Schemas are vendored by `make generate`** into `internal/udlm/schema/` (three files plus `SOURCE`
+  with the registry commit) and compiled once at startup. One registry pattern uses lookahead, which
+  Go's RE2 refuses, so the compiler falls back to an ECMAScript engine for patterns RE2 cannot take.
+- **The generator now emits `servicetypes/udlm_types.gen.go`**, the slug-to-class table the writer
+  uses to type a record from a spec's `service_type`. A service type with no UDLM class (`network`)
+  writes nothing and logs why.
+- **Parity with the registry's checker is tested**: the Go canonicalizer reproduces heads computed by
+  `registry/tools/integrity_chain.py` on fixed vectors, and every record the writer produces validates
+  against the vendored schema and verifies.
+- Config: `UDLM_RECORDS_DISABLED` (default false), `UDLM_DEFAULT_TENANT_UUID` (a v4 placeholder
+  until requests carry a tenant).
 
 ## Increment 2 design notes
 

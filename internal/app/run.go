@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes"
 	agentserver "github.com/dcm-project/control-plane/internal/agent/api/server"
 	agenthandlers "github.com/dcm-project/control-plane/internal/agent/handlers/v1alpha1"
 	agenthealthcheck "github.com/dcm-project/control-plane/internal/agent/healthcheck"
@@ -52,6 +53,7 @@ import (
 	sppending "github.com/dcm-project/control-plane/internal/sp/pending"
 	sprmsvc "github.com/dcm-project/control-plane/internal/sp/service/resource_manager"
 	spstore "github.com/dcm-project/control-plane/internal/sp/store"
+	udlmrecords "github.com/dcm-project/control-plane/internal/udlm/records"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/nats-io/nats.go"
@@ -140,9 +142,23 @@ func Run() int {
 	policyClient := placementpolicy.NewServiceClient(evaluationService)
 	spInstanceService := sprmsvc.NewInstanceService(spDataStore, publisher, agentSt)
 	sprmClient := placementsprm.NewServiceClient(spInstanceService)
-	placementService := placementservice.NewPlacementService(
-		placementDataStore, policyClient, sprmClient,
+	placementOpts := []func(*placementservice.PlacementService){
 		placementservice.WithAgentClient(agentClient),
+	}
+	if !cfg.UDLM.RecordsDisabled {
+		recordWriter := udlmrecords.NewWriter(
+			udlmrecords.NewStore(db),
+			func(slug string) (udlmrecords.Type, bool) {
+				t, ok := servicetypes.LookupUDLMType(slug)
+				return udlmrecords.Type{ResourceType: t.ResourceType, Version: t.Version}, ok
+			},
+			cfg.UDLM.DefaultTenantUUID,
+			slog.Default(),
+		)
+		placementOpts = append(placementOpts, placementservice.WithRecordWriter(recordWriter))
+	}
+	placementService := placementservice.NewPlacementService(
+		placementDataStore, policyClient, sprmClient, placementOpts...,
 	)
 
 	if !cfg.NATS.Disabled {

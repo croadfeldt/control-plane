@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -78,6 +79,10 @@ type RealizedInput struct {
 	RunID      string    // the placement run, noted on the record
 	At         time.Time // the status event's timestamp; zero means now
 }
+
+// errNothingChanged is returned by a builder when the record would repeat the
+// latest one of its state (a retried status event); the write is skipped.
+var errNothingChanged = errors.New("nothing changed since the latest record")
 
 // anonymousActor is the provenance source when no actor is on the context.
 const anonymousActor = "dcm/actors/anonymous"
@@ -191,10 +196,13 @@ func (w *Writer) Realized(ctx context.Context, in RealizedInput) {
 		rec["provider"] = providerID
 		var prevOutputs, prevProv map[string]any
 		if prev, err := w.store.Latest(ctx, in.EntityUUID, "Realized"); err == nil {
-			rec["supersedes"] = []any{prev.RecordUUID}
-			rec["generation"] = prev.Generation + 1
 			prevOutputs, _ = prev.Body["outputs"].(map[string]any)
 			prevProv, _ = prev.Body["provenance"].(map[string]any)
+			if stringOf(prev.Body["provider"]) == providerID && reflect.DeepEqual(prevOutputs, outputs) {
+				return nil, errNothingChanged
+			}
+			rec["supersedes"] = []any{prev.RecordUUID}
+			rec["generation"] = prev.Generation + 1
 		} else if !errors.Is(err, ErrNotFound) {
 			return nil, err
 		}
@@ -262,6 +270,10 @@ func (w *Writer) typedFields(spec map[string]any) (Type, map[string]any, error) 
 // Every failure is logged at error level and dropped.
 func (w *Writer) write(ctx context.Context, kind string, build func() (map[string]any, error)) {
 	rec, err := build()
+	if errors.Is(err, errNothingChanged) {
+		w.log.DebugContext(ctx, "udlm record skipped", "kind", kind, "reason", err)
+		return
+	}
 	if err != nil {
 		w.log.ErrorContext(ctx, "udlm record not written", "kind", kind, "error", err)
 		return

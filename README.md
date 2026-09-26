@@ -48,7 +48,7 @@ make compose-down     # stop stack and remove volumes
 
 Compose credentials live in `deploy/.env` (copy from `deploy/.env.example`). Keycloak
 uses the `auth` compose profile — `make compose-up AUTH=true` after uncommenting the auth block
-in `.env`. With providers: `make compose-up-with-providers PROFILES=kubevirt AUTH=true`.
+in `.env`. With the environment-agent: `make compose-up-with-agent AUTH=true`.
 Subsystem tests use the shared `test/subsystem/.env.example` file.
 
 Policy evaluation and placement provisioning run in-process in the monolith
@@ -70,8 +70,9 @@ Build locally:
 make image-build
 ```
 
-CI pushes to `quay.io/dcm-project/control-plane` on merges to `main` and
-`release/v*` branches (and on version tags). See
+CI pushes to `quay.io/dcm-project/control-plane` and
+`quay.io/dcm-project/dcm-gitops` (from `Containerfile.gitops`) on merges to
+`main` and `release/v*` branches (and on version tags). See
 [Releasing](https://github.com/dcm-project/shared-workflows#release-flow)
 in shared-workflows for tag behavior and version conventions.
 
@@ -79,10 +80,10 @@ in shared-workflows for tag behavior and version conventions.
 
 Full-stack Compose and Helm packaging live under `deploy/`:
 
-- **Compose:** control-plane, postgres, nats, keycloak, dcm-ui, and optional service providers
+- **Compose:** control-plane, postgres, nats, keycloak, dcm-ui, and optional environment-agent profile
 - **Helm:** Kubernetes/OpenShift chart at `deploy/helm/dcm` (optional auth via `auth.enabled`)
 
-See [deploy/RUN.md](deploy/RUN.md) for local stack usage, authentication, and service provider profiles.
+See [deploy/RUN.md](deploy/RUN.md) for local stack usage, authentication, and the environment-agent profile.
 See [deploy/helm/dcm/README.md](deploy/helm/dcm/README.md) for cluster installs.
 
 Authentication is disabled by default (`AUTH_DISABLED=true`). The CLI forwards

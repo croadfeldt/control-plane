@@ -22,3 +22,51 @@ func LookupUDLMType(slug string) (UDLMType, bool) {
 	t, ok := UDLMTypes[slug]
 	return t, ok
 }
+
+// UDLMOutput is one typed realized output a UDLM class declares (the E2 binding surface).
+type UDLMOutput struct {
+	// Type is the JSON Schema type of the output; empty when the registry leaves it untyped.
+	Type string
+	// Sensitive outputs are never logged, echoed, or diffed.
+	Sensitive bool
+}
+
+// UDLMOutputs maps a service type slug to the outputs its UDLM class declares, by name.
+var UDLMOutputs = map[string]map[string]UDLMOutput{
+	"cluster": {
+		"api_url": {Type: "string", Sensitive: false},
+		"cluster_id": {Type: "string", Sensitive: false},
+		"console_url": {Type: "string", Sensitive: false},
+		"kubeconfig": {Type: "string", Sensitive: true},
+	},
+	"container": {
+		"endpoint": {Type: "string", Sensitive: false},
+		"internal_dns": {Type: "string", Sensitive: false},
+	},
+	"database": {
+		"applied_version": {Type: "string", Sensitive: false},
+		"connection_string": {Type: "string", Sensitive: true},
+		"host": {Type: "string", Sensitive: false},
+		"port": {Type: "integer", Sensitive: false},
+		"username": {Type: "string", Sensitive: false},
+	},
+	"storage": {
+		"attached": {Type: "boolean", Sensitive: false},
+		"volume_handle": {Type: "string", Sensitive: false},
+	},
+	"vm": {
+		"hostname": {Type: "string", Sensitive: false},
+		"ip_addresses": {Type: "array", Sensitive: false},
+		"mac_addresses": {Type: "array", Sensitive: false},
+		"observed_run_state": {Type: "string", Sensitive: false},
+		"primary_ip": {Type: "string", Sensitive: false},
+		"provider_handle": {Type: "string", Sensitive: false},
+		"target_segment": {Type: "string", Sensitive: false},
+	},
+}
+
+// LookupUDLMOutput returns one declared output of a service type's UDLM class.
+func LookupUDLMOutput(slug, name string) (UDLMOutput, bool) {
+	o, ok := UDLMOutputs[slug][name]
+	return o, ok
+}

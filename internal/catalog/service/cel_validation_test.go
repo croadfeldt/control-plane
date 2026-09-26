@@ -350,6 +350,78 @@ var _ = Describe("CEL validation", func() {
 		})
 	})
 
+	Describe("typed output binding against the UDLM registry", func() {
+		typedConsumerSpec := func(sourceType, path, ref string) v1alpha1.CatalogItemSpec {
+			ensureServiceTypeWithSpec(ctx, str, "app-typed-st", "app-typed", map[string]any{
+				"db_port": 0, "db_host": "", "db_hosts": []any{},
+			})
+			requires := []string{"src"}
+			return v1alpha1.CatalogItemSpec{
+				Resources: []v1alpha1.CatalogResource{
+					{Name: "src", ServiceType: sourceType},
+					{
+						Name:              "app",
+						ServiceType:       "app-typed",
+						RequiresResources: &requires,
+						Fields:            &[]v1alpha1.FieldConfiguration{{Path: path, Default: ref}},
+					},
+				},
+			}
+		}
+
+		It("rejects a reference to a source input the UDLM class does not declare as an output", func() {
+			catalogItemID := createCatalogItemWithSpec(typedConsumerSpec("database", "db_host", "${src.engine}"))
+			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrCELOutputNotDeclared)).To(BeTrue())
+			Expect(err.Error()).To(ContainSubstring("connection_string"))
+		})
+
+		It("still reports an unknown name as not found", func() {
+			catalogItemID := createCatalogItemWithSpec(typedConsumerSpec("database", "db_host", "${src.no_such_output}"))
+			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrCELServiceTypeOutputNotFound)).To(BeTrue())
+		})
+
+		It("accepts a declared output whose type binds to the consumer field", func() {
+			for path, ref := range map[string]string{"db_port": "${src.port}", "db_host": "${src.host}"} {
+				catalogItemID := createCatalogItemWithSpec(typedConsumerSpec("database", path, ref))
+				_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
+				Expect(err).NotTo(HaveOccurred(), "%s <- %s", path, ref)
+			}
+		})
+
+		It("rejects a declared output whose type does not bind to the consumer field", func() {
+			for path, ref := range map[string]string{"db_host": "${src.port}", "db_port": "${src.connection_string}"} {
+				catalogItemID := createCatalogItemWithSpec(typedConsumerSpec("database", path, ref))
+				_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
+				Expect(err).To(HaveOccurred(), "%s <- %s", path, ref)
+				Expect(errors.Is(err, service.ErrCELOutputTypeMismatch)).To(BeTrue(), err.Error())
+			}
+		})
+
+		It("accepts indexing into a declared array output even when the template array is empty", func() {
+			catalogItemID := createCatalogItemWithSpec(typedConsumerSpec("vm", "db_host", "${src.ip_addresses[0]}"))
+			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("rejects a path into a scalar output", func() {
+			catalogItemID := createCatalogItemWithSpec(typedConsumerSpec("database", "db_host", "${src.host[0]}"))
+			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrCELOutputTypeMismatch)).To(BeTrue())
+		})
+
+		It("leaves service types without a UDLM class on the template-only check", func() {
+			ensureServiceTypeWithSpec(ctx, str, "legacy-st", "legacy", map[string]any{"engine": "", "endpoint": ""})
+			catalogItemID := createCatalogItemWithSpec(typedConsumerSpec("legacy", "db_host", "${src.engine}"))
+			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
 	Describe("BuildResourceGraph", func() {
 		It("preserves CEL reference in merged spec after validation", func() {
 			ci := model.CatalogItem{

@@ -1,0 +1,168 @@
+{
+  "adopted_standards": [
+    {
+      "effective_version": "2024.4",
+      "provider_version": "2024.4",
+      "requested_version": ">=2023.1",
+      "resolved_at": "2026-09-03T14:03:40Z",
+      "standard": "Redfish/ComputerSystem",
+      "translated": false
+    }
+  ],
+  "at": "2026-09-03T14:03:40Z",
+  "conforms_to": "udlm/0.1",
+  "correlation_ids": [
+    {
+      "scheme": "libvirt-domain-uuid",
+      "value": "4e2a7c19-6b3d-4f8e-a1c5-9d0b2e7f3a64"
+    },
+    {
+      "scheme": "mac",
+      "value": "52:54:00:ab:12:34"
+    }
+  ],
+  "dependencies": [
+    {
+      "edge_type": "contained_by",
+      "resolved_at": "2026-09-03T14:03:40Z",
+      "strength": "hard",
+      "target_handle": "lab/host/host-a",
+      "target_uuid": "8a4d1e6f-2b3c-4d5e-9f0a-1b2c3d4e5f60"
+    },
+    {
+      "edge_type": "depends_on",
+      "resolved_at": "2026-09-03T14:03:40Z",
+      "strength": "hard",
+      "target_handle": "lab/storage/vol/app-01-root",
+      "target_uuid": "9f1b3d5e-7a8c-4b0d-9e4f-8b0c2d4e6a71"
+    },
+    {
+      "bound_field": "outputs.primary_ip",
+      "edge_type": "depends_on",
+      "resolved_at": "2026-09-03T14:03:40Z",
+      "strength": "hard",
+      "target_field": "address",
+      "target_handle": "lab/net/ip/192.0.2.55",
+      "target_uuid": "a1c3e5f7-9b0d-4c2e-8f6a-0c2d4e6a8b93"
+    }
+  ],
+  "entity_uuid": "2f7c9a41-8e3d-4b6a-9c15-7d2e4f8a1b03",
+  "expected_observation": {
+    "cadence": "PT15M",
+    "on_exceeded": "finding"
+  },
+  "fields": {
+    "cpu": {
+      "cores_per_socket": 4,
+      "count": 4,
+      "sockets": 1
+    },
+    "firmware": {
+      "secure_boot": true,
+      "type": "uefi",
+      "vtpm": false
+    },
+    "guest_os": {
+      "type": "linux-server-9",
+      "version": "9.6"
+    },
+    "layout_ref": "lab/storage/layout/app-01",
+    "memory": {
+      "size": "16Gi"
+    },
+    "networks": [
+      {
+        "name": "eth0",
+        "network_ref": "lab/net/dmz",
+        "vlan": "lab/net/vlan-20"
+      }
+    ],
+    "placement": {
+      "location_ref": "lab/facility/rack-3"
+    },
+    "run_state": {
+      "desired_state": "running"
+    }
+  },
+  "generation": 1,
+  "handle": "lab/vm/app-01",
+  "integrity": {
+    "algorithm": "sha256-jcs",
+    "head": "sha256:73554999e7dd2b597cb30e8dd9836450613158b3b4a64a169ce6c34a3e1f1d93",
+    "previous": "sha256:e8889df6cff24766f2dc1697342d6f7949a23c1a1364b45e6fdfb2f3eaa6b264"
+  },
+  "origin": "declared",
+  "outputs": {
+    "hostname": "app-01.lab.example",
+    "ip_addresses": [
+      "192.0.2.55"
+    ],
+    "mac_addresses": [
+      "52:54:00:ab:12:34"
+    ],
+    "observed_run_state": "running",
+    "primary_ip": "192.0.2.55",
+    "provider_handle": "app-01"
+  },
+  "portability": {
+    "classification": "portable",
+    "portability_breaking": false,
+    "portability_notes": "Realized entirely from Type-scope elements; strip outputs, provider and correlation ids and `fields` is a valid new intent."
+  },
+  "provenance": {
+    "outputs.ip_addresses": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/providers/libvirt-host-a",
+          "kind": "provider"
+        },
+        "timestamp": "2026-09-03T14:03:40Z"
+      }
+    ],
+    "outputs.mac_addresses": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/providers/libvirt-host-a",
+          "kind": "provider"
+        },
+        "timestamp": "2026-09-03T14:03:40Z"
+      }
+    ]
+  },
+  "provider": "lab/providers/libvirt-host-a",
+  "record_type": "realized_record",
+  "record_uuid": "01a09398-433d-756d-a0a3-f5fee7023864",
+  "requested_ref": "01a09398-433d-756d-a0a3-f5fdbd8d6812",
+  "resource_type": "Machine.VM",
+  "sovereignty": {
+    "classification": "internal",
+    "locality": {
+      "fault_domain": "rack-3/host-a",
+      "topology_ref": "c2e4a6b8-0d1f-4a3c-9e5b-7f9a1c3e5d70"
+    },
+    "zone": "us-mn-sovereign"
+  },
+  "state": "Realized",
+  "status": {
+    "conditions": [
+      {
+        "last_transition_time": "2026-09-03T14:03:52Z",
+        "reason": "GuestAgentConnected",
+        "status": "True",
+        "type": "Ready"
+      }
+    ],
+    "state": "Running"
+  },
+  "supersedes": [
+    "01a08ec1-3fb5-75a4-9db3-6b3f36dea84b"
+  ],
+  "tenant_uuid": "75ccf4ff-3e8d-4963-bc51-459ae1014cb7",
+  "time_source": "provider-callback",
+  "type_ref": "https://udlm.dev/registry/udlm/0.1/class/Machine.VM/2.0.0",
+  "type_version": "2.0.0"
+}

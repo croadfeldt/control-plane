@@ -15,13 +15,14 @@ import (
 
 var (
 	compileOnce sync.Once
-	compiled    *jsonschema.Schema
+	compiled    map[string]*jsonschema.Schema
 	compileErr  error
 )
 
-// compiledSchema compiles the vendored state-record schema once, with every
-// sibling schema registered under its `$id` so relative `$ref`s resolve.
-func compiledSchema() (*jsonschema.Schema, error) {
+// compiledSchema returns the compiled schema for one vendored schema id. All of
+// them are compiled once, with every sibling schema registered under its `$id`
+// so relative `$ref`s resolve.
+func compiledSchema(id string) (*jsonschema.Schema, error) {
 	compileOnce.Do(func() {
 		c := jsonschema.NewCompiler()
 		c.UseRegexpEngine(patternEngine)
@@ -46,9 +47,20 @@ func compiledSchema() (*jsonschema.Schema, error) {
 				return
 			}
 		}
-		compiled, compileErr = c.Compile(schema.StateRecord)
+		compiled = map[string]*jsonschema.Schema{}
+		for _, id := range []string{schema.StateRecord, schema.EntityView} {
+			sch, err := c.Compile(id)
+			if err != nil {
+				compileErr = fmt.Errorf("compile %s: %w", id, err)
+				return
+			}
+			compiled[id] = sch
+		}
 	})
-	return compiled, compileErr
+	if compileErr != nil {
+		return nil, compileErr
+	}
+	return compiled[id], nil
 }
 
 // patternEngine compiles schema patterns with Go's RE2 engine and falls back to
@@ -79,16 +91,22 @@ func (r ecmaRegexp) String() string { return r.re.String() }
 // record is round-tripped through JSON first so Go-typed values (ints, structs)
 // validate as the JSON they will be stored as.
 func Validate(record map[string]any) error {
-	sch, err := compiledSchema()
+	return validateAgainst(schema.StateRecord, record)
+}
+
+// ValidateView checks a computed entity view against the registry's
+// entity-view schema.
+func ValidateView(view map[string]any) error {
+	return validateAgainst(schema.EntityView, view)
+}
+
+func validateAgainst(id string, doc map[string]any) error {
+	sch, err := compiledSchema(id)
 	if err != nil {
-		return fmt.Errorf("state-record schema: %w", err)
+		return fmt.Errorf("udlm schema: %w", err)
 	}
-	raw, err := json.Marshal(record)
+	v, err := roundTrip(doc)
 	if err != nil {
-		return err
-	}
-	var v any
-	if err := json.Unmarshal(raw, &v); err != nil {
 		return err
 	}
 	return sch.Validate(v)

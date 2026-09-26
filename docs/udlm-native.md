@@ -34,7 +34,7 @@ model. Enhancement #91 asks to reconcile the auth actor model with UDLM `Identit
 |---|---|---|---|---|
 | 1 | Service types generated from the registry's served flat specs, with UDLM `outputs` as read-only fields | `cmd/udlm-servicetype-gen`, `api/catalog/v1alpha1/servicetypes/` | 1, 6 | merged to main (#4) |
 | 2 | **Per-state records, shadow-written.** On `catalogItemInstanceService.Create` write one `intent_record` per resource. When placement selects an agent and dispatches (`PlacementService.CreateRun`), write a `requested_record` that carries `intent_ref`, `provider`, and `assembly`. When the status consumer applies a `RUNNING` event (`PlacementService.OnResourceRunning`), write a `realized_record` that carries `requested_ref`, `provider`, `fields`, and `outputs`. Records share `entity_uuid`; each has its own v7 `record_uuid`; a later realized record `supersedes` the earlier one. Stored in a new `udlm_records` table as JSON, validated against the schema before insert. Existing rows are untouched, so nothing upstream breaks. | new package `internal/udlm/records` and a store; hooks at the three call sites | 1, 5, 10, 13 | in review |
-| 3 | **Entity view read API.** `GET /udlm/v1alpha1/entities/{entity_uuid}` returns the computed view (latest record per state), and `.../records` lists the chain. Read only. | `api/udlm/v1alpha1`, `internal/udlm/handlers` | 1, 5 | after 2 |
+| 3 | **Entity view read API.** `GET /api/v1alpha1/udlm/entities/{entity_uuid}` returns the computed view (latest record per state), `.../records` lists the chain, `GET /api/v1alpha1/udlm/entities` pages through entities. Read only. | `api/udlm/v1alpha1`, `internal/udlm/handlers` | 1, 5 | in review |
 | 4 | **Provenance on realized fields.** Each field in a realized record's `fields` and `outputs` carries the agent, the run id, and the event time from the status event that produced it. A changed value on a later event supersedes the record and advances that field's provenance. | increment 2's realized writer | 5, 14 | after 2 |
 | 5 | **Typed output binding.** A CEL reference `${name.output}` is checked against the registry's declared `outputs` for the source type, including its type. A reference spliced into a larger string is reported, since the model binds by typed reference, not by string assembly. | `internal/catalog/service/cel_validation.go`, reading the generated specs' read-only fields | 2, 7 | independent of 2 |
 | 6 | **Agent registration as capability advertisement.** The agent registration payload gains the fields provider-contract §8.1a names (resource types with versions, capacity), mapped from `service_types`. | `api/agent/v1alpha1`, `internal/agent` | 17 | after upstream's environment-agent settles |
@@ -70,6 +70,23 @@ Differences from the design notes below, all forced by where the data actually i
   against the vendored schema and verifies.
 - Config: `UDLM_RECORDS_DISABLED` (default false), `UDLM_DEFAULT_TENANT_UUID` (a v4 placeholder
   until requests carry a tenant).
+
+## Increment 3 as built
+
+- **Three read endpoints** under `/api/v1alpha1/udlm/`: `entities` (paged summaries: uuid, tenant, class,
+  version, lifecycle state, record count, newest `at`), `entities/{uuid}` (the view), and
+  `entities/{uuid}/records` (every record, oldest first, as stored). Same bearer auth and OpenAPI
+  request validation as the other domains; `make generate-udlm-api` regenerates the code.
+- **The view is the registry's view.** `records.Fold` is a port of the registry's
+  `entity_view.py` fold, line for line: latest record per state by record uuid, envelope from the
+  most-realized record, snapshot keys per state, carried blocks from the state the registry takes them
+  from, provenance merged, `observed_generation` once a realized record exists. A test folds the
+  registry's worked example (`example-vm-app01-*`) and compares the result key by key with the
+  registry tool's output, then validates it against the vendored `entity-view.schema.json`.
+- **The API does not restate the shapes.** The OpenAPI schemas for the view and the record name only
+  the keys the API itself depends on and allow everything else; the registry schemas stay the
+  authority. The view is written through the generated type's own marshaller so no key is dropped.
+- `make generate` now vendors `entity-view.schema.json` too.
 
 ## Increment 2 design notes
 

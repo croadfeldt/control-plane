@@ -1,0 +1,138 @@
+{
+  "at": "2026-09-03T14:02:11Z",
+  "conforms_to": "udlm/0.1",
+  "entity_uuid": "2f7c9a41-8e3d-4b6a-9c15-7d2e4f8a1b03",
+  "fields": {
+    "cpu": {
+      "count": 4
+    },
+    "firmware": {
+      "secure_boot": true,
+      "type": "uefi"
+    },
+    "guest_os": {
+      "type": "linux-server-9",
+      "version": "9.6"
+    },
+    "layout_ref": "lab/storage/layout/app-01",
+    "memory": {
+      "size": "16Gi"
+    },
+    "networks": [
+      {
+        "name": "eth0",
+        "vlan": "lab/net/vlan-20"
+      }
+    ],
+    "run_state": {
+      "desired_state": "running"
+    }
+  },
+  "generation": 1,
+  "handle": "lab/vm/app-01",
+  "metadata": {
+    "display_name": "app-01 (KVM guest on host-a)"
+  },
+  "origin": "declared",
+  "provenance": {
+    "cpu.count": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ],
+    "firmware.secure_boot": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ],
+    "firmware.type": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ],
+    "guest_os": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ],
+    "layout_ref": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ],
+    "memory.size": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ],
+    "networks[0].vlan": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ],
+    "run_state.desired_state": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ]
+  },
+  "record_type": "intent_record",
+  "record_uuid": "01a09398-433d-756d-a0a3-f5fc061ba409",
+  "resource_type": "Machine.VM",
+  "state": "Intent",
+  "supersedes": [
+    "01a08ec1-3fb5-75a4-9db3-6b3dff63ae87"
+  ],
+  "tenant_uuid": "75ccf4ff-3e8d-4963-bc51-459ae1014cb7",
+  "time_source": "dcm-api",
+  "type_ref": "https://udlm.dev/registry/udlm/0.1/class/Machine.VM/2.0.0",
+  "type_version": "2.0.0"
+}

@@ -1,0 +1,214 @@
+{
+  "assembly": {
+    "applied": [
+      {
+        "fields": [
+          "placement.location_ref"
+        ],
+        "source": {
+          "id": "lab/layers/tenant-location",
+          "kind": "layer"
+        },
+        "version": "1.0.0"
+      },
+      {
+        "fields": [
+          "cpu.sockets",
+          "cpu.cores_per_socket"
+        ],
+        "source": {
+          "id": "lab/policy/cpu-topology-default",
+          "kind": "policy"
+        },
+        "version": "1.2.0"
+      },
+      {
+        "fields": [
+          "firmware.vtpm"
+        ],
+        "source": {
+          "id": "lab/policy/firmware-baseline",
+          "kind": "policy"
+        },
+        "version": "1.0.0"
+      },
+      {
+        "fields": [
+          "networks[0].network_ref"
+        ],
+        "source": {
+          "id": "lab/policy/network-placement",
+          "kind": "policy"
+        },
+        "version": "2.1.0"
+      }
+    ],
+    "excluded_layers": [],
+    "unapplied": []
+  },
+  "at": "2026-09-03T14:02:14Z",
+  "conforms_to": "udlm/0.1",
+  "dependencies": [
+    {
+      "edge_type": "references",
+      "resolved_at": "2026-09-03T14:02:14Z",
+      "target_handle": "lab/facility/rack-3",
+      "target_uuid": "3c5e7a9b-1d2f-4e6a-8b0c-2d4f6a8b0c1e"
+    },
+    {
+      "edge_type": "references",
+      "resolved_at": "2026-09-03T14:02:14Z",
+      "target_handle": "lab/net/dmz",
+      "target_uuid": "5d7f9b1c-3e4a-4f6b-9c1d-4e6a8b0c2d3f"
+    },
+    {
+      "edge_type": "references",
+      "resolved_at": "2026-09-03T14:02:14Z",
+      "target_handle": "lab/storage/layout/app-01",
+      "target_uuid": "7e9a1c3d-5f6b-4a8c-8d2e-6a8b0c2d4e5f"
+    }
+  ],
+  "entity_uuid": "2f7c9a41-8e3d-4b6a-9c15-7d2e4f8a1b03",
+  "fields": {
+    "cpu": {
+      "cores_per_socket": 4,
+      "count": 4,
+      "sockets": 1
+    },
+    "firmware": {
+      "secure_boot": true,
+      "type": "uefi",
+      "vtpm": false
+    },
+    "guest_os": {
+      "type": "linux-server-9",
+      "version": "9.6"
+    },
+    "layout_ref": "lab/storage/layout/app-01",
+    "memory": {
+      "size": "16Gi"
+    },
+    "networks": [
+      {
+        "name": "eth0",
+        "network_ref": "lab/net/dmz",
+        "vlan": "lab/net/vlan-20"
+      }
+    ],
+    "placement": {
+      "location_ref": "lab/facility/rack-3"
+    },
+    "run_state": {
+      "desired_state": "running"
+    }
+  },
+  "generation": 1,
+  "handle": "lab/vm/app-01",
+  "intent_ref": "01a09398-433d-756d-a0a3-f5fc061ba409",
+  "origin": "declared",
+  "policies": [
+    {
+      "decision": "allow",
+      "fields": [
+        "cpu.sockets",
+        "cpu.cores_per_socket"
+      ],
+      "policy": "lab/policy/cpu-topology-default",
+      "policy_type": "transformation",
+      "version": "1.2.0"
+    },
+    {
+      "decision": "allow",
+      "fields": [
+        "firmware.vtpm"
+      ],
+      "policy": "lab/policy/firmware-baseline",
+      "policy_type": "transformation",
+      "version": "1.0.0"
+    },
+    {
+      "decision": "allow",
+      "fields": [
+        "networks[0].network_ref"
+      ],
+      "policy": "lab/policy/network-placement",
+      "policy_type": "transformation",
+      "version": "2.1.0"
+    },
+    {
+      "decision": "pass",
+      "policy": "lab/policy/tenant-quota",
+      "policy_type": "validation",
+      "reason": "4 vCPU / 16Gi within the tenant's remaining quota",
+      "version": "3.0.0"
+    }
+  ],
+  "provenance": {
+    "cpu.cores_per_socket": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/policy/cpu-topology-default",
+          "kind": "policy"
+        },
+        "timestamp": "2026-09-03T14:02:14Z"
+      }
+    ],
+    "cpu.sockets": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/policy/cpu-topology-default",
+          "kind": "policy"
+        },
+        "timestamp": "2026-09-03T14:02:14Z"
+      }
+    ],
+    "firmware.vtpm": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/policy/firmware-baseline",
+          "kind": "policy"
+        },
+        "timestamp": "2026-09-03T14:02:14Z"
+      }
+    ],
+    "networks[0].network_ref": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/policy/network-placement",
+          "kind": "policy"
+        },
+        "timestamp": "2026-09-03T14:02:14Z"
+      }
+    ],
+    "placement.location_ref": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/layers/tenant-location",
+          "kind": "layer"
+        },
+        "timestamp": "2026-09-03T14:02:14Z"
+      }
+    ]
+  },
+  "record_type": "requested_record",
+  "record_uuid": "01a09398-433d-756d-a0a3-f5fdbd8d6812",
+  "resource_type": "Machine.VM",
+  "state": "Requested",
+  "supersedes": [
+    "01a08ec1-3fb5-75a4-9db3-6b3e4b18f737"
+  ],
+  "tenant_uuid": "75ccf4ff-3e8d-4963-bc51-459ae1014cb7",
+  "time_source": "dcm-api",
+  "type_ref": "https://udlm.dev/registry/udlm/0.1/class/Machine.VM/2.0.0",
+  "type_version": "2.0.0"
+}

@@ -53,6 +53,8 @@ import (
 	sppending "github.com/dcm-project/control-plane/internal/sp/pending"
 	sprmsvc "github.com/dcm-project/control-plane/internal/sp/service/resource_manager"
 	spstore "github.com/dcm-project/control-plane/internal/sp/store"
+	udlmserver "github.com/dcm-project/control-plane/internal/udlm/api/server"
+	udlmhandlers "github.com/dcm-project/control-plane/internal/udlm/handlers/v1alpha1"
 	udlmrecords "github.com/dcm-project/control-plane/internal/udlm/records"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -145,9 +147,10 @@ func Run() int {
 	placementOpts := []func(*placementservice.PlacementService){
 		placementservice.WithAgentClient(agentClient),
 	}
+	udlmStore := udlmrecords.NewStore(db)
 	if !cfg.UDLM.RecordsDisabled {
 		recordWriter := udlmrecords.NewWriter(
-			udlmrecords.NewStore(db),
+			udlmStore,
 			func(slug string) (udlmrecords.Type, bool) {
 				t, ok := servicetypes.LookupUDLMType(slug)
 				return udlmrecords.Type{ResourceType: t.ResourceType, Version: t.Version}, ok
@@ -279,6 +282,7 @@ func Run() int {
 		Gitops:  gitopshandlers.NewHandler(gitopsSvc),
 		Policy:  policyhandlers.NewPolicyHandler(policyService),
 		SPRM:    sprmhandler.NewHandler(spInstanceService),
+		UDLM:    udlmhandlers.NewHandler(udlmStore),
 	}, checkers...)
 	if err != nil {
 		slog.Error("Failed to configure HTTP router", "error", err)
@@ -323,6 +327,7 @@ type RouteHandlers struct {
 	Gitops  gitopsserver.StrictServerInterface
 	Policy  policyserver.StrictServerInterface
 	SPRM    sprmserver.StrictServerInterface
+	UDLM    udlmserver.StrictServerInterface
 }
 
 func newRouter(authMW func(http.Handler) http.Handler, h RouteHandlers, checkers ...Checker) (chi.Router, error) {
@@ -358,6 +363,11 @@ func newRouter(authMW func(http.Handler) http.Handler, h RouteHandlers, checkers
 	)
 	gitopsserver.HandlerFromMuxWithBaseURL(
 		gitopsserver.NewStrictHandler(h.Gitops, nil),
+		router,
+		baseURL,
+	)
+	udlmserver.HandlerFromMuxWithBaseURL(
+		udlmserver.NewStrictHandler(h.UDLM, nil),
 		router,
 		baseURL,
 	)

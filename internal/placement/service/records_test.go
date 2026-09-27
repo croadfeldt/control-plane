@@ -90,6 +90,8 @@ var _ = Describe("UDLM per-state records", func() {
 		realized := recs[2].Body
 		Expect(recs[2].State).To(Equal("Realized"))
 		Expect(realized["requested_ref"]).To(Equal(recs[1].RecordUUID))
+		Expect(realized["requested_ref_head"]).To(Equal(recs[1].Head))
+		Expect(recs[1].Body["intent_ref_head"]).To(Equal(recs[0].Head))
 		Expect(realized["provider"]).To(Equal("dcm/agents/default-agent"))
 		Expect(realized["outputs"]).To(HaveKeyWithValue("primary_ip", "10.0.0.5"))
 		Expect(realized["at"]).To(Equal("2026-09-26T10:00:00Z"))

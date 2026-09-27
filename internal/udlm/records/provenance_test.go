@@ -16,6 +16,10 @@ func TestLeafPathsAndDiff(t *testing.T) {
 	if !reflect.DeepEqual(sortedKeys(paths), []string{"cpu.count", "cpu.sockets", "memory.size", "tags"}) {
 		t.Errorf("leaf paths = %v", sortedKeys(paths))
 	}
+	indexed := leafPaths(map[string]any{"networks": []any{map[string]any{"name": "eth0", "vlan": "v20"}, map[string]any{"name": "eth1"}}, "empty": map[string]any{}}, "")
+	if !reflect.DeepEqual(sortedKeys(indexed), []string{"empty", "networks[0].name", "networks[0].vlan", "networks[1].name"}) {
+		t.Errorf("arrays of objects must be indexed like the registry's example: %v", sortedKeys(indexed))
+	}
 	prov, changed := diffProvenance(before, after, "policy", "dcm/placement", "2026-09-26T00:00:00Z")
 	if !reflect.DeepEqual(changed, []string{"cpu.sockets", "gone", "memory.size"}) {
 		t.Errorf("changed = %v", changed)

@@ -1,6 +1,7 @@
 package records
 
 import (
+	"fmt"
 	"reflect"
 	"sort"
 )
@@ -12,8 +13,10 @@ import (
 // realized record's outputs to the provider (`outputs.<name>`). This file
 // produces exactly those three kinds of entry.
 
-// leafPaths flattens nested objects to dot-paths. Arrays and scalars are leaves,
-// as in the registry's example (`outputs.ip_addresses`, `cpu.count`).
+// leafPaths flattens nested values to the registry's dot-paths (TRN-001): objects
+// descend with ".", arrays of objects with "[i]" (`networks[0].network_ref`), and
+// anything else — scalars, arrays of scalars, empty containers — is a leaf
+// (`outputs.ip_addresses`, `cpu.count`).
 func leafPaths(m map[string]any, prefix string) map[string]any {
 	out := map[string]any{}
 	for k, v := range m {
@@ -21,15 +24,41 @@ func leafPaths(m map[string]any, prefix string) map[string]any {
 		if prefix != "" {
 			path = prefix + "." + k
 		}
-		if sub, ok := v.(map[string]any); ok && len(sub) > 0 {
-			for p, lv := range leafPaths(sub, path) {
-				out[p] = lv
-			}
-			continue
-		}
-		out[path] = v
+		leafValue(out, path, v)
 	}
 	return out
+}
+
+func leafValue(out map[string]any, path string, v any) {
+	switch x := v.(type) {
+	case map[string]any:
+		if len(x) == 0 {
+			out[path] = v
+			return
+		}
+		for p, lv := range leafPaths(x, path) {
+			out[p] = lv
+		}
+	case []any:
+		if len(x) == 0 || !allObjects(x) {
+			out[path] = v
+			return
+		}
+		for i, item := range x {
+			leafValue(out, fmt.Sprintf("%s[%d]", path, i), item)
+		}
+	default:
+		out[path] = v
+	}
+}
+
+func allObjects(items []any) bool {
+	for _, it := range items {
+		if _, ok := it.(map[string]any); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // sortedKeys returns the map's keys in order, for deterministic records.

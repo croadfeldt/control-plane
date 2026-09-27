@@ -54,8 +54,8 @@
   "handle": "lab/vm/app-01",
   "integrity": {
     "algorithm": "sha256-jcs",
-    "head": "sha256:73554999e7dd2b597cb30e8dd9836450613158b3b4a64a169ce6c34a3e1f1d93",
-    "previous": "sha256:e8889df6cff24766f2dc1697342d6f7949a23c1a1364b45e6fdfb2f3eaa6b264"
+    "head": "sha256:897bd89d04f3f4626e76f5fdecf128b79e1fe1bb65a4879aeaf6c4421349c78a",
+    "previous": "sha256:73554999e7dd2b597cb30e8dd9836450613158b3b4a64a169ce6c34a3e1f1d93"
   },
   "lifecycle_state": "Realized",
   "metadata": {
@@ -189,6 +189,17 @@
         "timestamp": "2026-09-03T14:02:11Z"
       }
     ],
+    "outputs.hostname": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/providers/libvirt-host-a",
+          "kind": "provider"
+        },
+        "timestamp": "2026-09-03T14:03:40Z"
+      }
+    ],
     "outputs.ip_addresses": [
       {
         "operation_type": "set",
@@ -201,6 +212,39 @@
       }
     ],
     "outputs.mac_addresses": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/providers/libvirt-host-a",
+          "kind": "provider"
+        },
+        "timestamp": "2026-09-03T14:03:40Z"
+      }
+    ],
+    "outputs.observed_run_state": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/providers/libvirt-host-a",
+          "kind": "provider"
+        },
+        "timestamp": "2026-09-03T14:03:40Z"
+      }
+    ],
+    "outputs.primary_ip": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/providers/libvirt-host-a",
+          "kind": "provider"
+        },
+        "timestamp": "2026-09-03T14:03:40Z"
+      }
+    ],
+    "outputs.provider_handle": [
       {
         "operation_type": "set",
         "sequence": 1,
@@ -324,6 +368,8 @@
         "provider_handle": "app-01"
       },
       "provider": "lab/providers/libvirt-host-a",
+      "requested_ref": "01a0e3cb-34d1-7432-bb67-3a6659508554",
+      "requested_ref_head": "sha256:da15e497409dea2ef8bce8c56601cf61a0fead29c792f1eb9aa4f3e1d4f5d98f",
       "time_source": "provider-callback"
     },
     "requested": {
@@ -408,6 +454,8 @@
           "desired_state": "running"
         }
       },
+      "intent_ref": "01a0e3cb-34d0-7261-9517-df3cbac3ce20",
+      "intent_ref_head": "sha256:684dcef63408595dc5df1728083640c205dc406c15f4ff4f9da8c431b341c4ac",
       "origin": "declared",
       "policies": [
         {

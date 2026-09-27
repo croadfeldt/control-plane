@@ -53,6 +53,7 @@ Differences from the design notes below, all forced by where the data actually i
   `PlacementService.CreateRun`, so the intent record is written there once the rows exist, from the
   spec the catalog handed over. Requested records are written at each dispatch (level 0 in `CreateRun`,
   later levels in `OnResourceRunning`), realized records when the status consumer reports `RUNNING`.
+- **References are head-bound (TRN-002) and the map is a checked diff (TRN-001).** The requested record carries `intent_ref_head`, the realized record `requested_ref_head`; provenance paths index arrays of objects the way the registry does (`networks[0].vlan`); `generation` is the request cycle and does not change when a later report supersedes a realized record. The registry gate `tests/check_transition_provenance.py` is the authority for the rule; this writer produces records that pass it.
 - **One integrity chain per state stream** (corrected 2026-09-27; the first build chained across
   states, which the registry does not do). The first record of each state is a chain root
   (`previous: null`); a superseding record's `previous` is the head of the record it replaces, with

@@ -285,9 +285,14 @@ func (w *Writer) write(ctx context.Context, kind string, build func() (map[strin
 		return
 	}
 	body, _ := rt.(map[string]any)
+	// The integrity chain is per state stream (state-record.schema.json: `previous`
+	// is "the prior version's head, or null at the first version"; `supersedes` is
+	// "within the same state's stream"). The first record of a state is a chain
+	// root; a superseding record's previous is the head of the record it replaces.
+	// Cross-state linkage is intent_ref / requested_ref, never the chain.
 	var previous *string
-	if tail, err := w.store.Tail(ctx, entity); err == nil {
-		previous = &tail.Head
+	if prev, err := w.store.Latest(ctx, entity, stringOf(rec["state"])); err == nil {
+		previous = &prev.Head
 	} else if !errors.Is(err, ErrNotFound) {
 		w.log.ErrorContext(ctx, "udlm record not written", "kind", kind, "entity_uuid", entity, "error", err)
 		return

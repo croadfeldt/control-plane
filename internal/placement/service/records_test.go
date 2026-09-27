@@ -100,7 +100,7 @@ var _ = Describe("UDLM per-state records", func() {
 			Expect(records.Validate(recs[i].Body)).To(Succeed(), "record %d", i)
 			Expect(records.Verify(recs[i].Body)).To(Succeed(), "record %d", i)
 		}
-		Expect(realized["integrity"].(map[string]any)["previous"]).To(Equal(recs[1].Head))
+		Expect(realized["integrity"].(map[string]any)["previous"]).To(BeNil(), "first realized record is its stream's chain root")
 	})
 
 	It("never blocks the placement path when a resource has no UDLM class", func() {

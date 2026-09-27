@@ -53,9 +53,12 @@ Differences from the design notes below, all forced by where the data actually i
   `PlacementService.CreateRun`, so the intent record is written there once the rows exist, from the
   spec the catalog handed over. Requested records are written at each dispatch (level 0 in `CreateRun`,
   later levels in `OnResourceRunning`), realized records when the status consumer reports `RUNNING`.
-- **One chain per entity, across states.** Intent is the root; each later record's `integrity.previous`
-  is the newest record's head, whatever its state. A second realized record supersedes the first and
-  bumps `generation`.
+- **One integrity chain per state stream** (corrected 2026-09-27; the first build chained across
+  states, which the registry does not do). The first record of each state is a chain root
+  (`previous: null`); a superseding record's `previous` is the head of the record it replaces, with
+  `supersedes` naming it and `generation` bumped. Cross-state linkage is `intent_ref` /
+  `requested_ref`, never the chain. This matches `state-record.schema.json` and the registry's worked
+  realized record.
 - **The selected agent is noted, not bound, on the requested record.** The schema forbids `provider`
   there; the requested record carries `assembly.applied` with a `dcm/placement` policy source and an
   attributed note naming the agent. The realized record carries `provider: dcm/agents/<name>`.

@@ -148,8 +148,9 @@ func TestWriterChain(t *testing.T) {
 	if strings.Join(states, ",") != "Intent,Requested,Realized,Realized" {
 		t.Errorf("states = %v", states)
 	}
-	// Every record validates and verifies, and the chain links through previous heads.
-	var prev *string
+	// Every record validates and verifies. The chain is per state stream: the first
+	// record of each state is a root (previous null); a superseding record's
+	// previous is the head of the record it replaces.
 	for i := range recs {
 		body := recs[i].Body
 		if err := Validate(body); err != nil {
@@ -158,16 +159,14 @@ func TestWriterChain(t *testing.T) {
 		if err := Verify(body); err != nil {
 			t.Errorf("record %d (%s) does not verify: %v", i, recs[i].State, err)
 		}
-		integ := body["integrity"].(map[string]any)
-		if prev == nil {
-			if integ["previous"] != nil {
-				t.Errorf("record 0 must be the chain root, previous = %v", integ["previous"])
-			}
-		} else if integ["previous"] != *prev {
-			t.Errorf("record %d previous = %v, want %s", i, integ["previous"], *prev)
+	}
+	for i := 0; i < 3; i++ {
+		if p := recs[i].Body["integrity"].(map[string]any)["previous"]; p != nil {
+			t.Errorf("first %s record must be a chain root, previous = %v", recs[i].State, p)
 		}
-		h := recs[i].Head
-		prev = &h
+	}
+	if p := recs[3].Body["integrity"].(map[string]any)["previous"]; p != recs[2].Head {
+		t.Errorf("superseding realized record previous = %v, want the replaced realized head %s", p, recs[2].Head)
 	}
 	intent, requested, realized, realized2 := recs[0].Body, recs[1].Body, recs[2].Body, recs[3].Body
 	if _, present := intent["fields"].(map[string]any)["service_type"]; present {

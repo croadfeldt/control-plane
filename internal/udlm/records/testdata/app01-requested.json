@@ -104,7 +104,13 @@
   },
   "generation": 1,
   "handle": "lab/vm/app-01",
-  "intent_ref": "01a09398-433d-756d-a0a3-f5fc061ba409",
+  "integrity": {
+    "algorithm": "sha256-jcs",
+    "head": "sha256:da15e497409dea2ef8bce8c56601cf61a0fead29c792f1eb9aa4f3e1d4f5d98f",
+    "previous": null
+  },
+  "intent_ref": "01a0e3cb-34d0-7261-9517-df3cbac3ce20",
+  "intent_ref_head": "sha256:684dcef63408595dc5df1728083640c205dc406c15f4ff4f9da8c431b341c4ac",
   "origin": "declared",
   "policies": [
     {
@@ -201,11 +207,11 @@
     ]
   },
   "record_type": "requested_record",
-  "record_uuid": "01a09398-433d-756d-a0a3-f5fdbd8d6812",
+  "record_uuid": "01a0e3cb-34d1-7432-bb67-3a6659508554",
   "resource_type": "Machine.VM",
   "state": "Requested",
   "supersedes": [
-    "01a08ec1-3fb5-75a4-9db3-6b3e4b18f737"
+    "01a09398-433d-756d-a0a3-f5fdbd8d6812"
   ],
   "tenant_uuid": "75ccf4ff-3e8d-4963-bc51-459ae1014cb7",
   "time_source": "dcm-api",

@@ -148,8 +148,9 @@ func TestWriterChain(t *testing.T) {
 	if strings.Join(states, ",") != "Intent,Requested,Realized,Realized" {
 		t.Errorf("states = %v", states)
 	}
-	// Every record validates and verifies, and the chain links through previous heads.
-	var prev *string
+	// Every record validates and verifies. The chain is per state stream: the first
+	// record of each state is a root (previous null); a superseding record's
+	// previous is the head of the record it replaces.
 	for i := range recs {
 		body := recs[i].Body
 		if err := Validate(body); err != nil {
@@ -158,16 +159,14 @@ func TestWriterChain(t *testing.T) {
 		if err := Verify(body); err != nil {
 			t.Errorf("record %d (%s) does not verify: %v", i, recs[i].State, err)
 		}
-		integ := body["integrity"].(map[string]any)
-		if prev == nil {
-			if integ["previous"] != nil {
-				t.Errorf("record 0 must be the chain root, previous = %v", integ["previous"])
-			}
-		} else if integ["previous"] != *prev {
-			t.Errorf("record %d previous = %v, want %s", i, integ["previous"], *prev)
+	}
+	for i := 0; i < 3; i++ {
+		if p := recs[i].Body["integrity"].(map[string]any)["previous"]; p != nil {
+			t.Errorf("first %s record must be a chain root, previous = %v", recs[i].State, p)
 		}
-		h := recs[i].Head
-		prev = &h
+	}
+	if p := recs[3].Body["integrity"].(map[string]any)["previous"]; p != recs[2].Head {
+		t.Errorf("superseding realized record previous = %v, want the replaced realized head %s", p, recs[2].Head)
 	}
 	intent, requested, realized, realized2 := recs[0].Body, recs[1].Body, recs[2].Body, recs[3].Body
 	if _, present := intent["fields"].(map[string]any)["service_type"]; present {
@@ -188,8 +187,14 @@ func TestWriterChain(t *testing.T) {
 	if realized["fields"].(map[string]any)["cpu"].(map[string]any)["sockets"] != float64(1) {
 		t.Error("realized fields must be the requested (evaluated) fields")
 	}
-	if realized2["supersedes"].([]any)[0] != realized["record_uuid"] || realized2["generation"] != float64(2) {
-		t.Errorf("second realized must supersede the first: %v gen %v", realized2["supersedes"], realized2["generation"])
+	if realized2["supersedes"].([]any)[0] != realized["record_uuid"] || realized2["generation"] != float64(1) {
+		t.Errorf("second realized must supersede the first within the same request cycle: %v gen %v", realized2["supersedes"], realized2["generation"])
+	}
+	if requested["intent_ref_head"] != intent["integrity"].(map[string]any)["head"] {
+		t.Error("requested must carry the referenced intent's head (TRN-002)")
+	}
+	if realized["requested_ref_head"] != requested["integrity"].(map[string]any)["head"] {
+		t.Error("realized must carry the referenced requested's head (TRN-002)")
 	}
 	if realized2["outputs"].(map[string]any)["primary_ip"] != "192.0.2.56" {
 		t.Error("second realized must carry the new outputs")
@@ -211,8 +216,8 @@ func TestWriterSkipsRepeatedRealizedReport(t *testing.T) {
 	if len(recs) != 4 {
 		t.Fatalf("a repeated report must not add a record: got %d records", len(recs))
 	}
-	if recs[3].Body["generation"] != float64(2) {
-		t.Errorf("the changed report must supersede: generation %v", recs[3].Body["generation"])
+	if recs[3].Body["supersedes"] == nil || recs[3].Body["generation"] != float64(1) {
+		t.Errorf("the changed report must supersede within the same cycle: supersedes %v generation %v", recs[3].Body["supersedes"], recs[3].Body["generation"])
 	}
 }
 

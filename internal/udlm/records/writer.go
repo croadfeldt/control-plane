@@ -138,6 +138,10 @@ func (w *Writer) Requested(ctx context.Context, in RequestedInput) {
 		}
 		rec := w.base("requested_record", "Requested", in.EntityUUID, t, "dcm-control-plane")
 		rec["intent_ref"] = intent.RecordUUID
+		if intent.Head != "" {
+			rec["intent_ref_head"] = intent.Head // the transition is bound to the bytes it consumed (TRN-002)
+		}
+		rec["generation"] = intent.Generation
 		rec["fields"] = fields
 		intentFields, _ := intent.Body["fields"].(map[string]any)
 		prov, changed := diffProvenance(intentFields, fields, "policy", "dcm/placement", stringOf(rec["at"]))
@@ -182,6 +186,13 @@ func (w *Writer) Realized(ctx context.Context, in RealizedInput) {
 			rec["at"] = in.At.UTC().Format("2006-01-02T15:04:05Z")
 		}
 		rec["requested_ref"] = requested.RecordUUID
+		if requested.Head != "" {
+			rec["requested_ref_head"] = requested.Head // TRN-002
+		}
+		// generation is the request cycle the record belongs to (four-states.md §2.7):
+		// a realized record carries its requested record's generation, and a later
+		// report of the same request supersedes without changing it.
+		rec["generation"] = requested.Generation
 		rec["fields"] = requested.Body["fields"]
 		outputs := map[string]any{}
 		if in.Outputs != nil {
@@ -202,7 +213,6 @@ func (w *Writer) Realized(ctx context.Context, in RealizedInput) {
 				return nil, errNothingChanged
 			}
 			rec["supersedes"] = []any{prev.RecordUUID}
-			rec["generation"] = prev.Generation + 1
 		} else if !errors.Is(err, ErrNotFound) {
 			return nil, err
 		}
@@ -285,9 +295,14 @@ func (w *Writer) write(ctx context.Context, kind string, build func() (map[strin
 		return
 	}
 	body, _ := rt.(map[string]any)
+	// The integrity chain is per state stream (state-record.schema.json: `previous`
+	// is "the prior version's head, or null at the first version"; `supersedes` is
+	// "within the same state's stream"). The first record of a state is a chain
+	// root; a superseding record's previous is the head of the record it replaces.
+	// Cross-state linkage is intent_ref / requested_ref, never the chain.
 	var previous *string
-	if tail, err := w.store.Tail(ctx, entity); err == nil {
-		previous = &tail.Head
+	if prev, err := w.store.Latest(ctx, entity, stringOf(rec["state"])); err == nil {
+		previous = &prev.Head
 	} else if !errors.Is(err, ErrNotFound) {
 		w.log.ErrorContext(ctx, "udlm record not written", "kind", kind, "entity_uuid", entity, "error", err)
 		return

@@ -88,8 +88,8 @@
   "handle": "lab/vm/app-01",
   "integrity": {
     "algorithm": "sha256-jcs",
-    "head": "sha256:897bd89d04f3f4626e76f5fdecf128b79e1fe1bb65a4879aeaf6c4421349c78a",
-    "previous": "sha256:73554999e7dd2b597cb30e8dd9836450613158b3b4a64a169ce6c34a3e1f1d93"
+    "head": "sha256:12497c4e8b893398f0ab1e0de9922ca51e9befceb5c5f68613a36624c0606366",
+    "previous": "sha256:2e87c019f61c38a449dedbadfdd0fcbd754822304fb90c56ca700cc75d93d64b"
   },
   "origin": "declared",
   "outputs": {
@@ -179,9 +179,9 @@
   },
   "provider": "lab/providers/libvirt-host-a",
   "record_type": "realized_record",
-  "record_uuid": "01a0e3cb-34d1-7432-bb67-3a67b876bfca",
-  "requested_ref": "01a0e3cb-34d1-7432-bb67-3a6659508554",
-  "requested_ref_head": "sha256:da15e497409dea2ef8bce8c56601cf61a0fead29c792f1eb9aa4f3e1d4f5d98f",
+  "record_uuid": "01a0eb91-3cc0-706d-80c5-4709fc3f7e6b",
+  "requested_ref": "01a0eb91-3cbf-756c-bc00-a4e7eb1900e9",
+  "requested_ref_head": "sha256:eb9de91bd6f2a9c69c5884cc751af7f12412d183239f8be6571893a040588c01",
   "resource_type": "Machine.VM",
   "sovereignty": {
     "classification": "internal",
@@ -204,7 +204,7 @@
     "state": "Running"
   },
   "supersedes": [
-    "01a09398-433d-756d-a0a3-f5fee7023864"
+    "01a0eb4f-c4f6-7795-bde3-ee7d4e50598a"
   ],
   "tenant_uuid": "75ccf4ff-3e8d-4963-bc51-459ae1014cb7",
   "time_source": "provider-callback",

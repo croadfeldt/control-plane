@@ -19,7 +19,7 @@ var stateOf = map[string]string{
 }
 
 // snapshotKeys are the record keys a state's snapshot carries in the view.
-var snapshotKeys = []string{"fields", "outputs", "at", "time_source", "origin", "provider", "roles", "assembly", "policies", "intent_ref", "intent_ref_head", "requested_ref", "requested_ref_head"}
+var snapshotKeys = []string{"fields", "outputs", "at", "time_source", "origin", "provider", "roles", "assembly", "policies", "intent_ref", "intent_ref_head", "requested_ref", "requested_ref_head", "dispatch", "root_request_uuid", "caused_by_request"}
 
 // carried lists the view keys that live beside `fields` on a record, and which
 // state's record the view takes each from, in preference order.
@@ -28,7 +28,7 @@ var carried = []struct {
 	order []string
 }{
 	{"status", []string{"realized", "requested", "discovered"}},
-	{"dependencies", []string{"realized", "requested"}},
+	{"dependencies", []string{"realized", "requested", "discovered"}},
 	{"sovereignty", []string{"realized"}},
 	{"correlation_ids", []string{"realized", "discovered"}},
 	{"adopted_standards", []string{"realized"}},

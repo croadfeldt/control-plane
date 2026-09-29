@@ -1,0 +1,119 @@
+[
+  {
+    "at": "2026-09-28T10:15:00Z",
+    "conforms_to": "udlm/0.1",
+    "entity_uuid": "6c27ea00-65ee-4045-b31b-ae08ad34c80d",
+    "fields": {
+      "capacity": {
+        "size": "20Ti"
+      },
+      "pool_kind": "zfs"
+    },
+    "generation": 1,
+    "handle": "platform/storage/pool/app-tier-02",
+    "integrity": {
+      "algorithm": "sha256-jcs",
+      "head": "sha256:51d2680d200fb1abebaab427968b53ae95f17eb59fc82620c19918e337ad2dc5",
+      "previous": null
+    },
+    "metadata": {
+      "display_name": "app-tier-02 (raw storage the VM provider asked for)"
+    },
+    "origin": "declared",
+    "provenance": {
+      "capacity.size": [
+        {
+          "operation_type": "set",
+          "sequence": 1,
+          "source": {
+            "id": "platform/service-accounts/vm-provider",
+            "kind": "actor"
+          },
+          "timestamp": "2026-09-28T10:15:00Z"
+        }
+      ],
+      "pool_kind": [
+        {
+          "operation_type": "set",
+          "sequence": 1,
+          "source": {
+            "id": "platform/service-accounts/vm-provider",
+            "kind": "actor"
+          },
+          "timestamp": "2026-09-28T10:15:00Z"
+        }
+      ]
+    },
+    "record_type": "intent_record",
+    "record_uuid": "01a0eb52-84e6-71c0-b798-1dacd378c203",
+    "resource_type": "Storage.Pool",
+    "state": "Intent",
+    "tenant_uuid": "0696f0b2-8a2e-4e95-b3aa-f355d058ddfe",
+    "time_source": "dcm-api",
+    "type_ref": "https://udlm.dev/registry/udlm/0.1/class/Storage.Pool/0.4.2",
+    "type_version": "0.4.2"
+  },
+  {
+    "assembly": {
+      "applied": [
+        {
+          "source": {
+            "id": "platform/policy/placement",
+            "kind": "policy"
+          },
+          "version": "1.0.0"
+        }
+      ]
+    },
+    "at": "2026-09-28T10:15:04Z",
+    "caused_by_request": "01a0eb4f-c492-70e3-a61a-c7a8b1822dbf",
+    "conforms_to": "udlm/0.1",
+    "dispatch": {
+      "admitted": [
+        "pool_kind",
+        "capacity.size"
+      ],
+      "granted": [],
+      "provider": "lab/providers/zfs-storage-a",
+      "stripped": []
+    },
+    "entity_uuid": "6c27ea00-65ee-4045-b31b-ae08ad34c80d",
+    "fields": {
+      "capacity": {
+        "size": "20Ti"
+      },
+      "pool_kind": "zfs"
+    },
+    "generation": 1,
+    "handle": "platform/storage/pool/app-tier-02",
+    "integrity": {
+      "algorithm": "sha256-jcs",
+      "head": "sha256:50cc7e76dcd062d50a3e5b5a889573e11dc00d4daa810e5a888944ec34938cc7",
+      "previous": "sha256:d82000532e81c6f05a910ddc8b8c07be32d5f69143320dc2b8ddf7772d7bcf4f"
+    },
+    "intent_ref": "01a0eb52-84e6-71c0-b798-1dacd378c203",
+    "intent_ref_head": "sha256:51d2680d200fb1abebaab427968b53ae95f17eb59fc82620c19918e337ad2dc5",
+    "metadata": {
+      "notes": [
+        {
+          "at": "2026-09-28T10:15:04Z",
+          "author": "platform/service-accounts/vm-provider",
+          "text": "Originated by the VM provider under PRV-012: a request it could not satisfy from what it owns needed raw storage from the storage provider. caused_by_request names the triggering request for the control plane and the audit chain only; nothing about that request, its tenant or its entity is in the payload the storage provider receives, which is this record's execution slice and placement requirements. The triggering request waits blocked-transient on this one (DEP-017)."
+        }
+      ]
+    },
+    "origin": "declared",
+    "record_type": "requested_record",
+    "record_uuid": "01a0eb94-650c-74bf-8dc5-c5c1cfb473a1",
+    "resource_type": "Storage.Pool",
+    "root_request_uuid": "01a0eb94-650c-74bf-8dc5-c5c1cfb473a1",
+    "state": "Requested",
+    "supersedes": [
+      "01a0eb52-84e6-71c0-b798-1dad32dcb191"
+    ],
+    "tenant_uuid": "0696f0b2-8a2e-4e95-b3aa-f355d058ddfe",
+    "time_source": "dcm-api",
+    "type_ref": "https://udlm.dev/registry/udlm/0.1/class/Storage.Pool/0.4.2",
+    "type_version": "0.4.2"
+  }
+]

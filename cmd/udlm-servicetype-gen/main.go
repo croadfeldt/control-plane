@@ -45,6 +45,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"go/format"
 	"os"
 	"path/filepath"
 	"sort"
@@ -127,6 +128,7 @@ type udlmType struct {
 	resourceType string
 	version      string
 	outputs      map[string]outputInfo
+	elements     []string // top-level element names of the class's flat spec (the heads a dispatched path may have, DSP-002)
 }
 
 // outputInfo is what the control plane needs to know about one declared output
@@ -179,7 +181,25 @@ func writeTypeTable(outDir string, types map[string]udlmType) error {
 	sb.WriteString("}\n\n")
 	sb.WriteString("// LookupUDLMOutput returns one declared output of a service type's UDLM class.\n")
 	sb.WriteString("func LookupUDLMOutput(slug, name string) (UDLMOutput, bool) {\n\to, ok := UDLMOutputs[slug][name]\n\treturn o, ok\n}\n")
-	return os.WriteFile(filepath.Join(outDir, typeTableFile), []byte(sb.String()), 0o644)
+	sb.WriteString("\n// UDLMElements maps a service type slug to the top-level element names of its UDLM class —\n// the only heads a dispatched path may have without a policy grant (DSP-002).\n")
+	sb.WriteString("var UDLMElements = map[string][]string{\n")
+	for _, s := range slugs {
+		els := append([]string(nil), types[s].elements...)
+		sort.Strings(els)
+		quoted := make([]string, len(els))
+		for i, e := range els {
+			quoted[i] = fmt.Sprintf("%q", e)
+		}
+		fmt.Fprintf(&sb, "\t%q: {%s},\n", s, strings.Join(quoted, ", "))
+	}
+	sb.WriteString("}\n\n")
+	sb.WriteString("// LookupUDLMElements returns the element names of a service type's UDLM class.\n")
+	sb.WriteString("func LookupUDLMElements(slug string) ([]string, bool) {\n\te, ok := UDLMElements[slug]\n\treturn e, ok\n}\n")
+	src, err := format.Source([]byte(sb.String()))
+	if err != nil {
+		return fmt.Errorf("format %s: %w", typeTableFile, err)
+	}
+	return os.WriteFile(filepath.Join(outDir, typeTableFile), src, 0o644)
 }
 
 // generate reads the UDLM flat spec for m and writes servicetypes/<slug>/spec.yaml,
@@ -246,7 +266,7 @@ func generate(m mapping, udlmDir, outDir string) (udlmType, error) {
 	if err := os.WriteFile(filepath.Join(dir, "spec.yaml"), data, 0o644); err != nil {
 		return udlmType{}, err
 	}
-	return udlmType{resourceType: resourceType, version: udlmVersion, outputs: declaredOutputs(mapGet(root, "outputs"))}, nil
+	return udlmType{resourceType: resourceType, version: udlmVersion, outputs: declaredOutputs(mapGet(root, "outputs")), elements: propertyNames(mapGet(spec, "properties"))}, nil
 }
 
 type generator struct {
@@ -865,4 +885,16 @@ func singular(s string) string {
 	default:
 		return s
 	}
+}
+
+// propertyNames returns the keys of a YAML mapping node, in document order.
+func propertyNames(props *yaml.Node) []string {
+	if props == nil || props.Kind != yaml.MappingNode {
+		return nil
+	}
+	out := make([]string, 0, len(props.Content)/2)
+	for i := 0; i+1 < len(props.Content); i += 2 {
+		out = append(out, props.Content[i].Value)
+	}
+	return out
 }

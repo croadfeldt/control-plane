@@ -2,7 +2,10 @@ package records
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -113,7 +116,11 @@ func testWriter(t *testing.T) (*Writer, Store) {
 	st := NewStore(db)
 	types := func(s string) (Type, bool) {
 		if s == "vm" {
-			return Type{ResourceType: "Machine.VM", Version: "2.0.0"}, true
+			// The class's elements, as registry/generated/machine.vm.json declares them (DSP-002).
+			return Type{ResourceType: "Machine.VM", Version: "2.0.0", Elements: []string{
+				"boot_order", "cpu", "firmware", "guest_os", "instance_size", "layout_ref",
+				"memory", "networks", "placement", "run_state", "storage", "storage_tier",
+			}}, true
 		}
 		return Type{}, false
 	}
@@ -178,6 +185,25 @@ func TestWriterChain(t *testing.T) {
 	if requested["intent_ref"] != intent["record_uuid"] {
 		t.Error("requested must reference the intent record")
 	}
+	// DEP-015: a root request names itself; DSP-004: the receipt is exactly what
+	// crossed — every leaf path of the evaluated fields, and nothing granted or
+	// stripped because no policy did either.
+	if requested["root_request_uuid"] != requested["record_uuid"] {
+		t.Errorf("root_request_uuid = %v, want the record's own uuid %v", requested["root_request_uuid"], requested["record_uuid"])
+	}
+	dispatch, _ := requested["dispatch"].(map[string]any)
+	if dispatch["provider"] != "dcm/agents/agent-a" {
+		t.Errorf("dispatch.provider = %v", dispatch["provider"])
+	}
+	if got := fmt.Sprint(dispatch["admitted"]); got != "[cpu.count cpu.sockets memory.size]" {
+		t.Errorf("dispatch.admitted = %v", got)
+	}
+	if _, present := dispatch["granted"]; present {
+		t.Error("no policy granted anything; granted must be absent, not empty")
+	}
+	if _, present := requested["caused_by_request"]; present {
+		t.Error("a consumer's request is not caused by another request")
+	}
 	if realized["requested_ref"] != requested["record_uuid"] {
 		t.Error("realized must reference the requested record")
 	}
@@ -198,6 +224,73 @@ func TestWriterChain(t *testing.T) {
 	}
 	if realized2["outputs"].(map[string]any)["primary_ip"] != "192.0.2.56" {
 		t.Error("second realized must carry the new outputs")
+	}
+}
+
+// DSP-001/002: a path whose head is not an element of the bound class does not
+// cross by assumption — the requested record is refused, not written with a
+// receipt that claims more than the class allows.
+func TestWriterRefusesPathOutsideTheClass(t *testing.T) {
+	ctx := context.Background()
+	w, st := testWriter(t)
+	entity := "6f7c9a41-8e3d-4b6a-9c15-7d2e4f8a1b03"
+	w.Intent(ctx, IntentInput{EntityUUID: entity, Spec: map[string]any{"service_type": "vm", "cpu": map[string]any{"count": 1}}})
+	w.Requested(ctx, RequestedInput{
+		EntityUUID: entity, AgentName: "a",
+		Spec: map[string]any{"service_type": "vm", "cpu": map[string]any{"count": 1}, "gpu": map[string]any{"count": 1}},
+	})
+	recs, _ := st.ListByEntity(ctx, entity)
+	if len(recs) != 1 || recs[0].State != "Intent" {
+		t.Fatalf("a request admitting `gpu` (not a Machine.VM element, no grant) must be refused; got %d records", len(recs))
+	}
+	if _, err := dispatchReceipt("dcm/agents/a", map[string]any{"cpu": map[string]any{"count": 1}}, Type{ResourceType: "X"}); err == nil {
+		t.Error("a class with no known elements admits nothing")
+	}
+	if pathHead("networks[0].vlan") != "networks" || pathHead("cpu.count") != "cpu" || pathHead("layout_ref") != "layout_ref" {
+		t.Error("pathHead must return the first dot-path segment")
+	}
+}
+
+// The registry's worked example of a provider-originated request (PRV-012,
+// DEP-018): the VM provider's own request for raw storage, in its own tenant,
+// caused by the consumer's request but never carrying anything from it.
+func TestProviderOriginatedExampleValidates(t *testing.T) {
+	raw, err := os.ReadFile("testdata/pool-records.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recs []map[string]any
+	if err := json.Unmarshal(raw, &recs); err != nil {
+		t.Fatal(err)
+	}
+	var requested map[string]any
+	for i, r := range recs {
+		if err := Validate(r); err != nil {
+			t.Errorf("pool record %d (%v) invalid against the vendored schema: %v", i, r["record_type"], err)
+		}
+		if r["record_type"] == "requested_record" {
+			requested = r
+		}
+	}
+	if requested == nil {
+		t.Fatal("example carries no requested record")
+	}
+	if requested["caused_by_request"] == nil || requested["root_request_uuid"] != requested["record_uuid"] {
+		t.Errorf("a provider-originated request is its own root and names its cause: root %v caused_by %v", requested["root_request_uuid"], requested["caused_by_request"])
+	}
+	dispatch := requested["dispatch"].(map[string]any)
+	for _, p := range dispatch["admitted"].([]any) {
+		if h := pathHead(p.(string)); h != "pool_kind" && h != "capacity" {
+			t.Errorf("admitted %q is not an element of the pool's class", p)
+		}
+	}
+	v := Fold(recs)
+	if err := ValidateView(v); err != nil {
+		t.Errorf("provider-originated records must fold into a valid view: %v", err)
+	}
+	snap := v["states"].(map[string]any)["requested"].(map[string]any)
+	if snap["dispatch"] == nil || snap["root_request_uuid"] == nil || snap["caused_by_request"] == nil {
+		t.Errorf("the requested snapshot must carry dispatch, root_request_uuid and caused_by_request: %v", snap)
 	}
 }
 

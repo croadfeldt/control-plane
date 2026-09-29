@@ -13,8 +13,8 @@ var UDLMTypes = map[string]UDLMType{
 	"cluster":   {ResourceType: "KubernetesCluster", Version: "2.0.1"},
 	"container": {ResourceType: "Container", Version: "1.0.2"},
 	"database":  {ResourceType: "Data.Database", Version: "0.7.8"},
-	"storage":   {ResourceType: "Volume", Version: "0.12.0"},
-	"vm":        {ResourceType: "Machine.VM", Version: "2.0.1"},
+	"storage":   {ResourceType: "Volume", Version: "0.12.1"},
+	"vm":        {ResourceType: "Machine.VM", Version: "2.0.2"},
 }
 
 // LookupUDLMType returns the UDLM class behind a service type slug.

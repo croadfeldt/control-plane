@@ -16,7 +16,7 @@ components:
       description: |-
         The VM Type Class — extends the Machine Base Class (cpu/memory/storage/storage_tier/guest_os, inherited) with VM-specific SharedDataElements, under the Liskov invariant (add or refine, never contradict). A provider Class (Machine.VM.OCPVirt, …) extends this further. The generator compiles this class + its ancestors into today's flat Machine.VM resource-type spec.
 
-        Provider-agnostic virtual machine specification, generated from the UDLM Machine.VM (v2.0.0) resource type — the UDLM registry is the source of truth. Non-portable provider settings go under provider_hints (CommonFields). Regenerate with cmd/udlm-servicetype-gen; do not hand-edit.
+        Provider-agnostic virtual machine specification, generated from the UDLM Machine.VM (v2.0.1) resource type — the UDLM registry is the source of truth. Non-portable provider settings go under provider_hints (CommonFields). Regenerate with cmd/udlm-servicetype-gen; do not hand-edit.
 
         Sizing constraint (UDLM oneOf): provide exactly one of [instance_size] OR [cpu + memory].
 
@@ -54,7 +54,7 @@ components:
             layout_ref:
               type: string
               format: udlm-ref-url
-              description: The Storage.Layout this VM realizes — handle/uuid reference to an existing Storage.Layout whose entries describe the VM's disks (per-disk shape, boot designation, storage tier). Common-elements Reference (handle string or {uuid, handle} object), following the location_ref/network_ref precedent. Also carried as a references->Storage.Layout relationship (storage_layout).
+              description: The StorageLayout this VM realizes — handle/uuid reference to an existing StorageLayout whose entries describe the VM's disks (per-disk shape, boot designation, storage tier). Common-elements Reference (handle string or {uuid, handle} object), following the location_ref/network_ref precedent. Also carried as a references->StorageLayout relationship (storage_layout).
             networks:
               type: array
               description: Network attachment INTENT — name-selectable but requirements-authoritative (ADR-036). Select a network by `network_ref`, or state `zone`/`requires` and let placement converge on one. Neither is required; unstated, policy decides. Explicit requirements are authoritative over a name.

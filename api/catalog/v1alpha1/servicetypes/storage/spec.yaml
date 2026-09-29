@@ -14,9 +14,9 @@ components:
     StorageSpec:
       type: object
       description: |-
-        A CONSUMABLE persistent storage volume — the block or file volume a workload attaches, as distinct from the Storage.Cluster that PROVISIONS it (the platform) and the physical device that backs it. Vendor-neutral Tier-1: provisioners (Ceph RBD/CephFS, cloud CSI drivers, NFS) are the provider, never the type. Adopts Kubernetes PersistentVolumeClaim/CSI + SNIA Swordfish Volume.
+        A CONSUMABLE persistent storage volume — the block or file volume a workload attaches, as distinct from the StorageCluster that PROVISIONS it (the platform) and the physical device that backs it. Vendor-neutral Tier-1: provisioners (Ceph RBD/CephFS, cloud CSI drivers, NFS) are the provider, never the type. Adopts Kubernetes PersistentVolumeClaim/CSI + SNIA Swordfish Volume. A Base by the Base test (CLS-002): Kubernetes PVC/CSI and SNIA Swordfish Volume abstract over every consumable volume, so an order for capacity with an access mode is fillable by any provisioner; a host-local ZFS dataset is a dialect Type beneath it (Volume.ZFS).
 
-        Provider-agnostic storage volume specification, generated from the UDLM Storage.Volume (v0.11.6) resource type — the UDLM registry is the source of truth. Non-portable provider settings go under provider_hints (CommonFields). Regenerate with cmd/udlm-servicetype-gen; do not hand-edit.
+        Provider-agnostic storage volume specification, generated from the UDLM Volume (v0.12.0) resource type — the UDLM registry is the source of truth. Non-portable provider settings go under provider_hints (CommonFields). Regenerate with cmd/udlm-servicetype-gen; do not hand-edit.
 
         Realized outputs (read-only, provider-populated): volume_handle, attached.
       allOf:
@@ -47,13 +47,13 @@ components:
             storage_class:
               type: string
               format: udlm-ref-url
-              description: Resource reference to a Storage.Class (common-elements §2.5, DCM ADR-025). Authored by handle; deferred resolution supported (claim-before-define).
+              description: Resource reference to a StorageClass (common-elements §2.5, DCM ADR-025). Authored by handle; deferred resolution supported (claim-before-define).
             retain_on_release:
               type: boolean
               description: 'Reclaim policy: true = Retain (keep data after the consumer releases it), false = Delete.'
             layout_entry:
               type: string
-              description: 'The Storage.Layout entry name this volume realizes — the join key paired with the realizes_layout_entry edge. Instance edges carry no qualifier (the dependencies[] of a record is a closed shape, state-record.schema.json), so the entry binding lives HERE: set exactly when realizes_layout_entry is declared, matching an entry name in the referenced layout. Reconvergence joins on this value to populate the layout''s realized_volumes map.'
+              description: 'The StorageLayout entry name this volume realizes — the join key paired with the realizes_layout_entry edge. Instance edges carry no qualifier (the dependencies[] of a record is a closed shape, state-record.schema.json), so the entry binding lives HERE: set exactly when realizes_layout_entry is declared, matching an entry name in the referenced layout. Reconvergence joins on this value to populate the layout''s realized_volumes map.'
               pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
             volume_handle:
               type: string

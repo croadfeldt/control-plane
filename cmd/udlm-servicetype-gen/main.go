@@ -72,7 +72,7 @@ var mappings = []mapping{
 	{"container", "Container", "container.json", "DCM Container Specification", "container workload"},
 	{"database", "Database", "data.database.json", "DCM Database Specification", "managed database"},
 	{"cluster", "Cluster", "kubernetes-cluster.json", "DCM Cluster Specification", "Kubernetes cluster"},
-	{"storage", "Storage", "storage.volume.json", "DCM Storage Specification", "storage volume"},
+	{"storage", "Storage", "volume.json", "DCM Storage Specification", "storage volume"},
 }
 
 func main() {

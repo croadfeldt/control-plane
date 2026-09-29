@@ -72,7 +72,7 @@ type StorageSpec struct {
 	// Id Unique identifier for the resource.
 	Id *string `json:"id,omitempty"`
 
-	// LayoutEntry The Storage.Layout entry name this volume realizes — the join key paired with the realizes_layout_entry edge. Instance edges carry no qualifier (the dependencies[] of a record is a closed shape, state-record.schema.json), so the entry binding lives HERE: set exactly when realizes_layout_entry is declared, matching an entry name in the referenced layout. Reconvergence joins on this value to populate the layout's realized_volumes map.
+	// LayoutEntry The StorageLayout entry name this volume realizes — the join key paired with the realizes_layout_entry edge. Instance edges carry no qualifier (the dependencies[] of a record is a closed shape, state-record.schema.json), so the entry binding lives HERE: set exactly when realizes_layout_entry is declared, matching an entry name in the referenced layout. Reconvergence joins on this value to populate the layout's realized_volumes map.
 	LayoutEntry *string `json:"layout_entry,omitempty"`
 
 	// Metadata Resource metadata for identification and governance.
@@ -104,7 +104,7 @@ type StorageSpec struct {
 	// StatusMessage Human-readable message providing details about the current status
 	StatusMessage *string `json:"status_message,omitempty"`
 
-	// StorageClass Resource reference to a Storage.Class (common-elements §2.5, DCM ADR-025). Authored by handle; deferred resolution supported (claim-before-define).
+	// StorageClass Resource reference to a StorageClass (common-elements §2.5, DCM ADR-025). Authored by handle; deferred resolution supported (claim-before-define).
 	StorageClass *string `json:"storage_class,omitempty"`
 
 	// UpdateTime Timestamp when the resource was last updated (RFC 3339)

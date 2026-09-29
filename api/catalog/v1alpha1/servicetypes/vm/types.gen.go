@@ -239,7 +239,7 @@ type VMSpec struct {
 	// UDLM realized output: populated by the provider when the resource reaches Realized; read-only on the request.
 	IpAddresses *[]string `json:"ip_addresses,omitempty"`
 
-	// LayoutRef The Storage.Layout this VM realizes — handle/uuid reference to an existing Storage.Layout whose entries describe the VM's disks (per-disk shape, boot designation, storage tier). Common-elements Reference (handle string or {uuid, handle} object), following the location_ref/network_ref precedent. Also carried as a references->Storage.Layout relationship (storage_layout).
+	// LayoutRef The StorageLayout this VM realizes — handle/uuid reference to an existing StorageLayout whose entries describe the VM's disks (per-disk shape, boot designation, storage tier). Common-elements Reference (handle string or {uuid, handle} object), following the location_ref/network_ref precedent. Also carried as a references->StorageLayout relationship (storage_layout).
 	LayoutRef *string `json:"layout_ref,omitempty"`
 
 	// MacAddresses Realized MAC per interface, ordered as spec.networks[]. Binding surface for DHCP reservation and switch-port records.

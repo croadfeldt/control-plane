@@ -10,11 +10,11 @@ type UDLMType struct {
 
 // UDLMTypes maps a service type slug to the UDLM class and version it projects.
 var UDLMTypes = map[string]UDLMType{
-	"cluster":   {ResourceType: "KubernetesCluster", Version: "2.0.0"},
+	"cluster":   {ResourceType: "KubernetesCluster", Version: "2.0.1"},
 	"container": {ResourceType: "Container", Version: "1.0.2"},
-	"database":  {ResourceType: "Data.Database", Version: "0.7.7"},
-	"storage":   {ResourceType: "Storage.Volume", Version: "0.11.6"},
-	"vm":        {ResourceType: "Machine.VM", Version: "2.0.0"},
+	"database":  {ResourceType: "Data.Database", Version: "0.7.8"},
+	"storage":   {ResourceType: "Volume", Version: "0.12.0"},
+	"vm":        {ResourceType: "Machine.VM", Version: "2.0.1"},
 }
 
 // LookupUDLMType returns the UDLM class behind a service type slug.
@@ -93,7 +93,7 @@ var UDLMGroups = map[string][]string{
 	"cluster":   {"compute"},
 	"container": {"compute"},
 	"database":  {},
-	"storage":   {},
+	"storage":   {"storage"},
 	"vm":        {"compute"},
 }
 

@@ -16,7 +16,7 @@ components:
       description: |-
         A container workload — image, resources, environment, mounts, and exposed ports — realized and managed by a *resource* provider (a Kubernetes cluster, podman) under the four-state lifecycle (DCM ADR-023). Models the service/workload layer of the estate: MCP servers, the media stack, mail, etc. Secret material is never inline — env/mounts reference a CredentialRef.
 
-        Provider-agnostic container workload specification, generated from the UDLM Container (v1.0.3) resource type — the UDLM registry is the source of truth. Non-portable provider settings go under provider_hints (CommonFields). Regenerate with cmd/udlm-servicetype-gen; do not hand-edit.
+        Provider-agnostic container workload specification, generated from the UDLM Container (v1.0.4) resource type — the UDLM registry is the source of truth. Non-portable provider settings go under provider_hints (CommonFields). Regenerate with cmd/udlm-servicetype-gen; do not hand-edit.
 
         Realized outputs (read-only, provider-populated): endpoint, internal_dns.
       allOf:

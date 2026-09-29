@@ -68,6 +68,26 @@
       "target_uuid": "7e9a1c3d-5f6b-4a8c-8d2e-6a8b0c2d4e5f"
     }
   ],
+  "dispatch": {
+    "admitted": [
+      "cpu.count",
+      "cpu.sockets",
+      "cpu.cores_per_socket",
+      "memory.size",
+      "guest_os.type",
+      "guest_os.version",
+      "firmware.type",
+      "firmware.secure_boot",
+      "firmware.vtpm",
+      "networks",
+      "layout_ref",
+      "placement.location_ref",
+      "run_state.desired_state"
+    ],
+    "granted": [],
+    "provider": "lab/providers/libvirt-host-a",
+    "stripped": []
+  },
   "entity_uuid": "2f7c9a41-8e3d-4b6a-9c15-7d2e4f8a1b03",
   "fields": {
     "cpu": {
@@ -106,8 +126,8 @@
   "handle": "lab/vm/app-01",
   "integrity": {
     "algorithm": "sha256-jcs",
-    "head": "sha256:da15e497409dea2ef8bce8c56601cf61a0fead29c792f1eb9aa4f3e1d4f5d98f",
-    "previous": null
+    "head": "sha256:eb9de91bd6f2a9c69c5884cc751af7f12412d183239f8be6571893a040588c01",
+    "previous": "sha256:b9db95c6eca95eebfd00d6bb0a970ae6eaa084f1da2f37ae9afb53fd08b4262d"
   },
   "intent_ref": "01a0e3cb-34d0-7261-9517-df3cbac3ce20",
   "intent_ref_head": "sha256:684dcef63408595dc5df1728083640c205dc406c15f4ff4f9da8c431b341c4ac",
@@ -207,11 +227,12 @@
     ]
   },
   "record_type": "requested_record",
-  "record_uuid": "01a0e3cb-34d1-7432-bb67-3a6659508554",
+  "record_uuid": "01a0eb91-3cbf-756c-bc00-a4e7eb1900e9",
   "resource_type": "Machine.VM",
+  "root_request_uuid": "01a0eb91-3cbf-756c-bc00-a4e7eb1900e9",
   "state": "Requested",
   "supersedes": [
-    "01a09398-433d-756d-a0a3-f5fdbd8d6812"
+    "01a0eb4f-c492-70e3-a61a-c7a8b1822dbf"
   ],
   "tenant_uuid": "75ccf4ff-3e8d-4963-bc51-459ae1014cb7",
   "time_source": "dcm-api",

@@ -103,13 +103,16 @@
       "description": "How this record came to exist: declared by its author; derived from a discovery (brownfield adoption); backfilled after the fact."
     },
     "metadata": {
-      "$ref": "#/$defs/metadata"
+      "$ref": "#/$defs/metadata",
+      "x-data-role": "audit"
     },
     "integrity": {
-      "$ref": "#/$defs/integrity"
+      "$ref": "#/$defs/integrity",
+      "x-data-role": "audit"
     },
     "audit": {
-      "$ref": "#/$defs/audit"
+      "$ref": "#/$defs/audit",
+      "x-data-role": "audit"
     },
     "fields": {
       "type": "object",
@@ -120,25 +123,37 @@
       "description": "The typed outputs the class declares — its binding surface (data-model-core [D8.3]). Realized and discovered only."
     },
     "provenance": {
-      "$ref": "#/$defs/provenance"
+      "$ref": "#/$defs/provenance",
+      "x-data-role": "audit"
     },
     "roles": {
-      "$ref": "#/$defs/roles"
+      "$ref": "#/$defs/roles",
+      "x-data-role": "governance"
     },
     "intent_ref": {
       "type": "string",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-      "description": "Requested only: the record_uuid of the intent record this was assembled from. The map from intent to realized runs along this reference (TRN-003); every field that differs from that record is attributed in `provenance` (TRN-001)."
+      "description": "Requested only: the intent record this was assembled from (TRN-003). Every field that differs from it is attributed in `provenance` (TRN-001)."
     },
     "intent_ref_head": {
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$",
       "description": "Requested only: the `integrity.head` of the referenced intent record, present exactly when that record is sealed — binds the transition to the bytes it consumed, verifiable with no other record in hand (TRN-002)."
     },
+    "root_request_uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "Requested only: the record_uuid of the requested record at the root of this order. A root names itself; an expanded child names the root's (DEP-015)."
+    },
+    "caused_by_request": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "Requested only, optional: on a request one provider made to another (PRV-012), the consumer's requested record that caused it (DEP-018). Provenance only, never authority. Control-plane data: never in the dispatch payload."
+    },
     "requested_ref": {
       "type": "string",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-      "description": "Realized only: the record_uuid of the requested record this realizes — every realized record is traceable to exactly one (four-states.md §2.3, TRN-003); every field that differs from it, and every output, is attributed in `provenance` (TRN-001)."
+      "description": "Realized only: the requested record this realizes (four-states.md §2.3, TRN-003). Every field that differs from it, and every output, is attributed in `provenance` (TRN-001)."
     },
     "requested_ref_head": {
       "type": "string",
@@ -146,7 +161,8 @@
       "description": "Realized only: the `integrity.head` of the referenced requested record, present exactly when that record is sealed (TRN-002)."
     },
     "assembly": {
-      "$ref": "#/$defs/assembly"
+      "$ref": "#/$defs/assembly",
+      "x-data-role": "assembly"
     },
     "provider_preference": {
       "$ref": "#/$defs/provider_preference"
@@ -193,7 +209,12 @@
       "description": "Discovered only: which correlation-id schemes matched this observation to `entity_uuid` (dcm ADR-017 Decision C). Empty on an unclaimed observation."
     },
     "policies": {
-      "$ref": "#/$defs/policies"
+      "$ref": "#/$defs/policies",
+      "x-data-role": "governance"
+    },
+    "dispatch": {
+      "$ref": "#/$defs/dispatch",
+      "x-data-role": "governance"
     }
   },
   "allOf": [
@@ -229,7 +250,10 @@
           "constituents": false,
           "policies": false,
           "intent_ref_head": false,
-          "requested_ref_head": false
+          "requested_ref_head": false,
+          "root_request_uuid": false,
+          "caused_by_request": false,
+          "dispatch": false
         },
         "required": [
           "fields"
@@ -261,11 +285,23 @@
           "portability": false,
           "expected_observation": false,
           "matched_by": false,
-          "requested_ref_head": false
+          "requested_ref_head": false,
+          "dependencies": {
+            "items": {
+              "properties": {
+                "target_key": false
+              },
+              "required": [
+                "edge_type",
+                "target_uuid"
+              ]
+            }
+          }
         },
         "required": [
           "fields",
-          "intent_ref"
+          "intent_ref",
+          "root_request_uuid"
         ]
       }
     },
@@ -290,7 +326,21 @@
           "provider_preference": false,
           "matched_by": false,
           "policies": false,
-          "intent_ref_head": false
+          "intent_ref_head": false,
+          "dependencies": {
+            "items": {
+              "properties": {
+                "target_key": false
+              },
+              "required": [
+                "edge_type",
+                "target_uuid"
+              ]
+            }
+          },
+          "root_request_uuid": false,
+          "caused_by_request": false,
+          "dispatch": false
         },
         "required": [
           "fields",
@@ -326,11 +376,27 @@
           "process": false,
           "priced_by": false,
           "constituents": false,
-          "dependencies": false,
+          "dependencies": {
+            "items": {
+              "required": [
+                "edge_type",
+                "target_key"
+              ],
+              "properties": {
+                "strength": false,
+                "relation": false,
+                "bound_field": false,
+                "target_field": false
+              }
+            }
+          },
           "sovereignty": false,
           "policies": false,
           "intent_ref_head": false,
-          "requested_ref_head": false
+          "requested_ref_head": false,
+          "root_request_uuid": false,
+          "caused_by_request": false,
+          "dispatch": false
         },
         "required": [
           "fields"
@@ -644,6 +710,75 @@
         "previous": "sha256:e8889df6cff24766f2dc1697342d6f7949a23c1a1364b45e6fdfb2f3eaa6b264",
         "algorithm": "sha256-jcs"
       }
+    },
+    {
+      "record_type": "discovered_record",
+      "state": "Discovered",
+      "record_uuid": "01a0e3cb-34d1-7432-bb67-3a6d0c4f1e27",
+      "entity_uuid": "2f7c9a41-8e3d-4b6a-9c15-7d2e4f8a1b03",
+      "tenant_uuid": "75ccf4ff-3e8d-4963-bc51-459ae1014cb7",
+      "conforms_to": "udlm/0.1",
+      "resource_type": "Machine.VM",
+      "type_version": "2.0.0",
+      "type_ref": "https://udlm.dev/registry/udlm/0.1/class/Machine.VM/2.0.0",
+      "handle": "lab/vm/app-01",
+      "generation": 1,
+      "origin": "discovered-derived",
+      "at": "2026-09-03T14:18:00Z",
+      "time_source": "discovery-sweep",
+      "provider": "lab/providers/libvirt-host-a",
+      "fields": {
+        "cpu": {
+          "count": 4,
+          "sockets": 1,
+          "cores_per_socket": 4
+        },
+        "memory": {
+          "size": "16Gi"
+        },
+        "run_state": {
+          "desired_state": "running"
+        }
+      },
+      "outputs": {
+        "mac_addresses": [
+          "52:54:00:ab:12:34"
+        ],
+        "observed_run_state": "running"
+      },
+      "correlation_ids": [
+        {
+          "scheme": "libvirt-domain-uuid",
+          "value": "4e2a7c19-6b3d-4f8e-a1c5-9d0b2e7f3a64"
+        },
+        {
+          "scheme": "mac",
+          "value": "52:54:00:ab:12:34"
+        }
+      ],
+      "matched_by": [
+        "libvirt-domain-uuid"
+      ],
+      "dependencies": [
+        {
+          "edge_type": "contained_by",
+          "target_uuid": "8a4d1e6f-2b3c-4d5e-9f0a-1b2c3d4e5f60",
+          "target_handle": "lab/host/host-a",
+          "target_key": {
+            "scheme": "smbios-uuid",
+            "value": "3f6b1a2c-9d4e-4b7f-8a1c-2e5d7f9b0c43"
+          },
+          "resolved_at": "2026-09-03T14:18:00Z"
+        },
+        {
+          "edge_type": "depends_on",
+          "target_key": {
+            "scheme": "provider-id",
+            "value": "libvirt-host-a/pool-a/app-01-root.qcow2"
+          },
+          "resolved_at": "2026-09-03T14:18:00Z"
+        }
+      ]
     }
   ],
   "$defs": {
@@ -712,13 +847,12 @@
     },
     "dependencies": {
       "type": "array",
-      "description": "Resolved instance-level edges (the realized form of the type's relationships). A binding records the value pulled from the target's realized output — data movement, not transformation (T4).",
+      "description": "Resolved instance-level edges (the realized form of the type's relationships). A binding records the value pulled from the target's realized output — data movement, not transformation (T4). On a discovered record these are the edges a sweep observed (four-states.md §2.4, RHY-007): each names its target by `target_key`, the natural key the probe read, and carries none of the declared semantics (`strength`, `relation`, `bound_field`, `target_field`).",
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "edge_type",
-          "target_uuid"
+          "edge_type"
         ],
         "properties": {
           "edge_type": {
@@ -726,7 +860,8 @@
           },
           "target_uuid": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "The target entity. Required on requested and realized records (declared edges name their target by identity). On a discovered record it is present once the control plane has resolved `target_key` to an entity and absent until then (RHY-007)."
           },
           "target_field": {
             "type": "string"
@@ -758,6 +893,10 @@
             "type": "string",
             "pattern": "^[a-z][a-z0-9_]*$",
             "description": "The declared relation name from the pinned type's relationship vocabulary (relationships[].name) — REL-001: must be declared; REL-003: refines, never overrides, kind's ordering semantics, so graph consumers that read only kind+strength stay correct. NOT bound_field (which is strictly the data-binding field of a binds_to edge)."
+          },
+          "target_key": {
+            "$ref": "#/$defs/correlation_ids/items",
+            "description": "Discovered only: the natural key the probe read for the target — a `correlation_ids` scheme and value — from which `target_uuid` is resolved (RHY-007). A target identified by a compound key (a switch port: chassis and port) uses a scheme that names the compound; the scheme list is extensible. Refused on intent, requested and realized records, whose targets are declared by identity."
           }
         }
       }
@@ -1337,15 +1476,7 @@
       }
     },
     "data_role": {
-      "enum": [
-        "execution",
-        "assembly",
-        "governance",
-        "audit",
-        "cost"
-      ],
-      "x-extensible-enum": true,
-      "description": "Data ROLE — the purpose axis (ADR-PROV-001; docs/spec/contracts/data-roles.md), ORTHOGONAL to data_classification (sensitivity). Governs dispatch: only `execution` crosses to a provider by default. execution = the provider needs it to realize the resource (the dispatch contract); assembly = control-plane assembly record (unapplied contributions, excluded layers); governance/audit/cost = other control-plane concerns. A provider may opt into non-execution roles via accepts_roles, subject to Governance-Matrix policy."
+      "$ref": "common-elements.schema.json#/$defs/data_role"
     },
     "at": {
       "type": "string",
@@ -1539,6 +1670,80 @@
           "reason": {
             "type": "string"
           }
+        }
+      }
+    },
+    "dispatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "admitted"
+      ],
+      "description": "The receipt of what crossed to the provider (DSP-004). Control-plane only. `admitted` is exactly what was sent: the bound class's elements (DSP-002) plus policy grants (DSP-003), minus policy strips.",
+      "properties": {
+        "provider": {
+          "$ref": "common-elements.schema.json#/$defs/Reference",
+          "description": "The provider the payload went to."
+        },
+        "admitted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Every dot-path into `fields` that crossed. Nothing else did."
+        },
+        "granted": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "policy"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "policy": {
+                "$ref": "common-elements.schema.json#/$defs/Reference"
+              },
+              "version": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          },
+          "description": "Paths admitted beyond the bound class, each with the policy that granted it. That policy is also in `policies[]` with decision allow."
+        },
+        "stripped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "policy"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "policy": {
+                "$ref": "common-elements.schema.json#/$defs/Reference"
+              },
+              "version": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          },
+          "description": "Paths a policy removed, each with the policy."
         }
       }
     }

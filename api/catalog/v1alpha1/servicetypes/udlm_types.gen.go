@@ -10,11 +10,11 @@ type UDLMType struct {
 
 // UDLMTypes maps a service type slug to the UDLM class and version it projects.
 var UDLMTypes = map[string]UDLMType{
-	"cluster": {ResourceType: "KubernetesCluster", Version: "2.0.0"},
+	"cluster":   {ResourceType: "KubernetesCluster", Version: "2.0.0"},
 	"container": {ResourceType: "Container", Version: "1.0.2"},
-	"database": {ResourceType: "Data.Database", Version: "0.7.7"},
-	"storage": {ResourceType: "Storage.Volume", Version: "0.11.6"},
-	"vm": {ResourceType: "Machine.VM", Version: "2.0.0"},
+	"database":  {ResourceType: "Data.Database", Version: "0.7.7"},
+	"storage":   {ResourceType: "Storage.Volume", Version: "0.11.6"},
+	"vm":        {ResourceType: "Machine.VM", Version: "2.0.0"},
 }
 
 // LookupUDLMType returns the UDLM class behind a service type slug.
@@ -34,34 +34,34 @@ type UDLMOutput struct {
 // UDLMOutputs maps a service type slug to the outputs its UDLM class declares, by name.
 var UDLMOutputs = map[string]map[string]UDLMOutput{
 	"cluster": {
-		"api_url": {Type: "string", Sensitive: false},
-		"cluster_id": {Type: "string", Sensitive: false},
+		"api_url":     {Type: "string", Sensitive: false},
+		"cluster_id":  {Type: "string", Sensitive: false},
 		"console_url": {Type: "string", Sensitive: false},
-		"kubeconfig": {Type: "string", Sensitive: true},
+		"kubeconfig":  {Type: "string", Sensitive: true},
 	},
 	"container": {
-		"endpoint": {Type: "string", Sensitive: false},
+		"endpoint":     {Type: "string", Sensitive: false},
 		"internal_dns": {Type: "string", Sensitive: false},
 	},
 	"database": {
-		"applied_version": {Type: "string", Sensitive: false},
+		"applied_version":   {Type: "string", Sensitive: false},
 		"connection_string": {Type: "string", Sensitive: true},
-		"host": {Type: "string", Sensitive: false},
-		"port": {Type: "integer", Sensitive: false},
-		"username": {Type: "string", Sensitive: false},
+		"host":              {Type: "string", Sensitive: false},
+		"port":              {Type: "integer", Sensitive: false},
+		"username":          {Type: "string", Sensitive: false},
 	},
 	"storage": {
-		"attached": {Type: "boolean", Sensitive: false},
+		"attached":      {Type: "boolean", Sensitive: false},
 		"volume_handle": {Type: "string", Sensitive: false},
 	},
 	"vm": {
-		"hostname": {Type: "string", Sensitive: false},
-		"ip_addresses": {Type: "array", Sensitive: false},
-		"mac_addresses": {Type: "array", Sensitive: false},
+		"hostname":           {Type: "string", Sensitive: false},
+		"ip_addresses":       {Type: "array", Sensitive: false},
+		"mac_addresses":      {Type: "array", Sensitive: false},
 		"observed_run_state": {Type: "string", Sensitive: false},
-		"primary_ip": {Type: "string", Sensitive: false},
-		"provider_handle": {Type: "string", Sensitive: false},
-		"target_segment": {Type: "string", Sensitive: false},
+		"primary_ip":         {Type: "string", Sensitive: false},
+		"provider_handle":    {Type: "string", Sensitive: false},
+		"target_segment":     {Type: "string", Sensitive: false},
 	},
 }
 
@@ -69,4 +69,20 @@ var UDLMOutputs = map[string]map[string]UDLMOutput{
 func LookupUDLMOutput(slug, name string) (UDLMOutput, bool) {
 	o, ok := UDLMOutputs[slug][name]
 	return o, ok
+}
+
+// UDLMElements maps a service type slug to the top-level element names of its UDLM class —
+// the only heads a dispatched path may have without a policy grant (DSP-002).
+var UDLMElements = map[string][]string{
+	"cluster":   {"network", "release"},
+	"container": {"args", "command", "image", "network", "process", "resources", "runtime"},
+	"database":  {"engine", "metadata", "resources", "version"},
+	"storage":   {"access_mode", "capacity", "layout_entry", "retain_on_release", "storage_class", "volume_mode"},
+	"vm":        {"boot_order", "cpu", "firmware", "guest_os", "instance_size", "layout_ref", "memory", "networks", "placement", "run_state", "storage", "storage_tier"},
+}
+
+// LookupUDLMElements returns the element names of a service type's UDLM class.
+func LookupUDLMElements(slug string) ([]string, bool) {
+	e, ok := UDLMElements[slug]
+	return e, ok
 }

@@ -26,6 +26,10 @@ const ConformsTo = "udlm/0.1"
 type Type struct {
 	ResourceType string
 	Version      string
+	// Elements are the class's top-level element names — the only heads a
+	// dispatched path may have (DSP-002). Nil means the writer does not know the
+	// class's elements, and then nothing may be admitted (DSP-001).
+	Elements []string
 }
 
 // TypeLookup maps a control-plane service type (the `service_type` value in a
@@ -143,6 +147,17 @@ func (w *Writer) Requested(ctx context.Context, in RequestedInput) {
 		}
 		rec["generation"] = intent.Generation
 		rec["fields"] = fields
+		// Every requested record names the root of its order (DEP-015). The control
+		// plane does not expand declared dependencies into child requests yet, so
+		// each request is its own root. caused_by_request (DEP-018) is written only
+		// by a provider-originated request, which the control plane does not take.
+		rec["root_request_uuid"] = rec["record_uuid"]
+		// The receipt of what crossed to the provider (DSP-004).
+		receipt, err := dispatchReceipt("dcm/agents/"+in.AgentName, fields, t)
+		if err != nil {
+			return nil, err
+		}
+		rec["dispatch"] = receipt
 		intentFields, _ := intent.Body["fields"].(map[string]any)
 		prov, changed := diffProvenance(intentFields, fields, "policy", "dcm/placement", stringOf(rec["at"]))
 		if len(prov) > 0 {

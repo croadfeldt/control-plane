@@ -54,8 +54,8 @@
   "handle": "lab/vm/app-01",
   "integrity": {
     "algorithm": "sha256-jcs",
-    "head": "sha256:897bd89d04f3f4626e76f5fdecf128b79e1fe1bb65a4879aeaf6c4421349c78a",
-    "previous": "sha256:73554999e7dd2b597cb30e8dd9836450613158b3b4a64a169ce6c34a3e1f1d93"
+    "head": "sha256:12497c4e8b893398f0ab1e0de9922ca51e9befceb5c5f68613a36624c0606366",
+    "previous": "sha256:2e87c019f61c38a449dedbadfdd0fcbd754822304fb90c56ca700cc75d93d64b"
   },
   "lifecycle_state": "Realized",
   "metadata": {
@@ -288,6 +288,31 @@
     "zone": "us-mn-sovereign"
   },
   "states": {
+    "discovered": {
+      "at": "2026-09-03T14:18:00Z",
+      "fields": {
+        "cpu": {
+          "cores_per_socket": 4,
+          "count": 4,
+          "sockets": 1
+        },
+        "memory": {
+          "size": "16Gi"
+        },
+        "run_state": {
+          "desired_state": "running"
+        }
+      },
+      "origin": "discovered-derived",
+      "outputs": {
+        "mac_addresses": [
+          "52:54:00:ab:12:34"
+        ],
+        "observed_run_state": "running"
+      },
+      "provider": "lab/providers/libvirt-host-a",
+      "time_source": "discovery-sweep"
+    },
     "intent": {
       "at": "2026-09-03T14:02:11Z",
       "fields": {
@@ -368,8 +393,8 @@
         "provider_handle": "app-01"
       },
       "provider": "lab/providers/libvirt-host-a",
-      "requested_ref": "01a0e3cb-34d1-7432-bb67-3a6659508554",
-      "requested_ref_head": "sha256:da15e497409dea2ef8bce8c56601cf61a0fead29c792f1eb9aa4f3e1d4f5d98f",
+      "requested_ref": "01a0eb91-3cbf-756c-bc00-a4e7eb1900e9",
+      "requested_ref_head": "sha256:eb9de91bd6f2a9c69c5884cc751af7f12412d183239f8be6571893a040588c01",
       "time_source": "provider-callback"
     },
     "requested": {
@@ -421,6 +446,26 @@
         "unapplied": []
       },
       "at": "2026-09-03T14:02:14Z",
+      "dispatch": {
+        "admitted": [
+          "cpu.count",
+          "cpu.sockets",
+          "cpu.cores_per_socket",
+          "memory.size",
+          "guest_os.type",
+          "guest_os.version",
+          "firmware.type",
+          "firmware.secure_boot",
+          "firmware.vtpm",
+          "networks",
+          "layout_ref",
+          "placement.location_ref",
+          "run_state.desired_state"
+        ],
+        "granted": [],
+        "provider": "lab/providers/libvirt-host-a",
+        "stripped": []
+      },
       "fields": {
         "cpu": {
           "cores_per_socket": 4,
@@ -494,6 +539,7 @@
           "version": "3.0.0"
         }
       ],
+      "root_request_uuid": "01a0eb91-3cbf-756c-bc00-a4e7eb1900e9",
       "time_source": "dcm-api"
     }
   },

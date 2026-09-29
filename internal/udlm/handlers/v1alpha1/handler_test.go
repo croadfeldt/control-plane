@@ -39,7 +39,7 @@ func seed(t *testing.T, st records.Store) {
 	t.Helper()
 	ctx := context.Background()
 	lookup := func(string) (records.Type, bool) {
-		return records.Type{ResourceType: "Machine.VM", Version: "2.0.0"}, true
+		return records.Type{ResourceType: "Machine.VM", Version: "2.0.0", Elements: []string{"cpu", "memory", "networks", "guest_os", "firmware", "layout_ref", "placement", "run_state", "storage", "storage_tier", "boot_order", "instance_size"}}, true
 	}
 	w := records.NewWriter(st, lookup, "75ccf4ff-3e8d-4963-bc51-459ae1014cb7", slog.Default())
 	spec := map[string]any{"service_type": "vm", "cpu": map[string]any{"count": 4}}

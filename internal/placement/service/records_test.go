@@ -39,7 +39,7 @@ var _ = Describe("UDLM per-state records", func() {
 		recordStore = records.NewStore(db)
 		lookup := func(slug string) (records.Type, bool) {
 			if slug == "vm" {
-				return records.Type{ResourceType: "Machine.VM", Version: "2.0.0"}, true
+				return records.Type{ResourceType: "Machine.VM", Version: "2.0.0", Elements: []string{"cpu", "memory", "networks", "guest_os", "firmware", "layout_ref", "placement", "run_state", "storage", "storage_tier", "boot_order", "instance_size"}}, true
 			}
 			return records.Type{}, false
 		}

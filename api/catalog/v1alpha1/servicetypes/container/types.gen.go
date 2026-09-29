@@ -157,7 +157,7 @@ type Env struct {
 	// Value Literal value — non-secret only.
 	Value *string `json:"value,omitempty"`
 
-	// ValueFrom Reference to a Security.CredentialRef or config source. Secret material is NEVER inline (DCM ADR-023).
+	// ValueFrom Reference to a CredentialRef or config source. Secret material is NEVER inline (DCM ADR-023).
 	ValueFrom            *ValueFrom             `json:"value_from,omitempty"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
@@ -231,9 +231,9 @@ type Runtime struct {
 // RuntimeRestartPolicy defines model for Runtime.RestartPolicy.
 type RuntimeRestartPolicy string
 
-// ValueFrom Reference to a Security.CredentialRef or config source. Secret material is NEVER inline (DCM ADR-023).
+// ValueFrom Reference to a CredentialRef or config source. Secret material is NEVER inline (DCM ADR-023).
 type ValueFrom struct {
-	// CredentialRef handle or uuid of a Security.CredentialRef
+	// CredentialRef handle or uuid of a CredentialRef
 	CredentialRef        *string                `json:"credential_ref,omitempty"`
 	Key                  *string                `json:"key,omitempty"`
 	AdditionalProperties map[string]interface{} `json:"-"`

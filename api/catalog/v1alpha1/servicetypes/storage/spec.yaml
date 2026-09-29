@@ -16,7 +16,7 @@ components:
       description: |-
         A CONSUMABLE persistent storage volume — the block or file volume a workload attaches, as distinct from the StorageCluster that PROVISIONS it (the platform) and the physical device that backs it. Vendor-neutral Tier-1: provisioners (Ceph RBD/CephFS, cloud CSI drivers, NFS) are the provider, never the type. Adopts Kubernetes PersistentVolumeClaim/CSI + SNIA Swordfish Volume. A Base by the Base test (CLS-002): Kubernetes PVC/CSI and SNIA Swordfish Volume abstract over every consumable volume, so an order for capacity with an access mode is fillable by any provisioner; a host-local ZFS dataset is a dialect Type beneath it (Volume.ZFS).
 
-        Provider-agnostic storage volume specification, generated from the UDLM Volume (v0.12.1) resource type — the UDLM registry is the source of truth. Non-portable provider settings go under provider_hints (CommonFields). Regenerate with cmd/udlm-servicetype-gen; do not hand-edit.
+        Provider-agnostic storage volume specification, generated from the UDLM Volume (v0.12.2) resource type — the UDLM registry is the source of truth. Non-portable provider settings go under provider_hints (CommonFields). Regenerate with cmd/udlm-servicetype-gen; do not hand-edit.
 
         Realized outputs (read-only, provider-populated): volume_handle, attached.
       allOf:

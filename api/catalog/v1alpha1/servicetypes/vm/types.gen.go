@@ -144,7 +144,7 @@ type Memory struct {
 
 // Network defines model for Network.
 type Network struct {
-	// IpAddressRef A pre-allocated Network.IPAddress to bind to this interface (optional — omitted means the address service allocates at realization). Common-elements Reference shape.
+	// IpAddressRef A pre-allocated IPAddress to bind to this interface (optional — omitted means the address service allocates at realization). Common-elements Reference shape.
 	IpAddressRef *string `json:"ip_address_ref,omitempty"`
 
 	// Mac Optional requested MAC address.
@@ -153,10 +153,10 @@ type Network struct {
 	// Name Local NIC name, e.g. eth0.
 	Name *string `json:"name,omitempty"`
 
-	// NetworkRef The Network.VirtualNetwork this interface attaches to — common-elements Reference (handle string or {uuid, handle} object); resolvable, policy-walkable, never an opaque string.
+	// NetworkRef The VirtualNetwork this interface attaches to — common-elements Reference (handle string or {uuid, handle} object); resolvable, policy-walkable, never an opaque string.
 	NetworkRef *string `json:"network_ref,omitempty"`
 
-	// Subnet REQUIREMENT — WHICH IP NETWORK, as a reference to a `Network.Subnet`. Layer 3, and INDEPENDENTLY SELECTABLE from `vlan` (layer 2): a subnet usually sits on a segment, but one segment may carry several subnets and a cloud may expose no segment at all, so the mapping is not concrete (maintainer ruling 2026-08-10). "Put me on 198.51.100.0/24" and "put me on VLAN 3020" are different requests; a consumer may state either, both, or neither.
+	// Subnet REQUIREMENT — WHICH IP NETWORK, as a reference to a `Subnet`. Layer 3, and INDEPENDENTLY SELECTABLE from `vlan` (layer 2): a subnet usually sits on a segment, but one segment may carry several subnets and a cloud may expose no segment at all, so the mapping is not concrete (maintainer ruling 2026-08-10). "Put me on 198.51.100.0/24" and "put me on VLAN 3020" are different requests; a consumer may state either, both, or neither.
 	Subnet *string `json:"subnet,omitempty"`
 
 	// Tier REQUIREMENT — the governed `network_tier` (performance) this attachment needs. Independent of `vlan`: which logical network and how good it is are different questions, and a consumer may state either, both, or neither. Each term denotes a floor, so any network meeting it qualifies — name-selectable but requirements-authoritative (ADR-036).
@@ -164,7 +164,7 @@ type Network struct {
 	// Constraint (UDLM allOf): reference_data_type = network_tier.
 	Tier *string `json:"tier,omitempty"`
 
-	// Vlan REQUIREMENT — WHICH LOGICAL NETWORK, as a reference to a `Network.VLAN`. The VLAN is the identity of a logical network (maintainer ruling 2026-08-10): a segment id under an encapsulation, which is what an operator means by "put it on that network". Stated when the attachment must land on a specific logical network — because it has to reach something already there, or an existing application lives on it. Absent means policy decides. REALIZATION VARIES; THE AXIS DOES NOT. `Network.VLAN.encapsulation` already carries vlan / vxlan / geneve / flat, so the class is a SEGMENT of which 802.1Q is one form. A public cloud exposes no VLAN — there the segment is a VPC subnet, adopted by reference on Network.VLAN rather than given a parallel class: the VPC is the Network.VirtualNetwork and the subnet is the addressed segment within it. A consumer states the segment; which encapsulation realizes it is the provider's. Resolved against the `segment` relationship a Network.VirtualNetwork already declares, so placement narrows to networks on that segment rather than requiring the consumer to know which provider network carries it.
+	// Vlan REQUIREMENT — WHICH LOGICAL NETWORK, as a reference to a `VLAN`. The VLAN is the identity of a logical network (maintainer ruling 2026-08-10): a segment id under an encapsulation, which is what an operator means by "put it on that network". Stated when the attachment must land on a specific logical network — because it has to reach something already there, or an existing application lives on it. Absent means policy decides. REALIZATION VARIES; THE AXIS DOES NOT. `VLAN.encapsulation` already carries vlan / vxlan / geneve / flat, so the class is a SEGMENT of which 802.1Q is one form. A public cloud exposes no VLAN — there the segment is a VPC subnet, adopted by reference on VLAN rather than given a parallel class: the VPC is the VirtualNetwork and the subnet is the addressed segment within it. A consumer states the segment; which encapsulation realizes it is the provider's. Resolved against the `segment` relationship a VirtualNetwork already declares, so placement narrows to networks on that segment rather than requiring the consumer to know which provider network carries it.
 	Vlan *string `json:"vlan,omitempty"`
 
 	// Zone REQUIREMENT — the network CATEGORY this attachment needs (DMZ, management, internal), as a governed taxonomy term. Independent of `vlan` and `tier`: which logical network, what kind of network, and how good it is are three different questions, and a consumer may state any, all, or none of them. FOR PLACEMENT ONLY. Requiring the management zone does not grant access to it, and nothing critical may hang off the category directly — anything required because of a zone is enforced by a policy reading it (maintainer ruling 2026-08-10). A zero-trust posture derives no trust from network location (NIST SP 800-207).
@@ -174,12 +174,12 @@ type Network struct {
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// Placement Placement INTENT expressed as a SELECTION of an existing Facility.Location (populated by a platform data layer and/or a Facility.Location provider), plus affinity relative to other existing resources. Policy governs which locations a given consumer may select; the VM only references one — it does not define locations itself (DCM ADR-009 §4: guidance, not a gate).
+// Placement Placement INTENT expressed as a SELECTION of an existing Location (populated by a platform data layer and/or a Location provider), plus affinity relative to other existing resources. Policy governs which locations a given consumer may select; the VM only references one — it does not define locations itself (DCM ADR-009 §4: guidance, not a gate).
 type Placement struct {
 	// Affinity Co-location / separation intent relative to OTHER named resources (not nodes). Each target is resolved at reserve, so a pre-known UUID is not required.
 	Affinity *[]Affinity `json:"affinity,omitempty"`
 
-	// LocationRef handle/uuid of an existing Facility.Location the VM is placed in — chosen from the eligible set (platform-layer + provider-advertised, policy-filtered). Also carried as a references->Facility.Location relationship.
+	// LocationRef handle/uuid of an existing Location the VM is placed in — chosen from the eligible set (platform-layer + provider-advertised, policy-filtered). Also carried as a references->Location relationship.
 	LocationRef *string `json:"location_ref,omitempty"`
 
 	// Zone Availability/sovereignty zone constraint, selected from the zones the provider advertises for the chosen location; resolved against that location.
@@ -265,7 +265,7 @@ type VMSpec struct {
 	// Path Resource path or location within the system hierarchy.
 	Path *string `json:"path,omitempty"`
 
-	// Placement Placement INTENT expressed as a SELECTION of an existing Facility.Location (populated by a platform data layer and/or a Facility.Location provider), plus affinity relative to other existing resources. Policy governs which locations a given consumer may select; the VM only references one — it does not define locations itself (DCM ADR-009 §4: guidance, not a gate).
+	// Placement Placement INTENT expressed as a SELECTION of an existing Location (populated by a platform data layer and/or a Location provider), plus affinity relative to other existing resources. Policy governs which locations a given consumer may select; the VM only references one — it does not define locations itself (DCM ADR-009 §4: guidance, not a gate).
 	Placement *Placement `json:"placement,omitempty"`
 
 	// PrimaryIp The primary/management address — first of ip_addresses; the single-address convenience most bindings want.
@@ -306,7 +306,7 @@ type VMSpec struct {
 	// StorageTier The requested storage performance class — a GOVERNED vocabulary (ADR-038 §2): canonical terms are `storage_tier` reference-data records (standard/performance/archive), each denoting a requirements floor. Name-selectable but requirements-authoritative (ADR-036); profile decides bare string vs data_reference (ADR-007/ADR-039). Mirrors the Machine Base Class `storage_tier` element. Governed vocabulary `storage_tier` (ADR-038 §2); name-selectable but requirements-authoritative (ADR-036). Profile decides bare-vs-reference.
 	StorageTier *string `json:"storage_tier,omitempty"`
 
-	// TargetSegment Realize-time placement fact (ADR-011 two-phase reserve): a reference to the Network.VLAN segment the reserved/realized placement can reach (adopt-not-absorb — the segment id/encapsulation live on the Network.VLAN). This is the declarable binding source for a fulfillment:provider dependency whose criteria are simply the target segment — e.g. a Network.IPAddress allocated on the reachable segment (DCM ADR-009 §3 worked example: bind target_segment -> the IP request's segment_ref). It is a shared-reference fact, NOT the vNIC/MAC/host-networking (those are the VM provider's own internal facts, never cross-provider criteria).
+	// TargetSegment Realize-time placement fact (ADR-011 two-phase reserve): a reference to the VLAN segment the reserved/realized placement can reach (adopt-not-absorb — the segment id/encapsulation live on the VLAN). This is the declarable binding source for a fulfillment:provider dependency whose criteria are simply the target segment — e.g. a IPAddress allocated on the reachable segment (DCM ADR-009 §3 worked example: bind target_segment -> the IP request's segment_ref). It is a shared-reference fact, NOT the vNIC/MAC/host-networking (those are the VM provider's own internal facts, never cross-provider criteria).
 	//
 	// UDLM realized output: populated by the provider when the resource reaches Realized; read-only on the request.
 	TargetSegment *string `json:"target_segment,omitempty"`

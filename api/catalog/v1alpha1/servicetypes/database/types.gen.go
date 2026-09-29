@@ -76,7 +76,7 @@ type DatabaseSpec struct {
 	// Values are provider-specific configuration objects.
 	ProviderHints *externalRef0.ProviderHints `json:"provider_hints,omitempty"`
 
-	// Resources Converted verbatim from the flat Data.Database spec.
+	// Resources Converted verbatim from the flat Database spec.
 	Resources Resources `json:"resources"`
 
 	// ServiceType Service type identifier.
@@ -105,7 +105,7 @@ type DatabaseSpec struct {
 // DatabaseSpecEngine Database engine.
 type DatabaseSpecEngine string
 
-// Resources Converted verbatim from the flat Data.Database spec.
+// Resources Converted verbatim from the flat Database spec.
 type Resources struct {
 	// Cpu CPU allocation, as a millicore string (`500m`) or whole/fractional cores (`2`, `1.5`) — Kubernetes-aligned quantity convention (#40 review). The provider reconciles to its concrete units at naturalization.
 	Cpu *string `json:"cpu,omitempty"`

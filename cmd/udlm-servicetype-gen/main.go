@@ -70,7 +70,7 @@ type mapping struct {
 var mappings = []mapping{
 	{"vm", "VM", "machine.vm.json", "DCM Virtual Machine Specification", "virtual machine"},
 	{"container", "Container", "container.json", "DCM Container Specification", "container workload"},
-	{"database", "Database", "data.database.json", "DCM Database Specification", "managed database"},
+	{"database", "Database", "database.json", "DCM Database Specification", "managed database"},
 	{"cluster", "Cluster", "kubernetes-cluster.json", "DCM Cluster Specification", "Kubernetes cluster"},
 	{"storage", "Storage", "volume.json", "DCM Storage Specification", "storage volume"},
 }

@@ -14,9 +14,9 @@ components:
     DatabaseSpec:
       type: object
       description: |-
-        A managed relational database instance. Publishes connection outputs other resources bind to. Reconciled 2026-07-07 with the dcm-project catalog DatabaseSpec (#271): resources now required (matching their DatabaseSpec), and the storage/host relationships added so a database's data volume and placement are first-class edges.
+        A managed relational database instance. Publishes connection outputs other resources bind to. Reconciled 2026-07-07 with the dcm-project catalog DatabaseSpec (#271): resources now required (matching their DatabaseSpec), and the storage/host relationships added so a database's data volume and placement are first-class edges. A Base by the Base test (CLS-002): a managed database is ordered as an engine, a version and resources, which every database operator and cloud data service fills the same way; the engine is an element, and becomes a dialect Type only when a dialect carries elements of its own.
 
-        Provider-agnostic managed database specification, generated from the UDLM Data.Database (v0.7.8) resource type — the UDLM registry is the source of truth. Non-portable provider settings go under provider_hints (CommonFields). Regenerate with cmd/udlm-servicetype-gen; do not hand-edit.
+        Provider-agnostic managed database specification, generated from the UDLM Database (v0.8.0) resource type — the UDLM registry is the source of truth. Non-portable provider settings go under provider_hints (CommonFields). Regenerate with cmd/udlm-servicetype-gen; do not hand-edit.
 
         Envelope-reserved collisions skipped (owned by CommonFields, rename upstream in UDLM): metadata.
 
@@ -77,7 +77,7 @@ components:
           additionalProperties: true
     Resources:
       type: object
-      description: Converted verbatim from the flat Data.Database spec.
+      description: Converted verbatim from the flat Database spec.
       properties:
         instance_size:
           type: string

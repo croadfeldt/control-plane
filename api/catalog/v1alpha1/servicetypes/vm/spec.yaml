@@ -16,7 +16,7 @@ components:
       description: |-
         The VM Type Class — extends the Machine Base Class (cpu/memory/storage/storage_tier/guest_os, inherited) with VM-specific SharedDataElements, under the Liskov invariant (add or refine, never contradict). A provider Class (Machine.VM.OCPVirt, …) extends this further. The generator compiles this class + its ancestors into today's flat Machine.VM resource-type spec.
 
-        Provider-agnostic virtual machine specification, generated from the UDLM Machine.VM (v2.0.2) resource type — the UDLM registry is the source of truth. Non-portable provider settings go under provider_hints (CommonFields). Regenerate with cmd/udlm-servicetype-gen; do not hand-edit.
+        Provider-agnostic virtual machine specification, generated from the UDLM Machine.VM (v2.0.4) resource type — the UDLM registry is the source of truth. Non-portable provider settings go under provider_hints (CommonFields). Regenerate with cmd/udlm-servicetype-gen; do not hand-edit.
 
         Sizing constraint (UDLM oneOf): provide exactly one of [instance_size] OR [cpu + memory].
 
@@ -113,7 +113,7 @@ components:
             target_segment:
               type: string
               description: |-
-                Realize-time placement fact (ADR-011 two-phase reserve): a reference to the Network.VLAN segment the reserved/realized placement can reach (adopt-not-absorb — the segment id/encapsulation live on the Network.VLAN). This is the declarable binding source for a fulfillment:provider dependency whose criteria are simply the target segment — e.g. a Network.IPAddress allocated on the reachable segment (DCM ADR-009 §3 worked example: bind target_segment -> the IP request's segment_ref). It is a shared-reference fact, NOT the vNIC/MAC/host-networking (those are the VM provider's own internal facts, never cross-provider criteria).
+                Realize-time placement fact (ADR-011 two-phase reserve): a reference to the VLAN segment the reserved/realized placement can reach (adopt-not-absorb — the segment id/encapsulation live on the VLAN). This is the declarable binding source for a fulfillment:provider dependency whose criteria are simply the target segment — e.g. a IPAddress allocated on the reachable segment (DCM ADR-009 §3 worked example: bind target_segment -> the IP request's segment_ref). It is a shared-reference fact, NOT the vNIC/MAC/host-networking (those are the VM provider's own internal facts, never cross-provider criteria).
 
                 UDLM realized output: populated by the provider when the resource reaches Realized; read-only on the request.
               readOnly: true
@@ -214,15 +214,15 @@ components:
         network_ref:
           type: string
           format: udlm-ref-url
-          description: The Network.VirtualNetwork this interface attaches to — common-elements Reference (handle string or {uuid, handle} object); resolvable, policy-walkable, never an opaque string.
+          description: The VirtualNetwork this interface attaches to — common-elements Reference (handle string or {uuid, handle} object); resolvable, policy-walkable, never an opaque string.
         vlan:
           type: string
           format: udlm-ref-url
-          description: 'REQUIREMENT — WHICH LOGICAL NETWORK, as a reference to a `Network.VLAN`. The VLAN is the identity of a logical network (maintainer ruling 2026-08-10): a segment id under an encapsulation, which is what an operator means by "put it on that network". Stated when the attachment must land on a specific logical network — because it has to reach something already there, or an existing application lives on it. Absent means policy decides. REALIZATION VARIES; THE AXIS DOES NOT. `Network.VLAN.encapsulation` already carries vlan / vxlan / geneve / flat, so the class is a SEGMENT of which 802.1Q is one form. A public cloud exposes no VLAN — there the segment is a VPC subnet, adopted by reference on Network.VLAN rather than given a parallel class: the VPC is the Network.VirtualNetwork and the subnet is the addressed segment within it. A consumer states the segment; which encapsulation realizes it is the provider''s. Resolved against the `segment` relationship a Network.VirtualNetwork already declares, so placement narrows to networks on that segment rather than requiring the consumer to know which provider network carries it.'
+          description: 'REQUIREMENT — WHICH LOGICAL NETWORK, as a reference to a `VLAN`. The VLAN is the identity of a logical network (maintainer ruling 2026-08-10): a segment id under an encapsulation, which is what an operator means by "put it on that network". Stated when the attachment must land on a specific logical network — because it has to reach something already there, or an existing application lives on it. Absent means policy decides. REALIZATION VARIES; THE AXIS DOES NOT. `VLAN.encapsulation` already carries vlan / vxlan / geneve / flat, so the class is a SEGMENT of which 802.1Q is one form. A public cloud exposes no VLAN — there the segment is a VPC subnet, adopted by reference on VLAN rather than given a parallel class: the VPC is the VirtualNetwork and the subnet is the addressed segment within it. A consumer states the segment; which encapsulation realizes it is the provider''s. Resolved against the `segment` relationship a VirtualNetwork already declares, so placement narrows to networks on that segment rather than requiring the consumer to know which provider network carries it.'
         subnet:
           type: string
           format: udlm-ref-url
-          description: 'REQUIREMENT — WHICH IP NETWORK, as a reference to a `Network.Subnet`. Layer 3, and INDEPENDENTLY SELECTABLE from `vlan` (layer 2): a subnet usually sits on a segment, but one segment may carry several subnets and a cloud may expose no segment at all, so the mapping is not concrete (maintainer ruling 2026-08-10). "Put me on 198.51.100.0/24" and "put me on VLAN 3020" are different requests; a consumer may state either, both, or neither.'
+          description: 'REQUIREMENT — WHICH IP NETWORK, as a reference to a `Subnet`. Layer 3, and INDEPENDENTLY SELECTABLE from `vlan` (layer 2): a subnet usually sits on a segment, but one segment may carry several subnets and a cloud may expose no segment at all, so the mapping is not concrete (maintainer ruling 2026-08-10). "Put me on 198.51.100.0/24" and "put me on VLAN 3020" are different requests; a consumer may state either, both, or neither.'
         zone:
           type: string
           format: udlm-ref-url
@@ -243,15 +243,15 @@ components:
         ip_address_ref:
           type: string
           format: udlm-ref-url
-          description: A pre-allocated Network.IPAddress to bind to this interface (optional — omitted means the address service allocates at realization). Common-elements Reference shape.
+          description: A pre-allocated IPAddress to bind to this interface (optional — omitted means the address service allocates at realization). Common-elements Reference shape.
       additionalProperties: true
     Placement:
       type: object
-      description: 'Placement INTENT expressed as a SELECTION of an existing Facility.Location (populated by a platform data layer and/or a Facility.Location provider), plus affinity relative to other existing resources. Policy governs which locations a given consumer may select; the VM only references one — it does not define locations itself (DCM ADR-009 §4: guidance, not a gate).'
+      description: 'Placement INTENT expressed as a SELECTION of an existing Location (populated by a platform data layer and/or a Location provider), plus affinity relative to other existing resources. Policy governs which locations a given consumer may select; the VM only references one — it does not define locations itself (DCM ADR-009 §4: guidance, not a gate).'
       properties:
         location_ref:
           type: string
-          description: handle/uuid of an existing Facility.Location the VM is placed in — chosen from the eligible set (platform-layer + provider-advertised, policy-filtered). Also carried as a references->Facility.Location relationship.
+          description: handle/uuid of an existing Location the VM is placed in — chosen from the eligible set (platform-layer + provider-advertised, policy-filtered). Also carried as a references->Location relationship.
         zone:
           type: string
           description: Availability/sovereignty zone constraint, selected from the zones the provider advertises for the chosen location; resolved against that location.

@@ -24,7 +24,7 @@ func catalogItemToStoreModel(id, path string, req *CreateCatalogItemRequest) mod
 // catalogItemToAPIType converts a store model to an API type
 func catalogItemToAPIType(m *model.CatalogItem) v1alpha1.CatalogItem {
 	spec := catalogItemSpecModelToAPI(m.Spec)
-	return v1alpha1.CatalogItem{
+	item := v1alpha1.CatalogItem{
 		ApiVersion:  &m.ApiVersion,
 		DisplayName: &m.DisplayName,
 		Spec:        &spec,
@@ -33,6 +33,10 @@ func catalogItemToAPIType(m *model.CatalogItem) v1alpha1.CatalogItem {
 		CreateTime:  &m.CreateTime,
 		UpdateTime:  &m.UpdateTime,
 	}
+	if groups := catalogItemGroups(m.Spec); groups != nil {
+		item.FiledUnder = &groups
+	}
+	return item
 }
 
 // mapCatalogItemStoreError converts store errors to service domain errors

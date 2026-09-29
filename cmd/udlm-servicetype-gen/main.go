@@ -72,7 +72,7 @@ var mappings = []mapping{
 	{"container", "Container", "container.json", "DCM Container Specification", "container workload"},
 	{"database", "Database", "data.database.json", "DCM Database Specification", "managed database"},
 	{"cluster", "Cluster", "kubernetes-cluster.json", "DCM Cluster Specification", "Kubernetes cluster"},
-	{"storage", "Storage", "storage.volume.json", "DCM Storage Specification", "storage volume"},
+	{"storage", "Storage", "volume.json", "DCM Storage Specification", "storage volume"},
 }
 
 func main() {
@@ -103,7 +103,12 @@ func main() {
 		fmt.Printf("generated %s from %s\n", filepath.Join(*outDir, m.slug, "spec.yaml"), m.udlmFile)
 	}
 	if *which == "all" {
-		if err := writeTypeTable(*outDir, generated); err != nil {
+		groups, err := readUsageGroups(*udlmDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+		if err := writeTypeTable(*outDir, generated, groups); err != nil {
 			fmt.Fprintf(os.Stderr, "write type table: %v\n", err)
 			os.Exit(1)
 		}
@@ -129,6 +134,7 @@ type udlmType struct {
 	version      string
 	outputs      map[string]outputInfo
 	elements     []string // top-level element names of the class's flat spec (the heads a dispatched path may have, DSP-002)
+	filedUnder   []string // usage groups the class is filed under (ADR-082); inherited by every offering of the type
 }
 
 // outputInfo is what the control plane needs to know about one declared output
@@ -142,7 +148,7 @@ type outputInfo struct {
 // on a full run so the control plane can name the class behind a service type.
 const typeTableFile = "udlm_types.gen.go"
 
-func writeTypeTable(outDir string, types map[string]udlmType) error {
+func writeTypeTable(outDir string, types map[string]udlmType, usageGroups []usageGroup) error {
 	slugs := make([]string, 0, len(types))
 	for s := range types {
 		slugs = append(slugs, s)
@@ -195,6 +201,28 @@ func writeTypeTable(outDir string, types map[string]udlmType) error {
 	sb.WriteString("}\n\n")
 	sb.WriteString("// LookupUDLMElements returns the element names of a service type's UDLM class.\n")
 	sb.WriteString("func LookupUDLMElements(slug string) ([]string, bool) {\n\te, ok := UDLMElements[slug]\n\treturn e, ok\n}\n")
+	sb.WriteString("\n// UDLMGroups maps a service type slug to the usage groups its UDLM class is filed under (ADR-082).\n// Every offering of the type inherits them; an offering never declares its own.\n")
+	sb.WriteString("var UDLMGroups = map[string][]string{\n")
+	for _, s := range slugs {
+		gs := append([]string(nil), types[s].filedUnder...)
+		sort.Strings(gs)
+		quoted := make([]string, len(gs))
+		for i, g := range gs {
+			quoted[i] = fmt.Sprintf("%q", g)
+		}
+		fmt.Fprintf(&sb, "\t%q: {%s},\n", s, strings.Join(quoted, ", "))
+	}
+	sb.WriteString("}\n\n")
+	sb.WriteString("// LookupUDLMGroups returns the usage groups of a service type's UDLM class.\n")
+	sb.WriteString("func LookupUDLMGroups(slug string) ([]string, bool) {\n\tg, ok := UDLMGroups[slug]\n\treturn g, ok\n}\n\n")
+	sb.WriteString("// UDLMUsageGroup is one term of the registry's usage-group vocabulary (registry/taxonomies/usage-group.yaml).\n")
+	sb.WriteString("type UDLMUsageGroup struct {\n\tTerm       string\n\tDefinition string\n}\n\n")
+	sb.WriteString("// UDLMUsageGroups is the vocabulary, in the registry's order. The catalog's shelves.\n")
+	sb.WriteString("var UDLMUsageGroups = []UDLMUsageGroup{\n")
+	for _, g := range usageGroups {
+		fmt.Fprintf(&sb, "\t{Term: %q, Definition: %q},\n", g.term, g.definition)
+	}
+	sb.WriteString("}\n")
 	src, err := format.Source([]byte(sb.String()))
 	if err != nil {
 		return fmt.Errorf("format %s: %w", typeTableFile, err)
@@ -266,7 +294,7 @@ func generate(m mapping, udlmDir, outDir string) (udlmType, error) {
 	if err := os.WriteFile(filepath.Join(dir, "spec.yaml"), data, 0o644); err != nil {
 		return udlmType{}, err
 	}
-	return udlmType{resourceType: resourceType, version: udlmVersion, outputs: declaredOutputs(mapGet(root, "outputs")), elements: propertyNames(mapGet(spec, "properties"))}, nil
+	return udlmType{resourceType: resourceType, version: udlmVersion, outputs: declaredOutputs(mapGet(root, "outputs")), elements: propertyNames(mapGet(spec, "properties")), filedUnder: seqStrings(mapGet(root, "filed_under"))}, nil
 }
 
 type generator struct {
@@ -895,6 +923,50 @@ func propertyNames(props *yaml.Node) []string {
 	out := make([]string, 0, len(props.Content)/2)
 	for i := 0; i+1 < len(props.Content); i += 2 {
 		out = append(out, props.Content[i].Value)
+	}
+	return out
+}
+
+// usageGroup is one term of registry/taxonomies/usage-group.yaml.
+type usageGroup struct {
+	term, definition string
+}
+
+// readUsageGroups reads the usage-group vocabulary, skipping the root term.
+func readUsageGroups(udlmDir string) ([]usageGroup, error) {
+	src := filepath.Join(udlmDir, "registry", "taxonomies", "usage-group.yaml")
+	raw, err := os.ReadFile(src)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", src, err)
+	}
+	var doc struct {
+		Root  string `yaml:"root"`
+		Terms []struct {
+			Term       string `yaml:"term"`
+			Definition string `yaml:"definition"`
+		} `yaml:"terms"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", src, err)
+	}
+	var out []usageGroup
+	for _, t := range doc.Terms {
+		if t.Term == doc.Root {
+			continue
+		}
+		out = append(out, usageGroup{term: t.Term, definition: strings.TrimSpace(t.Definition)})
+	}
+	return out, nil
+}
+
+// seqStrings returns a YAML sequence's scalar items.
+func seqStrings(n *yaml.Node) []string {
+	if n == nil || n.Kind != yaml.SequenceNode {
+		return nil
+	}
+	out := make([]string, 0, len(n.Content))
+	for _, c := range n.Content {
+		out = append(out, c.Value)
 	}
 	return out
 }

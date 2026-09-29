@@ -75,6 +75,10 @@ type CatalogItem struct {
 	// Mutable and does not need to be unique.
 	DisplayName *string `json:"display_name,omitempty"`
 
+	// FiledUnder Usage groups this is filed under, inherited from the UDLM class (ADR-082).
+	// Output-only; never set by a client.
+	FiledUnder *[]string `json:"filed_under,omitempty"`
+
 	// Path Resource path in the format: catalog-items/{catalogItemId}
 	Path *string `json:"path,omitempty"`
 
@@ -270,6 +274,10 @@ type ServiceType struct {
 
 	// CreateTime Timestamp when the resource was created (RFC 3339)
 	CreateTime *time.Time `json:"create_time,omitempty"`
+
+	// FiledUnder Usage groups this is filed under, inherited from the UDLM class (ADR-082).
+	// Output-only; never set by a client.
+	FiledUnder *[]string `json:"filed_under,omitempty"`
 	Metadata   *struct {
 		// Labels Key-value pairs for categorization and filtering.
 		// Both keys and values are strings.
@@ -320,6 +328,20 @@ type ServiceTypeList struct {
 	// Results Array of service type resources.
 	// May be empty if no results match the query.
 	Results []ServiceType `json:"results"`
+}
+
+// UsageGroup defines model for UsageGroup.
+type UsageGroup struct {
+	// Definition What the group holds.
+	Definition string `json:"definition"`
+
+	// Term The vocabulary term (a usage-group handle).
+	Term string `json:"term"`
+}
+
+// UsageGroupList defines model for UsageGroupList.
+type UsageGroupList struct {
+	Results []UsageGroup `json:"results"`
 }
 
 // UserValue defines model for UserValue.
@@ -418,6 +440,10 @@ type ListCatalogItemsParams struct {
 	// ServiceType Filter catalog items by service type.
 	// Returns items where any resource's service_type matches.
 	ServiceType *string `form:"service_type,omitempty" json:"service_type,omitempty"`
+
+	// FiledUnder Filter by usage group (a term of the UDLM usage-group vocabulary, see /usage-groups).
+	// Groups come from the UDLM class; they are inherited, never declared per item.
+	FiledUnder *string `form:"filed_under,omitempty" json:"filed_under,omitempty"`
 }
 
 // CreateCatalogItemParams defines parameters for CreateCatalogItem.
@@ -435,6 +461,10 @@ type ListServiceTypesParams struct {
 	// MaxPageSize Maximum number of items to return per page.
 	// If not specified, defaults to 100.
 	MaxPageSize *int32 `form:"max_page_size,omitempty" json:"max_page_size,omitempty"`
+
+	// FiledUnder Filter by usage group (a term of the UDLM usage-group vocabulary, see /usage-groups).
+	// Groups come from the UDLM class; they are inherited, never declared per item.
+	FiledUnder *string `form:"filed_under,omitempty" json:"filed_under,omitempty"`
 }
 
 // CreateServiceTypeParams defines parameters for CreateServiceType.

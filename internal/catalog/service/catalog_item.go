@@ -29,6 +29,7 @@ type CatalogItemListOptions struct {
 	PageToken   *string
 	MaxPageSize *int32
 	ServiceType *string // Filter by service_type
+	FiledUnder  *string // Filter by usage group (ADR-082)
 }
 
 // CatalogItemListResult contains the result of a List operation
@@ -62,6 +63,10 @@ func (s *catalogItemService) List(ctx context.Context, opts CatalogItemListOptio
 	storeOpts := &store.CatalogItemListOptions{
 		PageToken:   opts.PageToken,
 		ServiceType: opts.ServiceType,
+	}
+	if opts.FiledUnder != nil && *opts.FiledUnder != "" {
+		group := *opts.FiledUnder
+		storeOpts.Match = func(m model.CatalogItem) bool { return filedUnder(catalogItemGroups(m.Spec), group) }
 	}
 	if opts.MaxPageSize != nil {
 		storeOpts.PageSize = int(*opts.MaxPageSize)

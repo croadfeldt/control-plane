@@ -7,6 +7,7 @@ import (
 
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1"
 	"github.com/dcm-project/control-plane/internal/catalog/store"
+	"github.com/dcm-project/control-plane/internal/catalog/store/model"
 )
 
 // allowedServiceTypes defines the restricted set of valid service type values
@@ -34,6 +35,7 @@ type CreateServiceTypeRequest struct {
 type ServiceTypeListOptions struct {
 	PageToken   *string
 	MaxPageSize *int32
+	FiledUnder  *string // Filter by usage group (ADR-082)
 }
 
 // ServiceTypeListResult contains the result of a List operation
@@ -74,6 +76,10 @@ func (s *serviceTypeService) List(ctx context.Context, opts *ServiceTypeListOpti
 	storeOpts := &store.ServiceTypeListOptions{
 		PageToken: pageToken,
 		PageSize:  maxPageSize,
+	}
+	if opts != nil && opts.FiledUnder != nil && *opts.FiledUnder != "" {
+		group := *opts.FiledUnder
+		storeOpts.Match = func(m model.ServiceType) bool { return filedUnder(groupsOf(m.ServiceType), group) }
 	}
 
 	// Call store layer

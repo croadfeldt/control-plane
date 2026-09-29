@@ -24,6 +24,9 @@ var (
 type ServiceTypeListOptions struct {
 	PageToken *string
 	PageSize  int
+	// Match keeps only the service types it accepts (the filed_under filter). It runs
+	// before pagination so each page holds matches only.
+	Match func(model.ServiceType) bool
 }
 
 // ServiceTypeListResult contains the result of a List operation.
@@ -72,10 +75,26 @@ func (s *serviceTypeStore) List(ctx context.Context, opts *ServiceTypeListOption
 		}
 	}
 
-	query = query.Order("service_type ASC").Limit(pageSize + 1).Offset(offset)
-
-	if err := query.Find(&serviceTypes).Error; err != nil {
-		return nil, err
+	if opts != nil && opts.Match != nil {
+		// Filtered list: load all, keep matches, then paginate the filtered set.
+		var all model.ServiceTypeList
+		if err := query.Order("service_type ASC").Find(&all).Error; err != nil {
+			return nil, err
+		}
+		for _, st := range all {
+			if opts.Match(st) {
+				serviceTypes = append(serviceTypes, st)
+			}
+		}
+		if offset > len(serviceTypes) {
+			return &ServiceTypeListResult{ServiceTypes: model.ServiceTypeList{}}, nil
+		}
+		serviceTypes = serviceTypes[offset:]
+	} else {
+		query = query.Order("service_type ASC").Limit(pageSize + 1).Offset(offset)
+		if err := query.Find(&serviceTypes).Error; err != nil {
+			return nil, err
+		}
 	}
 
 	// Generate next page token if there are more results

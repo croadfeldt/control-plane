@@ -57,6 +57,15 @@ paths:
           description: |
             Maximum number of items to return per page.
             If not specified, defaults to 100.
+        - name: filed_under
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Filter by usage group (a term of the UDLM usage-group vocabulary, see /usage-groups).
+            Groups come from the UDLM class; they are inherited, never declared per item.
+          example: hardware
 
       responses:
         '200':
@@ -162,6 +171,25 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /usage-groups:
+    get:
+      operationId: listUsageGroups
+      summary: List usage groups
+      description: |
+        The UDLM usage-group vocabulary — the catalog's shelves. A service type or catalog
+        item is filed under the groups its UDLM class is filed under (ADR-082).
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageGroupList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /catalog-items:
     get:
       operationId: listCatalogItems
@@ -197,6 +225,15 @@ paths:
             Filter catalog items by service type.
             Returns items where any resource's service_type matches.
           example: vm
+        - name: filed_under
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Filter by usage group (a term of the UDLM usage-group vocabulary, see /usage-groups).
+            Groups come from the UDLM class; they are inherited, never declared per item.
+          example: hardware
 
       responses:
         '200':
@@ -659,7 +696,7 @@ components:
                 Key-value pairs for categorization and filtering.
                 Both keys and values are strings.
               example:
-                category: networking
+                environment: lab
 
         spec:
           type: object
@@ -690,6 +727,15 @@ components:
                   capacity_gb: 50
                   type: ssd
 
+        filed_under:
+          type: array
+          items:
+            type: string
+          readOnly: true
+          description: |
+            Usage groups this is filed under, inherited from the UDLM class (ADR-082).
+            Output-only; never set by a client.
+          example: [compute]
         path:
           type: string
           readOnly: true
@@ -713,6 +759,25 @@ components:
           description: Timestamp when the resource was last modified (RFC 3339)
           example: '2026-01-13T12:45:00Z'
 
+    UsageGroup:
+      type: object
+      required: [term, definition]
+      properties:
+        term:
+          type: string
+          description: The vocabulary term (a usage-group handle).
+          example: hardware
+        definition:
+          type: string
+          description: What the group holds.
+    UsageGroupList:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/UsageGroup'
     CatalogItem:
       type: object
       x-aep-resource:
@@ -756,6 +821,15 @@ components:
         spec:
           $ref: '#/components/schemas/CatalogItemSpec'
 
+        filed_under:
+          type: array
+          items:
+            type: string
+          readOnly: true
+          description: |
+            Usage groups this is filed under, inherited from the UDLM class (ADR-082).
+            Output-only; never set by a client.
+          example: [compute]
         path:
           type: string
           readOnly: true

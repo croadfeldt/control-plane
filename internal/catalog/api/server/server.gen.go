@@ -57,6 +57,9 @@ type ServerInterface interface {
 	// Get a service type
 	// (GET /service-types/{serviceTypeId})
 	GetServiceType(w http.ResponseWriter, r *http.Request, serviceTypeId ServiceTypeIdPath)
+	// List usage groups
+	// (GET /usage-groups)
+	ListUsageGroups(w http.ResponseWriter, r *http.Request)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -138,6 +141,12 @@ func (_ Unimplemented) CreateServiceType(w http.ResponseWriter, r *http.Request,
 // Get a service type
 // (GET /service-types/{serviceTypeId})
 func (_ Unimplemented) GetServiceType(w http.ResponseWriter, r *http.Request, serviceTypeId ServiceTypeIdPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List usage groups
+// (GET /usage-groups)
+func (_ Unimplemented) ListUsageGroups(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -404,6 +413,19 @@ func (siw *ServerInterfaceWrapper) ListCatalogItems(w http.ResponseWriter, r *ht
 		return
 	}
 
+	// ------------- Optional query parameter "filed_under" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filed_under", r.URL.Query(), &params.FiledUnder, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filed_under"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filed_under", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListCatalogItems(w, r, params)
 	}))
@@ -591,6 +613,19 @@ func (siw *ServerInterfaceWrapper) ListServiceTypes(w http.ResponseWriter, r *ht
 		return
 	}
 
+	// ------------- Optional query parameter "filed_under" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filed_under", r.URL.Query(), &params.FiledUnder, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filed_under"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filed_under", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListServiceTypes(w, r, params)
 	}))
@@ -664,6 +699,26 @@ func (siw *ServerInterfaceWrapper) GetServiceType(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetServiceType(w, r, serviceTypeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListUsageGroups operation middleware
+func (siw *ServerInterfaceWrapper) ListUsageGroups(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListUsageGroups(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -824,6 +879,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/service-types/{serviceTypeId}", wrapper.GetServiceType)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/usage-groups", wrapper.ListUsageGroups)
 	})
 
 	return r
@@ -2021,6 +2079,57 @@ func (response GetServiceType500JSONResponse) VisitGetServiceTypeResponse(w http
 	return err
 }
 
+type ListUsageGroupsRequestObject struct {
+}
+
+type ListUsageGroupsResponseObject interface {
+	VisitListUsageGroupsResponse(w http.ResponseWriter) error
+}
+
+type ListUsageGroups200JSONResponse UsageGroupList
+
+func (response ListUsageGroups200JSONResponse) VisitListUsageGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUsageGroups401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListUsageGroups401JSONResponse) VisitListUsageGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUsageGroups500JSONResponse struct {
+	InternalServerErrorJSONResponse
+}
+
+func (response ListUsageGroups500JSONResponse) VisitListUsageGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// List catalog item instances
@@ -2062,6 +2171,9 @@ type StrictServerInterface interface {
 	// Get a service type
 	// (GET /service-types/{serviceTypeId})
 	GetServiceType(ctx context.Context, request GetServiceTypeRequestObject) (GetServiceTypeResponseObject, error)
+	// List usage groups
+	// (GET /usage-groups)
+	ListUsageGroups(ctx context.Context, request ListUsageGroupsRequestObject) (ListUsageGroupsResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -2452,6 +2564,30 @@ func (sh *strictHandler) GetServiceType(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetServiceTypeResponseObject); ok {
 		if err := validResponse.VisitGetServiceTypeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListUsageGroups operation middleware
+func (sh *strictHandler) ListUsageGroups(w http.ResponseWriter, r *http.Request) {
+	var request ListUsageGroupsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListUsageGroups(ctx, request.(ListUsageGroupsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListUsageGroups")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListUsageGroupsResponseObject); ok {
+		if err := validResponse.VisitListUsageGroupsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

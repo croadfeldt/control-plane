@@ -11,10 +11,10 @@ type UDLMType struct {
 // UDLMTypes maps a service type slug to the UDLM class and version it projects.
 var UDLMTypes = map[string]UDLMType{
 	"cluster":   {ResourceType: "KubernetesCluster", Version: "2.0.3"},
-	"container": {ResourceType: "Container", Version: "1.0.4"},
+	"container": {ResourceType: "Container", Version: "1.0.5"},
 	"database":  {ResourceType: "Database", Version: "0.8.1"},
 	"storage":   {ResourceType: "Volume", Version: "0.12.2"},
-	"vm":        {ResourceType: "Machine.VM", Version: "2.0.4"},
+	"vm":        {ResourceType: "Machine.VM", Version: "2.0.5"},
 }
 
 // LookupUDLMType returns the UDLM class behind a service type slug.
@@ -123,4 +123,5 @@ var UDLMUsageGroups = []UDLMUsageGroup{
 	{Term: "observability", Definition: "Things that watch — log shippers, and when they arrive, scrape targets and collectors."},
 	{Term: "services", Definition: "Installed or served software as an orderable thing — services, and templates that compose them into one offering."},
 	{Term: "automation", Definition: "Things that run on behalf of the control plane — jobs, automation runs."},
+	{Term: "authorization", Definition: "What identities may do — groupings with their subject bindings, tenants, cross-tenant grants. The other half of the identity-and-access split: `identity` is who, `authorization` is what."},
 }

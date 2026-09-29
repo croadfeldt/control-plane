@@ -20,6 +20,7 @@ func (h *Handler) ListCatalogItems(ctx context.Context, request server.ListCatal
 		PageToken:   request.Params.PageToken,
 		MaxPageSize: request.Params.MaxPageSize,
 		ServiceType: request.Params.ServiceType,
+		FiledUnder:  request.Params.FiledUnder,
 	}
 
 	// Call service layer

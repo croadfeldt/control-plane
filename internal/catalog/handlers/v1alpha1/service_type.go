@@ -15,6 +15,7 @@ func (h *Handler) ListServiceTypes(ctx context.Context, request server.ListServi
 	opts := &service.ServiceTypeListOptions{
 		PageToken:   request.Params.PageToken,
 		MaxPageSize: request.Params.MaxPageSize,
+		FiledUnder:  request.Params.FiledUnder,
 	}
 
 	// Call service layer

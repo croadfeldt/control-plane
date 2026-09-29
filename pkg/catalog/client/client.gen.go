@@ -136,6 +136,9 @@ type ClientInterface interface {
 
 	// GetServiceType request
 	GetServiceType(ctx context.Context, serviceTypeId ServiceTypeIdPath, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListUsageGroups request
+	ListUsageGroups(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) ListCatalogItemInstances(ctx context.Context, params *ListCatalogItemInstancesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -332,6 +335,18 @@ func (c *Client) CreateServiceType(ctx context.Context, params *CreateServiceTyp
 
 func (c *Client) GetServiceType(ctx context.Context, serviceTypeId ServiceTypeIdPath, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetServiceTypeRequest(c.Server, serviceTypeId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListUsageGroups(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListUsageGroupsRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -653,6 +668,18 @@ func NewListCatalogItemsRequest(server string, params *ListCatalogItemsParams) (
 
 		}
 
+		if params.FiledUnder != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "filed_under", *params.FiledUnder, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -901,6 +928,18 @@ func NewListServiceTypesRequest(server string, params *ListServiceTypesParams) (
 
 		}
 
+		if params.FiledUnder != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "filed_under", *params.FiledUnder, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -1016,6 +1055,33 @@ func NewGetServiceTypeRequest(server string, serviceTypeId ServiceTypeIdPath) (*
 	return req, nil
 }
 
+// NewListUsageGroupsRequest generates requests for ListUsageGroups
+func NewListUsageGroupsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/usage-groups")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -1105,6 +1171,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetServiceTypeWithResponse request
 	GetServiceTypeWithResponse(ctx context.Context, serviceTypeId ServiceTypeIdPath, reqEditors ...RequestEditorFn) (*GetServiceTypeResponse, error)
+
+	// ListUsageGroupsWithResponse request
+	ListUsageGroupsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListUsageGroupsResponse, error)
 }
 
 type ListCatalogItemInstancesResponse struct {
@@ -1557,6 +1626,38 @@ func (r GetServiceTypeResponse) ContentType() string {
 	return ""
 }
 
+type ListUsageGroupsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *UsageGroupList
+	JSON401      *Unauthorized
+	JSON500      *InternalServerError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListUsageGroupsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListUsageGroupsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListUsageGroupsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // ListCatalogItemInstancesWithResponse request returning *ListCatalogItemInstancesResponse
 func (c *ClientWithResponses) ListCatalogItemInstancesWithResponse(ctx context.Context, params *ListCatalogItemInstancesParams, reqEditors ...RequestEditorFn) (*ListCatalogItemInstancesResponse, error) {
 	rsp, err := c.ListCatalogItemInstances(ctx, params, reqEditors...)
@@ -1704,6 +1805,15 @@ func (c *ClientWithResponses) GetServiceTypeWithResponse(ctx context.Context, se
 		return nil, err
 	}
 	return ParseGetServiceTypeResponse(rsp)
+}
+
+// ListUsageGroupsWithResponse request returning *ListUsageGroupsResponse
+func (c *ClientWithResponses) ListUsageGroupsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListUsageGroupsResponse, error) {
+	rsp, err := c.ListUsageGroups(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListUsageGroupsResponse(rsp)
 }
 
 // ParseListCatalogItemInstancesResponse parses an HTTP response from a ListCatalogItemInstancesWithResponse call
@@ -2451,6 +2561,46 @@ func ParseGetServiceTypeResponse(rsp *http.Response) (*GetServiceTypeResponse, e
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalServerError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListUsageGroupsResponse parses an HTTP response from a ListUsageGroupsWithResponse call
+func ParseListUsageGroupsResponse(rsp *http.Response) (*ListUsageGroupsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListUsageGroupsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest UsageGroupList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest InternalServerError

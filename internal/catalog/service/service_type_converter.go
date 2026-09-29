@@ -39,6 +39,9 @@ func toAPIType(m *model.ServiceType) v1alpha1.ServiceType {
 		CreateTime:  &m.CreateTime,
 		UpdateTime:  &m.UpdateTime,
 	}
+	if groups := groupsOf(m.ServiceType); groups != nil {
+		apiType.FiledUnder = &groups
+	}
 
 	// Convert metadata if present
 	if m.Metadata.Labels != nil {

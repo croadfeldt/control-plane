@@ -352,6 +352,29 @@ var _ = Describe("ServiceType Service", func() {
 			Expect(result.ServiceTypes).To(HaveLen(2))
 		})
 
+		It("filters by usage group and reports each type's groups (ADR-082)", func() {
+			for _, st := range []string{"vm", "container", "database"} {
+				_, err := svc.ServiceType().Create(ctx, &service.CreateServiceTypeRequest{
+					ApiVersion:  "v1alpha1",
+					ServiceType: st,
+					Spec:        map[string]any{"x": 1},
+				})
+				Expect(err).ToNot(HaveOccurred())
+			}
+			compute := "compute"
+			result, err := svc.ServiceType().List(ctx, &service.ServiceTypeListOptions{FiledUnder: &compute})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.ServiceTypes).To(HaveLen(2)) // vm and container are filed under compute; database is filed nowhere yet
+			for _, st := range result.ServiceTypes {
+				Expect(st.FiledUnder).ToNot(BeNil())
+				Expect(*st.FiledUnder).To(ContainElement("compute"))
+			}
+			nowhere := "power"
+			result, err = svc.ServiceType().List(ctx, &service.ServiceTypeListOptions{FiledUnder: &nowhere})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.ServiceTypes).To(BeEmpty())
+		})
+
 		It("should handle empty list", func() {
 			result, err := svc.ServiceType().List(ctx, &service.ServiceTypeListOptions{})
 			Expect(err).ToNot(HaveOccurred())

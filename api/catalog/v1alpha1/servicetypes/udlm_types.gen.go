@@ -86,3 +86,41 @@ func LookupUDLMElements(slug string) ([]string, bool) {
 	e, ok := UDLMElements[slug]
 	return e, ok
 }
+
+// UDLMGroups maps a service type slug to the usage groups its UDLM class is filed under (ADR-082).
+// Every offering of the type inherits them; an offering never declares its own.
+var UDLMGroups = map[string][]string{
+	"cluster":   {"compute"},
+	"container": {"compute"},
+	"database":  {},
+	"storage":   {},
+	"vm":        {"compute"},
+}
+
+// LookupUDLMGroups returns the usage groups of a service type's UDLM class.
+func LookupUDLMGroups(slug string) ([]string, bool) {
+	g, ok := UDLMGroups[slug]
+	return g, ok
+}
+
+// UDLMUsageGroup is one term of the registry's usage-group vocabulary (registry/taxonomies/usage-group.yaml).
+type UDLMUsageGroup struct {
+	Term       string
+	Definition string
+}
+
+// UDLMUsageGroups is the vocabulary, in the registry's order. The catalog's shelves.
+var UDLMUsageGroups = []UDLMUsageGroup{
+	{Term: "compute", Definition: "Things that run workloads — machines, containers, Kubernetes clusters, namespaces and node pools."},
+	{Term: "storage", Definition: "Things that hold data — volumes, pools, storage clusters, file shares, storage classes, layouts."},
+	{Term: "network", Definition: "Things that connect — addresses, pools, subnets, VLANs, virtual networks, switches, gateways, address services (DHCP, DNS), connection profiles."},
+	{Term: "hardware", Definition: "Devices and components below the machine boundary — processors, GPUs, network interfaces, storage devices, BMCs, firmware profiles. Physical or virtual: `device_class` on the class says which."},
+	{Term: "power", Definition: "Things that deliver or condition electrical power — UPS units, power feeds."},
+	{Term: "facility", Definition: "Physical placement — locations, and the topologies (region, zone, rack, host) placement resolves against."},
+	{Term: "data", Definition: "Managed data services — databases, and when they arrive, streams and queues."},
+	{Term: "security", Definition: "Things that protect — credential references, directory services, certificates when they arrive."},
+	{Term: "identity", Definition: "Who and what may act — identities, groupings, directory services. A directory server is filed here and under `services`; it is one class with two filings."},
+	{Term: "observability", Definition: "Things that watch — log shippers, and when they arrive, scrape targets and collectors."},
+	{Term: "services", Definition: "Installed or served software as an orderable thing — services, and templates that compose them into one offering."},
+	{Term: "automation", Definition: "Things that run on behalf of the control plane — jobs, automation runs."},
+}

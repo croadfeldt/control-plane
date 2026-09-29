@@ -26,6 +26,8 @@ type CatalogItemListOptions struct {
 	PageToken   *string
 	PageSize    int
 	ServiceType *string
+	// Match keeps only the items it accepts (the filed_under filter). It runs before pagination.
+	Match func(model.CatalogItem) bool
 }
 
 // CatalogItemListResult contains the result of a List operation
@@ -72,16 +74,21 @@ func (s *catalogItemStore) List(ctx context.Context, opts *CatalogItemListOption
 
 	// service_type filter: load all, filter in memory, then paginate the filtered set.
 	// Filter must run before pagination so each page contains matching items only.
-	if opts != nil && opts.ServiceType != nil && *opts.ServiceType != "" {
+	byType := opts != nil && opts.ServiceType != nil && *opts.ServiceType != ""
+	if byType || (opts != nil && opts.Match != nil) {
 		var all model.CatalogItemList
 		if err := s.db.WithContext(ctx).Order("id ASC").Find(&all).Error; err != nil {
 			return nil, err
 		}
 		filtered := make(model.CatalogItemList, 0)
 		for _, item := range all {
-			if item.Spec.HasResourceServiceType(*opts.ServiceType) {
-				filtered = append(filtered, item)
+			if byType && !item.Spec.HasResourceServiceType(*opts.ServiceType) {
+				continue
 			}
+			if opts.Match != nil && !opts.Match(item) {
+				continue
+			}
+			filtered = append(filtered, item)
 		}
 		return paginateFilterCatalogItems(filtered, pageSize, offset)
 	}

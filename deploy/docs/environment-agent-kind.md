@@ -20,6 +20,10 @@ This guide uses **two compose steps**:
 1. **`make compose-up`** — platform only (creates `control-plane_default` for `kind-connect`).
 2. **`make compose-up-with-agent`** — after Kind is wired.
 
+Authentication is disabled for the commands below. To enable it, pass `AUTH=true` to both
+`make compose-up` and `make compose-up-with-agent`, and to `make compose-down` during teardown. See
+[RUN.md](../RUN.md#authentication) for the auth settings and Compose model.
+
 Most Kind prep (`install-kubevirt`, `kubeconfig-for-compose`) can run **before** `compose-up`.
 Only **`make kind-connect`** must run after the platform stack is up (compose network must exist).
 
@@ -104,7 +108,7 @@ curl http://localhost:8081/api/v1alpha1/providers
 ### 8. Teardown
 
 ```bash
-make compose-down              # kind-disconnect, detach externals, compose down, remove networks
+make compose-down              # add AUTH=true if auth was enabled
 kind delete cluster --name dcm-local
 ```
 
@@ -112,12 +116,12 @@ kind delete cluster --name dcm-local
 
 | Target | Purpose |
 |--------|---------|
-| `compose-up` | Platform stack (postgres, nats, keycloak, control-plane, dcm-ui) |
+| `compose-up` | Platform stack (postgres, nats, control-plane, dcm-ui; Keycloak with `AUTH=true`) |
 | `install-kubevirt` | Install KubeVirt on the current Kind cluster |
 | `kubeconfig-for-compose` | Write `deploy/.kube/config` for the agent container |
 | `kind-connect` | Join Kind to `control-plane_default` |
-| `compose-up-with-agent` | Add/start environment-agent on the platform stack |
-| `compose-down` | Kind disconnect, detach network members, compose down, remove networks |
+| `compose-up-with-agent` | Add/start environment-agent on the platform stack; Keycloak with `AUTH=true` |
+| `compose-down` | Kind disconnect, detach network members, compose down, remove networks; pass `AUTH=true` if enabled |
 
 Scripts are under `UTILITIES_DIR` (default `../utilities`):
 

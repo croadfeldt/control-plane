@@ -4,7 +4,7 @@
 # Local dev: `make compose-up` builds control-plane from the repo Containerfile.
 #
 # Credentials: copy deploy/.env.example to deploy/.env before starting (see deploy/RUN.md).
-# Keycloak uses profile "auth" — pass AUTH=true to make compose-up / compose-up-with-agent.
+# Authentication services and auth-only dependencies live in deploy/compose.auth.yaml.
 
 x-db-common: &db-common
   DB_TYPE: pgsql
@@ -14,26 +14,6 @@ x-db-common: &db-common
 x-dcm-registration-url: &dcm-registration-url "http://control-plane:8080/api/v1alpha1"
 
 services:
-  keycloak:
-    profiles: ["auth"]
-    image: quay.io/keycloak/keycloak:26.0.1
-    command: ["start-dev", "--import-realm"]
-    env_file: .env
-    environment:
-      KC_HEALTH_ENABLED: "true"
-      KC_HOSTNAME: "http://keycloak:8080"
-      KC_HOSTNAME_STRICT: "false"
-    ports:
-      - "8180:8080"
-    volumes:
-      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro,z
-    healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]
-      interval: 10s
-      timeout: 5s
-      retries: 15
-      start_period: 30s
-
   postgres:
     image: docker.io/library/postgres:16-alpine
     env_file: .env
@@ -81,8 +61,6 @@ services:
         condition: service_healthy
       nats:
         condition: service_started
-      keycloak:
-        condition: service_healthy
 
   dcm-ui:
     image: quay.io/dcm-project/dcm-ui:${DCM_UI_VERSION:-main}

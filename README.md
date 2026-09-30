@@ -42,13 +42,15 @@ Run the monolith (pick one):
 make run              # SQLite, no containers
 cp deploy/.env.example deploy/.env
 make compose-up       # platform stack in containers
-make compose-up AUTH=true  # same + Keycloak when auth is enabled in .env
+make compose-up AUTH=true  # same + Keycloak and its readiness dependency
 make compose-down     # stop stack and remove volumes
+make compose-down AUTH=true  # include the auth Compose model when stopping an auth-enabled stack
 ```
 
-Compose credentials live in `deploy/.env` (copy from `deploy/.env.example`). Keycloak
-uses the `auth` compose profile — `make compose-up AUTH=true` after uncommenting the auth block
-in `.env`. With the environment-agent: `make compose-up-with-agent AUTH=true`.
+Compose credentials live in `deploy/.env` (copy from `deploy/.env.example`). Authentication
+is disabled by default; `make compose-up` starts without Keycloak. To start Keycloak and make
+the control-plane wait for it to become healthy, uncomment the auth block in `.env` and run
+`make compose-up AUTH=true`. With the environment-agent: `make compose-up-with-agent AUTH=true`.
 Subsystem tests use the shared `test/subsystem/.env.example` file.
 
 Policy evaluation and placement provisioning run in-process in the monolith
@@ -80,7 +82,7 @@ in shared-workflows for tag behavior and version conventions.
 
 Full-stack Compose and Helm packaging live under `deploy/`:
 
-- **Compose:** control-plane, postgres, nats, keycloak, dcm-ui, and optional environment-agent profile
+- **Compose:** control-plane, postgres, nats, and dcm-ui; optional Keycloak auth and environment-agent profile
 - **Helm:** Kubernetes/OpenShift chart at `deploy/helm/dcm` (optional auth via `auth.enabled`)
 
 See [deploy/RUN.md](deploy/RUN.md) for local stack usage, authentication, and the environment-agent profile.
@@ -94,7 +96,7 @@ control plane.
 | Port | Service | Notes |
 |---|---|---|
 | `:8080` | control-plane API | Direct access; validates JWT bearer tokens when auth enabled |
-| `:8180` | Keycloak | Identity provider (OIDC issuer) |
+| `:8180` | Keycloak (optional) | Identity provider (OIDC issuer; enabled with `AUTH=true`) |
 | `:7007` | dcm-ui | Web UI |
 
 ### Image versions

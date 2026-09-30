@@ -14,10 +14,11 @@ endif
 
 COMPOSE_FILE := deploy/compose.yaml
 COMPOSE_ENV_FILE := deploy/.env
-COMPOSE_DEPLOY := $(COMPOSE) --env-file $(COMPOSE_ENV_FILE) -f $(COMPOSE_FILE)
+COMPOSE_DEPLOY = $(COMPOSE) --env-file $(COMPOSE_ENV_FILE) -f $(COMPOSE_FILE) $(COMPOSE_AUTH_ARGS)
 COMPOSE_PROJECT_NAME ?= control-plane
 COMPOSE_NETWORK := $(COMPOSE_PROJECT_NAME)_default
 AUTH ?=
+COMPOSE_AUTH_ARGS := $(if $(filter true,$(AUTH)),-f deploy/compose.auth.yaml --profile auth,)
 UTILITIES_DIR ?= ../utilities
 KIND_SCRIPTS_DIR ?= $(UTILITIES_DIR)/scripts/kind
 COMPOSE_SCRIPTS_DIR ?= $(UTILITIES_DIR)/scripts/compose
@@ -85,12 +86,12 @@ run-dev:
 # Platform stack: Postgres, NATS, control-plane, and dcm-ui (see deploy/compose.yaml).
 # Optional: AUTH=true to also start Keycloak (uncomment auth vars in deploy/.env first).
 compose-up:
-	$(COMPOSE_DEPLOY) $(if $(filter true,$(AUTH)),--profile auth,) up -d --build
+	$(COMPOSE_DEPLOY) up -d --build
 
 # Platform stack + environment-agent profile (see deploy/RUN.md).
 # Optional: AUTH=true to also start Keycloak.
 compose-up-with-agent:
-	$(COMPOSE_DEPLOY) $(if $(filter true,$(AUTH)),--profile auth,) --profile environment-agent up -d --build
+	$(COMPOSE_DEPLOY) --profile environment-agent up -d --build
 
 # Local dev helpers (scripts in dcm-project/utilities — see deploy/docs/environment-agent-kind.md).
 install-kubevirt:
@@ -117,8 +118,8 @@ remove-compose-networks:
 
 # Tear down the compose stack. Disconnect Kind and other externals first so networks can be removed.
 compose-down: kind-disconnect disconnect-compose-networks
-	@COMPOSE_PROJECT_NAME=deploy $(COMPOSE) -f $(COMPOSE_FILE) down -v --remove-orphans 2>/dev/null || true; \
-	$(COMPOSE) -f $(COMPOSE_FILE) down -v --remove-orphans; \
+	@COMPOSE_PROJECT_NAME=deploy $(COMPOSE_DEPLOY) down -v --remove-orphans 2>/dev/null || true; \
+	$(COMPOSE_DEPLOY) down -v --remove-orphans; \
 	$(MAKE) remove-compose-networks
 
 image-build:

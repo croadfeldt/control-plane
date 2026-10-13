@@ -1,7 +1,7 @@
 # Schema: deploy/helm/dcm/values.schema.json (keep in sync when changing any defaults)
 # -- Global settings
 global:
-  imageTag: main
+  imageTag: m2
 
 # -- PostgreSQL
 postgres:
@@ -17,7 +17,7 @@ nats:
 # -- Control-plane monolith (catalog, policy, placement, SP manager)
 controlPlane:
   image: quay.io/dcm-project/control-plane
-  tag: mc-r2  # empty defaults to global.imageTag
+  tag: m2  # empty defaults to global.imageTag
   securityContext:
     runAsNonRoot: true
     allowPrivilegeEscalation: false
@@ -67,7 +67,7 @@ auth:
 dcmUi:
   enabled: true
   image: quay.io/dcm-project/dcm-ui
-  tag: m2-rc1  # empty defaults to global.imageTag
+  tag: m2  # empty defaults to global.imageTag
   route:
     enabled: true
     host: ""
@@ -82,7 +82,7 @@ dcmUi:
 environmentAgent:
   enabled: false
   image: quay.io/dcm-project/environment-agent
-  tag: m2-rc1  # empty defaults to global.imageTag
+  tag: m2  # empty defaults to global.imageTag
   agentName: cluster-agent
   environment: dev
   cost: medium

@@ -189,7 +189,7 @@
         "tag": {
           "type": "string",
           "description": "Image tag. Empty defaults to global.imageTag.",
-          "default": "m2-rc1"
+          "default": "m2"
         },
         "agentName": {
           "type": "string"
@@ -275,7 +275,7 @@
         "tag": {
           "type": "string",
           "description": "Image tag. Empty defaults to global.imageTag.",
-          "default": "mc-r2"
+          "default": "m2"
         },
         "securityContext": {
           "$ref": "#/definitions/securityContext"
@@ -417,7 +417,7 @@
         "tag": {
           "type": "string",
           "description": "Image tag. Empty defaults to global.imageTag.",
-          "default": "m2-rc1"
+          "default": "m2"
         },
         "route": {
           "$ref": "#/definitions/route"

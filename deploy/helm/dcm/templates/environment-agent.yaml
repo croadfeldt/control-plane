@@ -1,0 +1,350 @@
+{{- if .Values.environmentAgent.enabled }}
+{{- $ea := .Values.environmentAgent }}
+{{- $sps := printf ",%s," (replace " " "" $ea.embeddedSps) }}
+{{- $hasContainer := contains ",container," $sps }}
+{{- $hasVM := contains ",vm," $sps }}
+{{- $hasStorage := contains ",storage," $sps }}
+{{- $hasNetwork := contains ",network," $sps }}
+{{- $hasCluster := contains ",cluster," $sps }}
+{{- if and $hasCluster (not $ea.pullSecretRef) }}
+  {{- fail "environmentAgent.pullSecretRef is required when embeddedSps includes cluster (pre-created Secret with stringData key pull-secret)" }}
+{{- end }}
+{{- $saName := printf "%s-environment-agent" (include "dcm.fullname" .) }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $saName }}
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+---
+{{- /* Workload Role in containerNamespace when container/vm/storage/network share it */ -}}
+{{- if or $hasContainer (and $hasVM (eq $ea.vmNamespace $ea.containerNamespace)) (and $hasStorage (eq $ea.storageNamespace $ea.containerNamespace)) (and $hasNetwork (eq $ea.networkNamespace $ea.containerNamespace)) }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "dcm.fullname" . }}-environment-agent-workloads
+  namespace: {{ $ea.containerNamespace }}
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+rules:
+  {{- if or $hasContainer (and $hasStorage (eq $ea.storageNamespace $ea.containerNamespace)) }}
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets", "persistentvolumeclaims", "events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- else if and $hasNetwork (eq $ea.networkNamespace $ea.containerNamespace) }}
+  - apiGroups: [""]
+    resources: ["services", "events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- end }}
+  {{- if and $hasVM (eq $ea.vmNamespace $ea.containerNamespace) }}
+  - apiGroups: ["kubevirt.io"]
+    resources: ["virtualmachines", "virtualmachineinstances"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "dcm.fullname" . }}-environment-agent-workloads
+  namespace: {{ $ea.containerNamespace }}
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "dcm.fullname" . }}-environment-agent-workloads
+subjects:
+  - kind: ServiceAccount
+    name: {{ $saName }}
+    namespace: {{ .Release.Namespace }}
+---
+{{- end }}
+{{- /* Separate VM Role when vmNamespace differs from containerNamespace */ -}}
+{{- if and $hasVM (ne $ea.vmNamespace $ea.containerNamespace) }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "dcm.fullname" . }}-environment-agent-vm
+  namespace: {{ $ea.vmNamespace }}
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["kubevirt.io"]
+    resources: ["virtualmachines", "virtualmachineinstances"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "dcm.fullname" . }}-environment-agent-vm
+  namespace: {{ $ea.vmNamespace }}
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "dcm.fullname" . }}-environment-agent-vm
+subjects:
+  - kind: ServiceAccount
+    name: {{ $saName }}
+    namespace: {{ .Release.Namespace }}
+---
+{{- end }}
+{{- /* Separate storage Role when storageNamespace differs from containerNamespace */ -}}
+{{- if and $hasStorage (ne $ea.storageNamespace $ea.containerNamespace) }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "dcm.fullname" . }}-environment-agent-storage
+  namespace: {{ $ea.storageNamespace }}
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets", "persistentvolumeclaims", "events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "dcm.fullname" . }}-environment-agent-storage
+  namespace: {{ $ea.storageNamespace }}
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "dcm.fullname" . }}-environment-agent-storage
+subjects:
+  - kind: ServiceAccount
+    name: {{ $saName }}
+    namespace: {{ .Release.Namespace }}
+---
+{{- end }}
+{{- /* Separate network Role when networkNamespace differs from containerNamespace */ -}}
+{{- if and $hasNetwork (ne $ea.networkNamespace $ea.containerNamespace) }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "dcm.fullname" . }}-environment-agent-network
+  namespace: {{ $ea.networkNamespace }}
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["services", "events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "dcm.fullname" . }}-environment-agent-network
+  namespace: {{ $ea.networkNamespace }}
+  labels:
+    {{ include "dcm.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "dcm.fullname" . }}-environment-agent-network
+subjects:
+  - kind: ServiceAccount
+    name: {{ $saName }}
+    namespace: {{ .Release.Namespace }}
+---
+{{- end }}
+{{- if $hasCluster }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "dcm.fullname" . }}-environment-agent-cluster
+  namespace: {{ $ea.clusterNamespace }}
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update"]
+  - apiGroups: ["hypershift.openshift.io"]
+    resources: ["hostedclusters", "nodepools"]
+    verbs: ["list", "watch", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "dcm.fullname" . }}-environment-agent-cluster
+  namespace: {{ $ea.clusterNamespace }}
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "dcm.fullname" . }}-environment-agent-cluster
+subjects:
+  - kind: ServiceAccount
+    name: {{ $saName }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "dcm.clusterResourceName" . }}-environment-agent-cluster
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["hive.openshift.io"]
+    resources: ["clusterimagesets"]
+    verbs: ["list"]
+  - apiGroups: ["hypershift.openshift.io"]
+    resources: ["hostedclusters"]
+    verbs: ["list"]
+  - apiGroups: ["kubevirt.io"]
+    resources: ["virtualmachineinstances"]
+    verbs: ["list"]
+  - apiGroups: ["agent-install.openshift.io"]
+    resources: ["agents"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "dcm.clusterResourceName" . }}-environment-agent-cluster
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "dcm.clusterResourceName" . }}-environment-agent-cluster
+subjects:
+  - kind: ServiceAccount
+    name: {{ $saName }}
+    namespace: {{ .Release.Namespace }}
+---
+{{- end }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "dcm.fullname" . }}-environment-agent-data
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+    {{- include "dcm.selectorLabels" (dict "context" . "component" "environment-agent") | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 100Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dcm.fullname" . }}-environment-agent
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+    {{- include "dcm.selectorLabels" (dict "context" . "component" "environment-agent") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "dcm.selectorLabels" (dict "context" . "component" "environment-agent") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dcm.selectorLabels" (dict "context" . "component" "environment-agent") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $saName }}
+      {{- if .Values.auth.enabled }}
+      initContainers:
+        {{ include "dcm.waitForKeycloak" . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: environment-agent
+          image: "{{ $ea.image }}:{{ include "dcm.imageTag" (dict "tag" $ea.tag "global" .Values.global) }}"
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: AGENT_NAME
+              value: {{ $ea.agentName | quote }}
+            - name: AGENT_ENVIRONMENT
+              value: {{ $ea.environment | quote }}
+            - name: AGENT_COST
+              value: {{ $ea.cost | quote }}
+            - name: AGENT_EMBEDDED_SPS
+              value: {{ $ea.embeddedSps | quote }}
+            - name: DCM_REGISTRATION_URL
+              value: "http://{{ include "dcm.fullname" . }}-control-plane:8080"
+            {{- if .Values.auth.enabled }}
+            - name: DCM_AUTH_TOKEN_ENDPOINT
+              value: "{{ include "dcm.authIssuerURL" . }}/protocol/openid-connect/token"
+            - name: DCM_AUTH_CLIENT_ID
+              value: {{ $ea.authClientID | quote }}
+            - name: DCM_AUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dcm.authSecretName" . }}
+                  key: AUTH_PROXY_SECRET
+            {{- end }}
+            - name: AGENT_MESSAGING_URL
+              value: "nats://{{ include "dcm.fullname" . }}-nats:4222"
+            - name: SP_CONTAINER_NAMESPACE
+              value: {{ $ea.containerNamespace | quote }}
+            - name: SP_K8S_EXTERNAL_SVC_TYPE
+              value: {{ $ea.externalSvcType | quote }}
+            - name: SP_VM_NAMESPACE
+              value: {{ $ea.vmNamespace | quote }}
+            - name: SP_STORAGE_NAMESPACE
+              value: {{ $ea.storageNamespace | quote }}
+            - name: SP_NETWORK_NAMESPACE
+              value: {{ $ea.networkNamespace | quote }}
+            - name: AGENT_SP_PERSISTENCE_PATH
+              value: /var/lib/environment-agent/data/registrations.json
+            {{- if $hasCluster }}
+            - name: SP_CLUSTER_NAMESPACE
+              value: {{ $ea.clusterNamespace | quote }}
+            {{- if $ea.baseDomain }}
+            - name: SP_BASE_DOMAIN
+              value: {{ $ea.baseDomain | quote }}
+            {{- end }}
+            - name: SP_PULL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $ea.pullSecretRef }}
+                  key: pull-secret
+            {{- if $ea.clusterInfraEnv }}
+            - name: SP_DEFAULT_INFRA_ENV
+              value: {{ $ea.clusterInfraEnv | quote }}
+            {{- end }}
+            {{- if $ea.clusterAgentNamespace }}
+            - name: SP_AGENT_NAMESPACE
+              value: {{ $ea.clusterAgentNamespace | quote }}
+            {{- end }}
+            {{- end }}
+          volumeMounts:
+            - name: registrations
+              mountPath: /var/lib/environment-agent/data
+      volumes:
+        - name: registrations
+          persistentVolumeClaim:
+            claimName: {{ include "dcm.fullname" . }}-environment-agent-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dcm.fullname" . }}-environment-agent
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "dcm.selectorLabels" (dict "context" . "component" "environment-agent") | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+{{- end }}

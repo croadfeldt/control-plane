@@ -52,26 +52,18 @@ build:
 build-gitops:
 	CGO_ENABLED=0 go build -buildvcs=false -o bin/dcm-gitops ./cmd/dcm-gitops
 
-# Regenerate the service-type OpenAPI specs from the UDLM registry (single source
-# of truth), then regenerate their Go types. Point UDLM_DIR at a croadfeldt/udlm
-# checkout. Run this after a UDLM resource-type changes, then commit the diff.
+# Refresh what the control plane reads from UDLM: vendor the record schemas and regenerate the
+# class metadata table (servicetypes/udlm_types.gen.go: class, version, outputs, elements, usage
+# groups). The service-type specs themselves are upstream's (dcm-project) and are NOT regenerated:
+# we defer to upstream's shapes and map onto the UDLM classes. Point UDLM_DIR at a croadfeldt/udlm
+# checkout.
 UDLM_DIR ?= ../udlm
-OAPI_CODEGEN_VERSION ?= v2.7.0
-SERVICE_TYPES := vm container database cluster storage
 UDLM_SCHEMAS := state-record.schema.json entity-view.schema.json common-elements.schema.json policy.schema.json
-generate:
+generate-udlm:
 	@mkdir -p internal/udlm/schema
 	@for f in $(UDLM_SCHEMAS); do cp $(UDLM_DIR)/registry/$$f internal/udlm/schema/$$f; done
 	@printf 'croadfeldt/udlm %s\n' "$$(git -C $(UDLM_DIR) rev-parse HEAD)" > internal/udlm/schema/SOURCE
-	go run ./cmd/udlm-servicetype-gen -udlm $(UDLM_DIR) -out api/catalog/v1alpha1/servicetypes -type all
-	@for st in $(SERVICE_TYPES); do \
-		echo "oapi-codegen $$st"; \
-		( cd api/catalog/v1alpha1/servicetypes/$$st && \
-		  go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION) \
-		    -config spec.gen.cfg \
-		    -import-mapping '../common.yaml:github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes' \
-		    spec.yaml > types.gen.go ) || exit 1; \
-	done
+	go run ./cmd/udlm-servicetype-gen -udlm $(UDLM_DIR) -out api/catalog/v1alpha1/servicetypes -type all -meta-only
 
 # Quick local start with SQLite (no Postgres/NATS stack required).
 # Uses a throwaway file under /tmp; override DB_NAME if you want a different path.
@@ -154,7 +146,7 @@ test:
 tidy:
 	go mod tidy
 
-.PHONY: build build-gitops generate run run-dev compose-up compose-up-with-agent compose-down \
+.PHONY: build build-gitops generate-udlm run run-dev compose-up compose-up-with-agent compose-down \
 	install-kubevirt kubeconfig-for-compose kind-connect kind-disconnect \
 	disconnect-compose-networks remove-compose-networks \
 	image-build clean fmt vet lint test test-catalog test-placement test-policy test-sp test-gitops tidy subsystem-env \

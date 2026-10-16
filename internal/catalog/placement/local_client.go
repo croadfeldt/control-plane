@@ -42,16 +42,26 @@ func (c *localClient) DeleteRun(ctx context.Context, runID string) error {
 	return nil
 }
 
-func (c *localClient) RehydrateResource(ctx context.Context, runID, newRunID string) (*Resource, error) {
+func (c *localClient) RehydrateResource(ctx context.Context, runID, newRunID string) (*Run, error) {
 	c.logger.InfoContext(ctx, "Rehydrating resource in placement (in-process)",
 		"run_id", runID,
 		"new_run_id", newRunID,
 	)
-	result, err := c.svc.RehydrateResource(ctx, runID, newRunID)
+	_, err := c.svc.RehydrateResource(ctx, runID, newRunID)
 	if err != nil {
 		return nil, mapPlacementServiceError(err)
 	}
-	return mapAPIResource(result), nil
+	// Fetch the full run to get all resource IDs. Best-effort: if this
+	// fails the rehydrate itself already succeeded, so return a Run
+	// with no resources rather than an error (which would trigger a
+	// rollback and desync DB from placement).
+	run, err := c.svc.GetRun(ctx, newRunID)
+	if err != nil {
+		c.logger.WarnContext(ctx, "Failed to fetch run after rehydrate, resource IDs will be empty",
+			"new_run_id", newRunID, "error", err)
+		return &Run{RunID: newRunID}, nil
+	}
+	return mapAPIRun(run), nil
 }
 
 func mapAPIRun(r *types.Run) *Run {

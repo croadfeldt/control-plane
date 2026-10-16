@@ -70,7 +70,6 @@ type mapping struct {
 var mappings = []mapping{
 	{"vm", "VM", "machine.vm.json", "DCM Virtual Machine Specification", "virtual machine"},
 	{"container", "Container", "container.json", "DCM Container Specification", "container workload"},
-	{"database", "Database", "data.database.json", "DCM Database Specification", "managed database"},
 	{"cluster", "Cluster", "kubernetes-cluster.json", "DCM Cluster Specification", "Kubernetes cluster"},
 	{"storage", "Storage", "volume.json", "DCM Storage Specification", "storage volume"},
 }
@@ -79,6 +78,7 @@ func main() {
 	udlmDir := flag.String("udlm", "../udlm", "path to a croadfeldt/udlm checkout (contains registry/generated)")
 	outDir := flag.String("out", "api/catalog/v1alpha1/servicetypes", "servicetypes output directory")
 	which := flag.String("type", "all", "service-type slug to generate, or 'all'")
+	metaOnly := flag.Bool("meta-only", false, "write only "+typeTableFile+" (the UDLM metadata table); leave the service-type specs untouched. The specs on main and udlm-native are upstream's (dcm-project); this keeps the class metadata the control plane reads in step with the registry.")
 	flag.Parse()
 
 	var todo []mapping
@@ -92,15 +92,27 @@ func main() {
 		os.Exit(2)
 	}
 
+	specDir := *outDir
+	if *metaOnly {
+		tmp, err := os.MkdirTemp("", "udlm-servicetype-gen-")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+		defer os.RemoveAll(tmp)
+		specDir = tmp
+	}
 	generated := map[string]udlmType{}
 	for _, m := range todo {
-		t, err := generate(m, *udlmDir, *outDir)
+		t, err := generate(m, *udlmDir, specDir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "generate %s: %v\n", m.slug, err)
 			os.Exit(1)
 		}
 		generated[m.slug] = t
-		fmt.Printf("generated %s from %s\n", filepath.Join(*outDir, m.slug, "spec.yaml"), m.udlmFile)
+		if !*metaOnly {
+			fmt.Printf("generated %s from %s\n", filepath.Join(*outDir, m.slug, "spec.yaml"), m.udlmFile)
+		}
 	}
 	if *which == "all" {
 		groups, err := readUsageGroups(*udlmDir)
@@ -113,6 +125,9 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Printf("generated %s\n", filepath.Join(*outDir, typeTableFile))
+	}
+	if *metaOnly {
+		return
 	}
 	fmt.Fprintln(os.Stderr, "\nNext: regenerate Go types for each changed service-type, e.g.")
 	fmt.Fprintln(os.Stderr, "  cd "+*outDir+"/<slug> && oapi-codegen -config spec.gen.cfg \\")

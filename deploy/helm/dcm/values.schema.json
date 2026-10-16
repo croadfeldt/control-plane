@@ -173,13 +173,15 @@
         "storage"
       ]
     },
-    "optionalServiceDefinition": {
-      "title": "Optional Service Provider Configuration",
+    "environmentAgentConfig": {
+      "title": "Optional Environment Agent Configuration",
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "enabled": {
-          "type": "boolean"
+          "type": "boolean",
+          "default": false,
+          "description": "Deploy the environment-agent with embedded Service Providers (in-cluster ServiceAccount auth)."
         },
         "image": {
           "type": "string"
@@ -187,38 +189,68 @@
         "tag": {
           "type": "string",
           "description": "Image tag. Empty defaults to global.imageTag.",
+          "default": "m2-rc1"
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "environment": {
+          "type": "string"
+        },
+        "cost": {
+          "type": "string"
+        },
+        "embeddedSps": {
+          "type": "string",
+          "description": "Comma-separated embedded SP identifiers: container, vm, storage, network, cluster.",
           "default": ""
         },
-        "namespace": {
-          "type": "string"
+        "containerNamespace": {
+          "type": "string",
+          "default": "default"
         },
-        "providerName": {
-          "type": "string"
+        "vmNamespace": {
+          "type": "string",
+          "default": "default"
         },
-        "spName": {
-          "type": "string"
+        "storageNamespace": {
+          "type": "string",
+          "default": "default"
+        },
+        "externalSvcType": {
+          "type": "string",
+          "default": "LoadBalancer",
+          "description": "Kubernetes Service type for container SP external services (NodePort for Kind/lab)."
+        },
+        "clusterNamespace": {
+          "type": "string",
+          "default": "clusters"
         },
         "baseDomain": {
           "type": "string"
         },
-        "externalSvcType": {
-          "type": "string"
-        },
-        "kubeconfigRef": {
-          "type": "string",
-          "description": "Name of an existing Secret in the release namespace with key kubeconfig.",
-          "default": ""
-        },
         "pullSecretRef": {
           "type": "string",
-          "description": "Name of an existing Secret in the release namespace with stringData key pull-secret (base64-encoded .dockerconfigjson).",
-          "default": "dcm-acm-pull-secret"
+          "description": "Name of an existing Secret with stringData key pull-secret. Required when embeddedSps includes cluster.",
+          "default": ""
         },
-        "defaultInfraEnv": {
-          "type": "string"
+        "clusterInfraEnv": {
+          "type": "string",
+          "description": "Default InfraEnv for baremetal creates (SP_DEFAULT_INFRA_ENV)."
         },
-        "agentNamespace": {
-          "type": "string"
+        "clusterAgentNamespace": {
+          "type": "string",
+          "description": "ACM Agent CR namespace on the hub (not the environment-agent Pod namespace)."
+        },
+        "authClientID": {
+          "type": "string",
+          "default": "dcm-proxy",
+          "description": "Keycloak client ID for DCM registration."
+        },
+        "networkNamespace": {
+          "type": "string",
+          "default": "default",
+          "description": "Namespace for network SP workloads (SP_NETWORK_NAMESPACE)."
         }
       }
     }
@@ -243,7 +275,7 @@
         "tag": {
           "type": "string",
           "description": "Image tag. Empty defaults to global.imageTag.",
-          "default": ""
+          "default": "mc-r2"
         },
         "securityContext": {
           "$ref": "#/definitions/securityContext"
@@ -385,7 +417,7 @@
         "tag": {
           "type": "string",
           "description": "Image tag. Empty defaults to global.imageTag.",
-          "default": ""
+          "default": "m2-rc1"
         },
         "route": {
           "$ref": "#/definitions/route"
@@ -395,17 +427,8 @@
         }
       }
     },
-    "kubevirtServiceProvider": {
-      "$ref": "#/definitions/optionalServiceDefinition"
-    },
-    "k8sContainerServiceProvider": {
-      "$ref": "#/definitions/optionalServiceDefinition"
-    },
-    "acmClusterServiceProvider": {
-      "$ref": "#/definitions/optionalServiceDefinition"
-    },
-    "threeTierDemoServiceProvider": {
-      "$ref": "#/definitions/optionalServiceDefinition"
+    "environmentAgent": {
+      "$ref": "#/definitions/environmentAgentConfig"
     }
   }
 }

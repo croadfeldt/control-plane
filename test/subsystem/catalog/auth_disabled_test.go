@@ -42,7 +42,7 @@ var _ = Describe("Auth disabled mode ignores garbage headers", func() {
 	It("succeeds with a wrong proxy secret and garbage user", func() {
 		resp := doGet("/catalog-items", map[string]string{
 			"X-Auth-Proxy-Secret": "completely-wrong-secret",
-			"X-Forwarded-User":   "garbage-user-id",
+			"X-Forwarded-User":    "garbage-user-id",
 		})
 		defer resp.Body.Close()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))

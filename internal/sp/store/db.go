@@ -38,12 +38,7 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 
 	gormLogger := logger.New(
 		slog.NewLogLogger(slog.Default().Handler(), slogBridgeLevel),
-		logger.Config{
-			SlowThreshold:             time.Second,
-			LogLevel:                  gormLogLevel,
-			IgnoreRecordNotFoundError: true,
-			Colorful:                  false,
-		},
+		gormLoggerConfig(gormLogLevel),
 	)
 
 	db, err := gorm.Open(dialector, &gorm.Config{
@@ -71,6 +66,18 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 	slog.Info("Database schema migrated")
 
 	return db, nil
+}
+
+// gormLoggerConfig returns the shared GORM logger configuration.
+// Extracted so the regression test exercises the same settings as production.
+func gormLoggerConfig(level logger.LogLevel) logger.Config {
+	return logger.Config{
+		SlowThreshold:             time.Second,
+		LogLevel:                  level,
+		IgnoreRecordNotFoundError: true,
+		ParameterizedQueries:      true,
+		Colorful:                  false,
+	}
 }
 
 // gormLogLevelFromString maps the application log level string to GORM and slog levels.

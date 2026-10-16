@@ -52,12 +52,6 @@ generate-catalog-service-types:
 		--import-mapping=../common.yaml:$(CATALOG_SERVICETYPES_MODULE) \
 		-o $(CATALOG_API)/servicetypes/container/types.gen.go \
 		$(CATALOG_API)/servicetypes/container/spec.yaml
-	@echo "Generating Database types..."
-	go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
-		--config=$(CATALOG_API)/servicetypes/database/spec.gen.cfg \
-		--import-mapping=../common.yaml:$(CATALOG_SERVICETYPES_MODULE) \
-		-o $(CATALOG_API)/servicetypes/database/types.gen.go \
-		$(CATALOG_API)/servicetypes/database/spec.yaml
 	@echo "Generating Cluster types..."
 	go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
 		--config=$(CATALOG_API)/servicetypes/cluster/spec.gen.cfg \

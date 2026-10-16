@@ -54,7 +54,7 @@ type Resource struct {
 type Client interface {
 	CreateRun(ctx context.Context, req CreateRunRequest) (*Run, error)
 	DeleteRun(ctx context.Context, runID string) error
-	RehydrateResource(ctx context.Context, runID string, newRunID string) (*Resource, error)
+	RehydrateResource(ctx context.Context, runID string, newRunID string) (*Run, error)
 }
 
 type client struct {
@@ -177,7 +177,7 @@ func (c *client) DeleteRun(ctx context.Context, runID string) error {
 			"run_id", runID,
 			"status", resp.StatusCode,
 		)
-		return fmt.Errorf("placement manager returned status %d: %s", resp.StatusCode, string(respBody))
+		return &PlacementError{StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
 
 	c.logger.InfoContext(ctx, "Run deleted from placement manager", "run_id", runID)
@@ -185,7 +185,7 @@ func (c *client) DeleteRun(ctx context.Context, runID string) error {
 }
 
 // RehydrateResource rehydrates a placement run in the Placement Manager.
-func (c *client) RehydrateResource(ctx context.Context, runID string, newRunID string) (*Resource, error) {
+func (c *client) RehydrateResource(ctx context.Context, runID string, newRunID string) (*Run, error) {
 	c.logger.InfoContext(ctx, "Rehydrating run in placement manager",
 		"run_id", runID,
 		"new_run_id", newRunID,
@@ -235,5 +235,8 @@ func (c *client) RehydrateResource(ctx context.Context, runID string, newRunID s
 		"run_id", runID,
 		"new_run_id", newRunID,
 	)
-	return &parsed, nil
+	return &Run{
+		RunID:     newRunID,
+		Resources: []Resource{parsed},
+	}, nil
 }

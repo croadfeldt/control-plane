@@ -2,8 +2,8 @@ apiVersion: v2
 name: dcm
 description: DCM control-plane platform for Kubernetes and OpenShift
 type: application
-version: 0.1.0
-appVersion: "main"
+version: 0.2.0
+appVersion: "m2"
 keywords:
   - dcm
   - control-plane

@@ -61,18 +61,18 @@ var _ = Describe("Seed", func() {
 				var serviceTypes []model.ServiceType
 				err = db.Find(&serviceTypes).Error
 				Expect(err).ToNot(HaveOccurred())
-				Expect(serviceTypes).To(HaveLen(7))
+				Expect(serviceTypes).To(HaveLen(6))
 
 				ids := make([]string, len(serviceTypes))
 				for i, st := range serviceTypes {
 					ids[i] = st.ID
 				}
-				Expect(ids).To(ConsistOf("three-tier-app-demo", "vm", "container", "database", "cluster", "storage", "network"))
+				Expect(ids).To(ConsistOf("three-tier-app-demo", "vm", "container", "cluster", "storage", "network"))
 			})
 
 			It("inserts missing service types when upgrading a partially seeded database", func() {
 				ctx := context.Background()
-				legacyIDs := []string{"three-tier-app-demo", "vm", "container", "database", "cluster", "storage"}
+				legacyIDs := []string{"three-tier-app-demo", "vm", "container", "cluster", "storage"}
 				for _, id := range legacyIDs {
 					st := model.ServiceType{
 						ID:          id,
@@ -91,20 +91,32 @@ var _ = Describe("Seed", func() {
 				var count int64
 				err = db.Model(&model.ServiceType{}).Count(&count).Error
 				Expect(err).ToNot(HaveOccurred())
-				Expect(count).To(Equal(int64(7)))
+				Expect(count).To(Equal(int64(6)))
 
 				network, err := dataStore.ServiceType().Get(ctx, "network")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(network.ServiceType).To(Equal("network"))
 				Expect(network.Spec).To(HaveKey("ports"))
-				Expect(network.Spec).To(HaveKey("routing_level"))
+				Expect(network.Spec).ToNot(HaveKey("routing_level"))
 
 				err = svc.Seed(ctx)
 				Expect(err).ToNot(HaveOccurred())
 
 				err = db.Model(&model.ServiceType{}).Count(&count).Error
 				Expect(err).ToNot(HaveOccurred())
-				Expect(count).To(Equal(int64(7)))
+				Expect(count).To(Equal(int64(6)))
+			})
+
+			It("omits routing_level from the freshly seeded network service type", func() {
+				ctx := context.Background()
+
+				err := svc.Seed(ctx)
+				Expect(err).ToNot(HaveOccurred())
+
+				network, err := dataStore.ServiceType().Get(ctx, "network")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(network.Spec).To(HaveKey("ports"))
+				Expect(network.Spec).ToNot(HaveKey("routing_level"))
 			})
 
 			DescribeTable("seeds service type with correct spec keys",
@@ -123,12 +135,11 @@ var _ = Describe("Seed", func() {
 						Expect(st.Spec).To(HaveKey(key))
 					}
 				},
-				Entry("vm", "vm", []string{"instance_size", "cpu", "memory", "storage", "storage_tier", "guest_os", "firmware", "boot_order", "layout_ref", "networks", "placement", "run_state", "provider_handle", "primary_ip", "hostname", "ip_addresses", "mac_addresses", "observed_run_state", "target_segment"}),
-				Entry("container", "container", []string{"image", "command", "args", "resources", "process", "network", "runtime", "endpoint", "internal_dns"}),
-				Entry("database", "database", []string{"engine", "version", "resources", "applied_version", "connection_string", "host", "port", "username"}),
-				Entry("cluster", "cluster", []string{"release", "network", "api_url", "console_url", "kubeconfig", "cluster_id"}),
-				Entry("storage", "storage", []string{"capacity", "access_mode", "volume_mode", "storage_class", "retain_on_release", "layout_entry", "volume_handle", "attached"}),
-				Entry("network", "network", []string{"ports", "routing_level", "endpoints"}),
+				Entry("vm", "vm", []string{"vcpu", "memory", "storage", "guest_os", "access", "ip"}),
+				Entry("container", "container", []string{"image", "resources", "process", "network", "endpoints"}),
+				Entry("cluster", "cluster", []string{"version", "api_endpoint", "console_url", "kubeconfig"}),
+				Entry("storage", "storage", []string{"capacity", "volume_name"}),
+				Entry("network", "network", []string{"ports", "endpoints"}),
 			)
 		})
 

@@ -432,6 +432,36 @@ var _ = Describe("BuildResourceGraph (single resource)", func() {
 			Expect(result["service_type"]).To(Equal("vm-d"))
 		})
 
+		It("preserves legacy empty routing_level in the network graph", func() {
+			ensureServiceTypeWithSpec(ctx, str, "network-routing-empty", "network", map[string]any{
+				"ports": []any{
+					map[string]any{"port": float64(80), "target_port": float64(8080)},
+				},
+				"routing_level": "",
+			})
+			ensureCatalogItemWithFields(ctx, str, "ci-network-routing-empty", "network", []model.FieldConfiguration{})
+
+			result, err := buildGraphSpec(builder, ctx, "ci-network-routing-empty", nil)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(HaveKeyWithValue("routing_level", ""))
+		})
+
+		It("preserves an explicit catalog routing_level default", func() {
+			ensureServiceTypeWithSpec(ctx, str, "network-routing-default", "network", map[string]any{
+				"ports": []any{
+					map[string]any{"port": float64(80), "target_port": float64(8080)},
+				},
+				"routing_level": "",
+			})
+			ensureCatalogItemWithFields(ctx, str, "ci-network-routing-default", "network", []model.FieldConfiguration{
+				{Path: "routing_level", Default: "application", Editable: false},
+			})
+
+			result, err := buildGraphSpec(builder, ctx, "ci-network-routing-default", nil)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(HaveKeyWithValue("routing_level", "application"))
+		})
+
 		It("should override defaults with user values", func() {
 			ensureCatalogItemWithFields(ctx, str, "ci-direct-override", "vm-d", []model.FieldConfiguration{
 				{Path: "spec.vcpu.count", Default: float64(4), Editable: true},

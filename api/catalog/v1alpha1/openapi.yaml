@@ -13,7 +13,7 @@ info:
     ## Resources
 
     - **ServiceTypes**: Define templates for different types of infrastructure services
-      (VM, container, database, Kubernetes cluster, storage volume, or custom types)
+      (VM, container, Kubernetes cluster, storage volume, network, or custom types)
     - **CatalogItems**: Curated service offerings with specific field configurations
       and constraints
   contact: {}
@@ -644,7 +644,7 @@ components:
           type: string
           description: |
             Classification of the service type.
-            Common values include: vm, container, database, cluster, storage, network.
+            Common values include: vm, container, cluster, storage, network.
             Administrators may define custom types beyond these.
           example: vm
 
@@ -672,7 +672,6 @@ components:
             Examples by service type:
             - VM: vcpu, memory, storage, guest_os, access
             - Container: image, resources, process, network
-            - Database: engine, version, resources
             - Cluster: version, nodes (control plane, workers)
             - Storage: capacity
             - Network: ports, routing_level
@@ -818,7 +817,7 @@ components:
           description: |
             The Service type for this resource.
             Immutable after creation.
-            (vm, container, database, cluster, storage, network).
+            (vm, container, cluster, storage, network).
           example: vm
 
         requires_resources:
@@ -885,8 +884,17 @@ components:
           description: |
             JSON Schema constraints for validating this field (draft 2020-12).
             Only applicable when editable=true.
+            SHOULD be set when `editable` is true so the control-plane Catalog API can
+            reject invalid user_values synchronously (HTTP 4xx).
             Supports standard JSON Schema keywords: type, minimum, maximum,
             pattern, enum, minLength, maxLength, etc.
+
+            For instance, catalog items supporting `capacity`, the editable
+            `capacity` field SHOULD include a quantity pattern aligned with the
+            registered storage SP OpenAPI, e.g. type: string and
+            pattern: ^([1-9][0-9]*(\.[0-9]+)?|0\.[0-9]*[1-9][0-9]*)(Ei|Pi|Ti|Gi|Mi|Ki|E|P|T|G|M|K)?$
+            The exact pattern SHOULD match the pattern defined in the service
+            type specification.
 
             Reference: https://json-schema.org/draft/2020-12/json-schema-validation
           example:
@@ -987,6 +995,18 @@ components:
           description: |
             Placement run id. Output-only on the API.
           example: 7c4e8f2a-1b3d-4e5f-9a6b-0c1d2e3f4a5b
+
+        resource_ids:
+          type: array
+          readOnly: true
+          description: |
+            Service type instance IDs created by the placement run.
+            Output-only on the API.
+          items:
+            type: string
+          example:
+            - 97d5efc1-a1b2-4c3d-8e4f-5a6b7c8d9e0f
+            - b426b23c-f1e2-3d4c-5b6a-7890abcdef12
 
         create_time:
           type: string

@@ -144,7 +144,7 @@ func (s *catalogItemInstanceService) createInstance(ctx context.Context, id, pat
 		"run_id", runID,
 		"resource_count", len(pmResources),
 	)
-	_, err = s.pmClient.CreateRun(ctx, placement.CreateRunRequest{
+	run, err := s.pmClient.CreateRun(ctx, placement.CreateRunRequest{
 		CatalogItemInstanceId: id,
 		RunId:                 runID,
 		Resources:             pmResources,
@@ -164,6 +164,18 @@ func (s *catalogItemInstanceService) createInstance(ctx context.Context, id, pat
 			"error", err,
 		)
 		return nil, mapped
+	}
+
+	resourceIDs := extractResourceIDs(run)
+	if len(resourceIDs) > 0 {
+		if err := s.store.CatalogItemInstance().UpdateResourceIDs(ctx, id, resourceIDs); err != nil {
+			// Best-effort: instance and placement run are already created.
+			// resource_ids will be absent in the response but can be
+			// recovered on next rehydrate.
+			s.logger.ErrorContext(ctx, "Failed to persist resource IDs", "id", id, "error", err)
+		} else {
+			createdModel.ResourceIDs = resourceIDs
+		}
 	}
 
 	s.logger.InfoContext(ctx, "Catalog item instance created",
@@ -227,7 +239,7 @@ func (s *catalogItemInstanceService) Rehydrate(ctx context.Context, id string) (
 		"old_run_id", oldRunID,
 		"new_run_id", newRunID,
 	)
-	_, err = s.pmClient.RehydrateResource(ctx, oldRunID, newRunID)
+	run, err := s.pmClient.RehydrateResource(ctx, oldRunID, newRunID)
 	if err != nil {
 		mapped := mapPlacementError(err, ErrPlacementManagerRehydrateFailed)
 		if rbErr := s.rollbackRehydrateRunID(id, newRunID, oldRunID); rbErr != nil {
@@ -243,6 +255,15 @@ func (s *catalogItemInstanceService) Rehydrate(ctx context.Context, id string) (
 			"error", err,
 		)
 		return nil, mapped
+	}
+
+	// Always write resource_ids after rehydrate, even if empty,
+	// to clear stale IDs from the previous run.
+	resourceIDs := extractResourceIDs(run)
+	if err := s.store.CatalogItemInstance().UpdateResourceIDs(ctx, id, resourceIDs); err != nil {
+		s.logger.ErrorContext(ctx, "Failed to persist resource IDs after rehydrate", "id", id, "error", err)
+	} else {
+		updatedModel.ResourceIDs = resourceIDs
 	}
 
 	s.logger.InfoContext(ctx, "Catalog item instance rehydrated",
@@ -270,11 +291,15 @@ func (s *catalogItemInstanceService) Delete(ctx context.Context, id string) erro
 	}
 	s.logger.DebugContext(ctx, "Calling placement manager to delete run", "id", id, "run_id", instance.RunID)
 	if err := s.pmClient.DeleteRun(ctx, instance.RunID); err != nil {
-		s.logger.ErrorContext(ctx, "Placement manager delete failed", "id", id, "error", err)
-		// mapPlacementError, not a direct wrap: distinguishes
-		// policy-rejected/provider-error/policy-dependency (406/422/424)
-		// from a generic placement failure, matching create/rehydrate.
-		return mapPlacementError(err, ErrPlacementManagerDeleteFailed)
+		var pmErr *placement.PlacementError
+		if !errors.As(err, &pmErr) || pmErr.StatusCode != http.StatusNotFound {
+			s.logger.ErrorContext(ctx, "Placement manager delete failed", "id", id, "error", err)
+			// mapPlacementError, not a direct wrap: distinguishes
+			// policy-rejected/provider-error/policy-dependency (406/422/424)
+			// from a generic placement failure, matching create/rehydrate.
+			return mapPlacementError(err, ErrPlacementManagerDeleteFailed)
+		}
+		s.logger.InfoContext(ctx, "Placement manager run was already deleted", "id", id, "run_id", instance.RunID)
 	}
 
 	err = s.store.CatalogItemInstance().Delete(ctx, id)
@@ -318,4 +343,18 @@ func mapPlacementError(err error, genericSentinel error) error {
 		}
 	}
 	return fmt.Errorf("%w: %s", genericSentinel, err.Error())
+}
+
+// extractResourceIDs collects non-empty resource IDs from a placement run.
+func extractResourceIDs(run *placement.Run) []string {
+	if run == nil {
+		return nil
+	}
+	ids := make([]string, 0, len(run.Resources))
+	for _, r := range run.Resources {
+		if r.ID != "" {
+			ids = append(ids, r.ID)
+		}
+	}
+	return ids
 }

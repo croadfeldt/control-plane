@@ -4,7 +4,7 @@ info:
   title: DCM Common Schema Fields
   description: |
     Common fields shared by all DCM service type specifications
-    (VM, Container, Database, Cluster, Storage).
+    (VM, Container, Cluster, Storage, Network).
 
     These fields provide:
     - Schema versioning for evolution
@@ -27,7 +27,6 @@ components:
       enum:
         - vm
         - container
-        - database
         - cluster
         - storage
         - network

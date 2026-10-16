@@ -10,10 +10,10 @@ UDLM resource type, re-run the generator, commit the diff.
 
 ```sh
 # from the repo root, with a croadfeldt/udlm checkout at ../udlm
-make generate                 # regenerate all specs + Go types
-make generate UDLM_DIR=/path/to/udlm
+make generate-udlm                 # regenerate all specs + Go types
+make generate-udlm UDLM_DIR=/path/to/udlm
 
-# or the generator alone (spec.yaml only; then regenerate types.gen.go — see make generate):
+# or the generator alone (spec.yaml only; then regenerate types.gen.go — see make generate-udlm):
 go run ./cmd/udlm-servicetype-gen -udlm ../udlm -out api/catalog/v1alpha1/servicetypes -type vm
 ```
 
@@ -63,5 +63,5 @@ endpoints) has no single UDLM class behind it, and the demo is a composite.
 ## Do not hand-edit generated specs
 
 `spec.yaml` and `types.gen.go` under `servicetypes/<slug>/` are generated. Edit the UDLM resource type and
-re-run `make generate`. Non-portable, provider-specific configuration belongs under `provider_hints`, not new
+re-run `make generate-udlm`. Non-portable, provider-specific configuration belongs under `provider_hints`, not new
 top-level properties.

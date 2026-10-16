@@ -10,9 +10,13 @@ AI agents maintaining this chart: see [AGENTS.md](AGENTS.md).
 
 ## Quick Start
 
-Create the database Secret in the target namespace before install (lab defaults):
+Create the target namespace and switch into it, then create the database Secret
+before install (lab defaults):
 
 ```bash
+kubectl create namespace dcm
+kubectl config set-context --current --namespace=dcm
+
 kubectl create secret generic dcm-db \
   --from-literal=POSTGRES_USER=admin \
   --from-literal=POSTGRES_PASSWORD=adminpass \
@@ -21,14 +25,15 @@ kubectl create secret generic dcm-db \
   --from-literal=DB_PASSWORD=adminpass
 ```
 
-Install all the components with a kubernetes provider using default namespace.
+Install the control-plane stack into the current context namespace (`dcm`).
+Enable the environment-agent (embedded SPs) as needed.
 
 ### OpenShift
 
 ```bash
 helm install dcm deploy/helm/dcm \
-  --set k8sContainerServiceProvider.enabled=true \
-  --set k8sContainerServiceProvider.namespace=default
+  --set environmentAgent.enabled=true \
+  --set environmentAgent.embeddedSps=container
 ```
 
 OpenShift Routes are enabled by default for control-plane and DCM UI.
@@ -39,8 +44,8 @@ OpenShift Routes are enabled by default for control-plane and DCM UI.
 helm install dcm deploy/helm/dcm \
   --set controlPlane.route.enabled=false \
   --set dcmUi.route.enabled=false \
-  --set k8sContainerServiceProvider.enabled=true \
-  --set k8sContainerServiceProvider.namespace=default
+  --set environmentAgent.enabled=true \
+  --set environmentAgent.embeddedSps=container
 ```
 
 Access via port-forward:
@@ -54,63 +59,69 @@ Then open:
 - Control-plane API: http://localhost:8080
 - DCM UI: http://localhost:7007
 
-## Enabling Service Providers
+## Enabling Environment Agent
 
-### KubeVirt Service Provider
+Deploys the [environment-agent](https://github.com/dcm-project/environment-agent) with embedded
+Service Providers in-process. Uses a chart-created ServiceAccount and workload RBAC.
 
-Manages virtual machines via KubeVirt.
+With `auth.enabled=true`, registration and heartbeats use Keycloak client credentials
+(`dcm-proxy` by default).
+
+Environment Agent's embedded SP mapping to a backend platform :
+
+| Embedded SP | Backend |
+|---|---|
+| `container` | Kubernetes Deployments\|Pods\|Services |
+| `vm` | KubeVirt VirtualMachines |
+| `storage` | Kubernetes PersistentVolumeClaims |
+| `network` | Kubernetes Services |
+| `cluster` | ACM/MCE HyperShift |
+
+Escape commas in `--set` values (for example `container\,vm`). Workload namespaces default to
+`default`. If you change `containerNamespace`, `vmNamespace`, `storageNamespace`,
+`networkNamespace`, or `clusterNamespace`, create those namespaces before install/upgrade.
 
 ```bash
 helm upgrade dcm deploy/helm/dcm --reuse-values \
-  --set kubevirtServiceProvider.enabled=true \
-  --set kubevirtServiceProvider.namespace=default
+  --set environmentAgent.enabled=true \
+  --set environmentAgent.embeddedSps=container
 ```
 
-### ACM Cluster Service Provider
+To include `container` and `vm`:
 
-Manages clusters via Red Hat Advanced Cluster Management.
+```bash
+helm upgrade dcm deploy/helm/dcm --reuse-values \
+  --set environmentAgent.enabled=true \
+  --set environmentAgent.embeddedSps=container\,vm \
+  --set environmentAgent.externalSvcType=LoadBalancer
+```
 
-**Pull secret** (required when enabled): create a pre-existing Secret **in the release
-namespace** with a `stringData` key `pull-secret` whose value is the base64-encoded
-`.dockerconfigjson` string, then set `acmClusterServiceProvider.pullSecretRef` (default
-`dcm-acm-pull-secret`).
+When `embeddedSps` includes:
+
+1.  `vm`, ensure KubeVirt or CNV is installed and available on the cluster.
+2.  `container`, set `environmentAgent.externalSvcType=NodePort` on Kind.
+3.  `network`, workloads use `environmentAgent.networkNamespace`.
+4.  `storage`, workloads use `environmentAgent.storageNamespace`. 
+5.  `cluster`, create a pull-secret Secret and set `environmentAgent.pullSecretRef`:
 
 ```bash
 PULL_SECRET=$(oc get secret pull-secret -n openshift-config -o jsonpath='{.data.\.dockerconfigjson}')
 kubectl create secret generic dcm-acm-pull-secret \
   --from-literal=pull-secret="$PULL_SECRET"
+
+helm upgrade dcm deploy/helm/dcm --reuse-values \
+  --set environmentAgent.enabled=true \
+  --set environmentAgent.embeddedSps=container\,cluster \
+  --set environmentAgent.pullSecretRef=dcm-acm-pull-secret \
+  --set environmentAgent.clusterNamespace=clusters \
+  --set environmentAgent.baseDomain=example.com
 ```
 
-**Cluster access**: When `kubeconfigRef` is omitted, the chart creates a ServiceAccount
-with RBAC for HyperShift, Hive, KubeVirt, Agent and core Secret APIs (in-cluster auth on the
-hub). To use an external kubeconfig, create a Secret with key `kubeconfig` and set
-`acmClusterServiceProvider.kubeconfigRef`.
+Agent API is ClusterIP. Port-forward to verify:
 
 ```bash
-# In-cluster mode (SA + RBAC created by chart):
-helm upgrade dcm deploy/helm/dcm --reuse-values \
-  --set acmClusterServiceProvider.enabled=true \
-  --set acmClusterServiceProvider.namespace=default \
-  --set acmClusterServiceProvider.baseDomain=example.com
-
-# External kubeconfig mode (pre-existing Secret):
-kubectl create secret generic my-kubeconfig-secret \
-  --from-file=kubeconfig=/path/to/kubeconfig
-helm upgrade dcm deploy/helm/dcm --reuse-values \
-  --set acmClusterServiceProvider.enabled=true \
-  --set acmClusterServiceProvider.namespace=default \
-  --set acmClusterServiceProvider.baseDomain=example.com \
-  --set acmClusterServiceProvider.kubeconfigRef=my-kubeconfig-secret
-```
-
-### Three-Tier Demo Service Provider
-
-A demo provider for a three-tier application. Requires the Kubernetes Container Service Provider to also be enabled.
-
-```bash
-helm upgrade dcm deploy/helm/dcm --reuse-values \
-  --set k8sContainerServiceProvider.enabled=true \
-  --set threeTierDemoServiceProvider.enabled=true
+kubectl port-forward svc/dcm-environment-agent 8081:8080
+curl http://127.0.0.1:8081/api/v1alpha1/health
 ```
 
 ## Values schema and maintainability
@@ -173,9 +184,9 @@ chart bundles a copy under `files/`; after editing the source, run `make helm-ch
 and commit both files. `make helm-chart-verify-sync` catches drift; CI runs
 `make helm-chart-check` (verify, lint, template).
 
-> **Warning:** Service providers do not forward authentication headers yet, so enabling
-> auth can break SP workflows. The CLI (`dcm login` / bearer token) and direct API
-> calls with a valid Keycloak JWT work.
+When `auth.enabled=true` with the environment-agent, the chart sets `DCM_AUTH_*` using
+the Keycloak `dcm-proxy` client (`AUTH_PROXY_SECRET` in `auth.authSecretRef`). Override
+the client with `environmentAgent.authClientID` if needed.
 
 ### Auth values
 
@@ -232,7 +243,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/provid
 helm uninstall dcm
 ```
 
-Note: PersistentVolumeClaims for PostgreSQL and NATS are not deleted automatically. To remove them:
+Note: PersistentVolumeClaims for PostgreSQL, NATS, and the environment-agent are not deleted automatically. To remove them:
 
 ```bash
 kubectl delete pvc -l app.kubernetes.io/instance=dcm

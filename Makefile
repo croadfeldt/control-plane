@@ -51,15 +51,16 @@ build:
 build-gitops:
 	CGO_ENABLED=0 go build -buildvcs=false -o bin/dcm-gitops ./cmd/dcm-gitops
 
-# Regenerate the service-type OpenAPI specs from the UDLM registry (single source
-# of truth), then regenerate their Go types. Point UDLM_DIR at a croadfeldt/udlm
-# checkout. Run this after a UDLM resource-type changes, then commit the diff.
+# Opt-in: regenerate the service-type OpenAPI specs from the UDLM registry, then their Go
+# types. On main the specs are upstream's (dcm-project) and this target must not be run
+# there; it is the tool the udlm-native branch uses. Point UDLM_DIR at a croadfeldt/udlm
+# checkout.
 UDLM_DIR ?= ../udlm
 OAPI_CODEGEN_VERSION ?= v2.7.0
-SERVICE_TYPES := vm container database cluster storage
-generate:
+UDLM_SERVICE_TYPES := vm container cluster storage
+generate-udlm:
 	go run ./cmd/udlm-servicetype-gen -udlm $(UDLM_DIR) -out api/catalog/v1alpha1/servicetypes -type all
-	@for st in $(SERVICE_TYPES); do \
+	@for st in $(UDLM_SERVICE_TYPES); do \
 		echo "oapi-codegen $$st"; \
 		( cd api/catalog/v1alpha1/servicetypes/$$st && \
 		  go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION) \
@@ -149,7 +150,7 @@ test:
 tidy:
 	go mod tidy
 
-.PHONY: build build-gitops generate run run-dev compose-up compose-up-with-agent compose-down \
+.PHONY: build build-gitops generate-udlm run run-dev compose-up compose-up-with-agent compose-down \
 	install-kubevirt kubeconfig-for-compose kind-connect kind-disconnect \
 	disconnect-compose-networks remove-compose-networks \
 	image-build clean fmt vet lint test test-catalog test-placement test-policy test-sp test-gitops tidy subsystem-env \

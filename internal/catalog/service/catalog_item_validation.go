@@ -107,6 +107,9 @@ func detectDirectedCycle(edges map[string][]string, cycleErr error) error {
 func validateFieldDependsOnCycles(fields []model.FieldConfiguration) error {
 	knownPaths := make(map[string]bool, len(fields))
 	for _, f := range fields {
+		if knownPaths[f.Path] {
+			return fmt.Errorf("%w: %s", ErrCatalogItemFieldPathTaken, f.Path)
+		}
 		knownPaths[f.Path] = true
 	}
 

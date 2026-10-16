@@ -14,7 +14,6 @@ var allowedServiceTypes = map[string]bool{
 	"vm":        true,
 	"container": true,
 	"cluster":   true,
-	"database":  true,
 	"storage":   true,
 	"network":   true,
 }
@@ -23,7 +22,7 @@ var allowedServiceTypes = map[string]bool{
 type CreateServiceTypeRequest struct {
 	ID          *string   // Optional user-specified ID
 	ApiVersion  string    // e.g., "v1alpha1"
-	ServiceType string    // Must be: vm, container, cluster, database, storage, or network
+	ServiceType string    // Must be: vm, container, cluster, storage, or network
 	Metadata    *struct { // Optional labels
 		Labels *map[string]string `json:"labels,omitempty"`
 	}

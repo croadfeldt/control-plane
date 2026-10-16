@@ -54,6 +54,7 @@ var clientErrors = []error{
 	service.ErrDependsOnPathNotFound,
 	service.ErrCatalogItemSpecConflict,
 	service.ErrCatalogItemResourceNameTaken,
+	service.ErrCatalogItemFieldPathTaken,
 	service.ErrCatalogItemRequiresResourceNotFound,
 	service.ErrCatalogItemRequiresCycle,
 	service.ErrUserValueResourceRequired,

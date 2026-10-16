@@ -80,29 +80,64 @@ fi
 db_ref_count="$(printf '%s' "$db_ref_out" | grep -c 'name: dcm-db')"
 [ "$db_ref_count" -ge 2 ] || fail "workloads must reference postgres.dbSecretRef (found $db_ref_count)"
 
-require_template_failure "acm without pullSecretRef" "acmClusterServiceProvider.pullSecretRef is required when enabled" --set acmClusterServiceProvider.enabled=true --set acmClusterServiceProvider.pullSecretRef=
+# Environment agent
+require_block "environment-agent Deployment when enabled" 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Deployment/ {print; exit}' --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=container >/dev/null
+require_block "environment-agent ServiceAccount when enabled" 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: ServiceAccount/ {print; exit}' --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=container >/dev/null
+require_block "environment-agent workload Role when enabled" 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-workloads/ {print; exit}' --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=container >/dev/null
 
-require_external_kubeconfig() {
-	local name="$1"
-	local deployment="$2"
-	local env_name="$3"
-	local secret="$4"
-	shift 4
+ea_out="$(helm_out --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=container)"
+if printf '%s' "$ea_out" | grep -Fq 'SP_DEFAULT_KUBECONFIG'; then
+	fail "environment-agent must not set SP_DEFAULT_KUBECONFIG (in-cluster auth only)"
+fi
+if printf '%s' "$ea_out" | grep -Fq 'mountPath: /kubeconfig'; then
+	fail "environment-agent must not mount a kubeconfig"
+fi
+printf '%s' "$ea_out" | grep -Fq 'DCM_REGISTRATION_URL' || fail "environment-agent must set DCM_REGISTRATION_URL"
+printf '%s' "$ea_out" | grep -Fq 'http://dcm-control-plane:8080' || fail "environment-agent DCM_REGISTRATION_URL must be the control-plane base URL"
+if printf '%s' "$ea_out" | awk 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Deployment/ && /emptyDir:/ {found=1} END{exit !found}'; then
+	fail "environment-agent must not use emptyDir for registrations"
+fi
+printf '%s' "$ea_out" | awk 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: PersistentVolumeClaim/ && /environment-agent-data/ {found=1} END{exit !found}' \
+	|| fail "environment-agent must render a registrations PVC"
 
-	local out block
-	out="$(helm_out "$@")"
-	block="$(printf '%s' "$out" | awk -v deployment="$deployment" 'BEGIN{RS="---"} index($0, "kind: Deployment") && index($0, "name: dcm-" deployment) {print; exit}')"
-	[ -n "$block" ] || fail "missing $name Deployment"
-	printf '%s' "$block" | grep -Fq -- "- name: $env_name" || fail "$name must set $env_name"
-	printf '%s' "$block" | grep -Fq -- "value: /kubeconfig/kubeconfig" || fail "$name must set the kubeconfig path"
-	printf '%s' "$block" | grep -Fq -- "mountPath: /kubeconfig" || fail "$name must mount the kubeconfig"
-	printf '%s' "$block" | grep -Fq -- "secretName: $secret" || fail "$name must reference Secret $secret"
-	if printf '%s' "$out" | awk -v secret="$secret" 'BEGIN{RS="---"} /kind: Secret/ && index($0, "name: " secret) {found=1} END{exit !found}'; then
-		fail "$name must not render external Secret $secret"
-	fi
-}
+require_template_failure "environment-agent cluster without pullSecretRef" \
+	"environmentAgent.pullSecretRef is required when embeddedSps includes cluster" \
+	--set environmentAgent.enabled=true --set environmentAgent.embeddedSps=cluster --set environmentAgent.pullSecretRef=
 
-require_external_kubeconfig "ACM provider" "acm-cluster-service-provider" "KUBECONFIG" "acm-kubeconfig" --set acmClusterServiceProvider.enabled=true --set acmClusterServiceProvider.pullSecretRef=acm-pull-secret --set acmClusterServiceProvider.kubeconfigRef=acm-kubeconfig
-require_external_kubeconfig "Kubernetes provider" "k8s-container-service-provider" "SP_K8S_KUBECONFIG" "k8s-kubeconfig" --set k8sContainerServiceProvider.enabled=true --set k8sContainerServiceProvider.kubeconfigRef=k8s-kubeconfig
-require_external_kubeconfig "KubeVirt provider" "kubevirt-service-provider" "KUBERNETES_KUBECONFIG" "kubevirt-kubeconfig" --set kubevirtServiceProvider.enabled=true --set kubevirtServiceProvider.kubeconfigRef=kubevirt-kubeconfig
-require_external_kubeconfig "three-tier provider" "three-tier-demo-sp" "SP_K8S_KUBECONFIG" "three-tier-kubeconfig" --set threeTierDemoServiceProvider.enabled=true --set threeTierDemoServiceProvider.kubeconfigRef=three-tier-kubeconfig
+cluster_out="$(helm_out --set environmentAgent.enabled=true --set "environmentAgent.embeddedSps=container\,cluster" --set environmentAgent.pullSecretRef=acm-pull-secret)"
+printf '%s' "$cluster_out" | awk 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-cluster/ {found=1} END{exit !found}' \
+	|| fail "missing environment-agent cluster Role when cluster embedded"
+printf '%s' "$cluster_out" | awk 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Deployment/ && /name: SP_PULL_SECRET/ && /name: acm-pull-secret/ {found=1} END{exit !found}' \
+	|| fail "environment-agent cluster Deployment must reference pullSecretRef via SP_PULL_SECRET"
+
+# Separate-namespace Roles for vm / storage / network
+require_block "environment-agent vm Role when vmNamespace differs" \
+	'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-vm/ && /namespace: kubevirt/ {print; exit}' \
+	--set environmentAgent.enabled=true --set environmentAgent.embeddedSps=vm \
+	--set environmentAgent.vmNamespace=kubevirt --set environmentAgent.containerNamespace=default >/dev/null
+
+require_block "environment-agent storage Role when storageNamespace differs" \
+	'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-storage/ && /namespace: storage-ns/ {print; exit}' \
+	--set environmentAgent.enabled=true --set environmentAgent.embeddedSps=storage \
+	--set environmentAgent.storageNamespace=storage-ns --set environmentAgent.containerNamespace=default >/dev/null
+
+require_block "environment-agent network Role when networkNamespace differs" \
+	'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-network/ && /namespace: net-ns/ {print; exit}' \
+	--set environmentAgent.enabled=true --set environmentAgent.embeddedSps=network \
+	--set environmentAgent.networkNamespace=net-ns --set environmentAgent.containerNamespace=default >/dev/null
+
+storage_net_out="$(helm_out --set environmentAgent.enabled=true --set "environmentAgent.embeddedSps=storage\,network")"
+printf '%s' "$storage_net_out" | grep -Fq 'SP_STORAGE_NAMESPACE' || fail "environment-agent must set SP_STORAGE_NAMESPACE for storage SP"
+printf '%s' "$storage_net_out" | grep -Fq 'SP_NETWORK_NAMESPACE' || fail "environment-agent must set SP_NETWORK_NAMESPACE for network SP"
+
+# Environment-agent DCM auth when auth.enabled
+ea_auth_out="$(helm_out --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=container --set auth.enabled=true)"
+printf '%s' "$ea_auth_out" | grep -Fq 'DCM_AUTH_TOKEN_ENDPOINT' || fail "environment-agent must set DCM_AUTH_TOKEN_ENDPOINT when auth.enabled"
+printf '%s' "$ea_auth_out" | grep -Fq 'DCM_AUTH_CLIENT_ID' || fail "environment-agent must set DCM_AUTH_CLIENT_ID when auth.enabled"
+printf '%s' "$ea_auth_out" | grep -Fq 'DCM_AUTH_CLIENT_SECRET' || fail "environment-agent must set DCM_AUTH_CLIENT_SECRET when auth.enabled"
+printf '%s' "$ea_auth_out" | grep -Fq 'openid-connect/token' || fail "environment-agent DCM_AUTH_TOKEN_ENDPOINT must be the Keycloak token URL"
+printf '%s' "$ea_auth_out" | awk 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Deployment/ && /key: AUTH_PROXY_SECRET/ {found=1} END{exit !found}' \
+	|| fail "environment-agent must reference AUTH_PROXY_SECRET for DCM_AUTH_CLIENT_SECRET"
+if printf '%s' "$ea_out" | grep -Fq 'DCM_AUTH_TOKEN_ENDPOINT'; then
+	fail "environment-agent must not set DCM_AUTH_* when auth.enabled=false"
+fi

@@ -169,7 +169,7 @@ func createTwoAgentPolicy(agentA, agentB string) string {
 // rules with an unconditional "prefer C" rule. Policy evaluation
 // pre-filters available_agents by service-type capability before Rego
 // runs, so as long as only agentC is registered for the service type under
-// evaluation (e.g. "database"), the C rule only ever fires for that
+// evaluation (e.g. "storage"), the C rule only ever fires for that
 // resource - no service-type branching needed inside Rego itself. Returns
 // the policy ID for cleanup.
 func createThreeAgentPolicy(agentA, agentB, agentC string) string {

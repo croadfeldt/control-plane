@@ -75,6 +75,10 @@ var mappings = []mapping{
 }
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	udlmDir := flag.String("udlm", "../udlm", "path to a croadfeldt/udlm checkout (contains registry/generated)")
 	outDir := flag.String("out", "api/catalog/v1alpha1/servicetypes", "servicetypes output directory")
 	which := flag.String("type", "all", "service-type slug to generate, or 'all'")
@@ -89,7 +93,7 @@ func main() {
 	}
 	if len(todo) == 0 {
 		fmt.Fprintf(os.Stderr, "unknown -type %q; known: %s, all\n", *which, slugs())
-		os.Exit(2)
+		return 2
 	}
 
 	specDir := *outDir
@@ -97,9 +101,9 @@ func main() {
 		tmp, err := os.MkdirTemp("", "udlm-servicetype-gen-")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
-			os.Exit(1)
+			return 1
 		}
-		defer os.RemoveAll(tmp)
+		defer func() { _ = os.RemoveAll(tmp) }()
 		specDir = tmp
 	}
 	generated := map[string]udlmType{}
@@ -107,7 +111,7 @@ func main() {
 		t, err := generate(m, *udlmDir, specDir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "generate %s: %v\n", m.slug, err)
-			os.Exit(1)
+			return 1
 		}
 		generated[m.slug] = t
 		if !*metaOnly {
@@ -118,20 +122,21 @@ func main() {
 		groups, err := readUsageGroups(*udlmDir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
-			os.Exit(1)
+			return 1
 		}
 		if err := writeTypeTable(*outDir, generated, groups); err != nil {
 			fmt.Fprintf(os.Stderr, "write type table: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 		fmt.Printf("generated %s\n", filepath.Join(*outDir, typeTableFile))
 	}
 	if *metaOnly {
-		return
+		return 0
 	}
 	fmt.Fprintln(os.Stderr, "\nNext: regenerate Go types for each changed service-type, e.g.")
 	fmt.Fprintln(os.Stderr, "  cd "+*outDir+"/<slug> && oapi-codegen -config spec.gen.cfg \\")
 	fmt.Fprintln(os.Stderr, "    -import-mapping '../common.yaml:github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes' spec.yaml > types.gen.go")
+	return 0
 }
 
 func slugs() string {

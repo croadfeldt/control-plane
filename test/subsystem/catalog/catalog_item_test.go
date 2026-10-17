@@ -113,9 +113,9 @@ var _ = Describe("CatalogItem API", func() {
 
 		It("filters by service_type", func() {
 			id := "ci-filter-" + uuid.NewString()[:8]
-			createTestCatalogItem(id, "Filtered", "database", nil)
+			createTestCatalogItem(id, "Filtered", "storage", nil)
 
-			st := "database"
+			st := "storage"
 			resp, err := apiClient.ListCatalogItemsWithResponse(context.Background(), &v1alpha1.ListCatalogItemsParams{
 				ServiceType: &st,
 			})
@@ -124,7 +124,7 @@ var _ = Describe("CatalogItem API", func() {
 			Expect(resp.JSON200).NotTo(BeNil())
 
 			for _, item := range resp.JSON200.Results {
-				Expect(item.Spec.Resources[0].ServiceType).To(Equal("database"))
+				Expect(item.Spec.Resources[0].ServiceType).To(Equal("storage"))
 			}
 			uids := make([]string, len(resp.JSON200.Results))
 			for i, item := range resp.JSON200.Results {
@@ -173,7 +173,7 @@ var _ = Describe("CatalogItem API", func() {
 			id := "ci-immutable-" + uuid.NewString()[:8]
 			createTestCatalogItem(id, "Immutable ST", "vm", nil)
 
-			spec := testutil.CatalogSpec("database", nil)
+			spec := testutil.CatalogSpec("storage", nil)
 			updateBody := v1alpha1.CatalogItem{
 				Spec: &spec,
 			}

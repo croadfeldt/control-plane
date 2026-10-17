@@ -61,6 +61,9 @@ var (
 	// ErrCatalogItemResourceNameTaken indicates duplicate resource names in a catalog item
 	ErrCatalogItemResourceNameTaken = errors.New("duplicate resource name in catalog item")
 
+	// ErrCatalogItemFieldPathTaken indicates duplicate field paths within a single resource
+	ErrCatalogItemFieldPathTaken = errors.New("duplicate field path in resource")
+
 	// ErrCatalogItemRequiresResourceNotFound indicates requires_resources references an unknown resource name
 	ErrCatalogItemRequiresResourceNotFound = errors.New("requires_resources references unknown resource name")
 

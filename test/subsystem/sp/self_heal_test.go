@@ -226,7 +226,7 @@ var _ = Describe("Sibling reassignment during self-heal", func() {
 	It("leaves a sibling on a different, never-excluded agent untouched", func() {
 		agentA := registerReadyAgent("vm")
 		agentB := registerReadyAgent("vm")
-		agentC := registerReadyAgent("database")
+		agentC := registerReadyAgent("storage")
 		policyID := createThreeAgentPolicy(agentA, agentB, agentC)
 		DeferCleanup(func() {
 			_, _ = policyApiClient.DeletePolicyWithResponse(context.Background(), policyID)
@@ -234,12 +234,12 @@ var _ = Describe("Sibling reassignment during self-heal", func() {
 
 		catalogItemID := createSiblingCatalogItem(
 			siblingResource{Name: "primary", ServiceType: "vm"},
-			siblingResource{Name: "sibling", ServiceType: "database"},
+			siblingResource{Name: "sibling", ServiceType: "storage"},
 		)
 		createCatalogItemInstance(catalogItemID)
 
 		primaryID := findInstanceByAgentAndServiceType(Default, agentA, "vm")
-		siblingID := findInstanceByAgentAndServiceType(Default, agentC, "database")
+		siblingID := findInstanceByAgentAndServiceType(Default, agentC, "storage")
 
 		// Never acknowledge either. Past the pending timeout, the primary
 		// (on excluded agentA) moves to agentB.
@@ -255,7 +255,7 @@ var _ = Describe("Sibling reassignment during self-heal", func() {
 		// is the only thing in this flow that could move it, and agentC
 		// was never in the excluded set. (Its own independent pending
 		// timeout may separately drive its *status* toward "failed" once
-		// retries exhaust, since agentC is the only database-capable
+		// retries exhaust, since agentC is the only storage-capable
 		// agent - that's covered by the retries-exhausted test below and
 		// is irrelevant to the agent_name assertion here.)
 		Consistently(func(g Gomega) *string {

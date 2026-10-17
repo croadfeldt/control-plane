@@ -68,8 +68,10 @@ using OIDC discovery (no external auth proxy required). A proxy-header fallback 
 (`X-Auth-Proxy-Secret` + `X-Forwarded-User`) is also supported.
 
 Authentication is disabled by default (`AUTH_DISABLED=true`). When enabled, the CLI
-(`dcm login` / bearer token) and direct JWT API calls work; the environment-agent does not
-forward authentication headers yet, so SP workflows may fail.
+(`dcm login` / bearer token) and direct JWT API calls work. With the environment-agent,
+set `DCM_AUTH_*` in `deploy/.env` for registration/heartbeat (Helm wires these
+automatically; see [Configuration](#configuration) and the
+[environment-agent README](https://github.com/dcm-project/environment-agent#authentication)).
 
 To enable authentication (Compose):
 
@@ -85,10 +87,6 @@ With the environment-agent: `make compose-up-with-agent AUTH=true`.
 
 For Helm chart installs, create the `dcm-auth` Secret and set `auth.enabled=true` — see
 [helm/dcm/README.md](helm/dcm/README.md#authentication).
-
-> **Warning:** The environment-agent does not forward authentication headers yet, so enabling
-> auth can break SP workflows. The CLI (`dcm login` / bearer token) and direct API calls with a
-> valid Keycloak JWT work.
 
 When enabled, the control-plane authenticates requests via two paths (tried in order):
 
@@ -186,8 +184,11 @@ Database, auth, and ACM pull-secret credentials are defined in `deploy/.env.exam
 | `AUTH_DISABLED`                             | `true`                      | Disable authentication (see [Authentication](#authentication); set in `.env`)                                 |
 | `AUTH_ISSUER_URL`                           | _(empty)_                   | OIDC issuer URL for JWT validation (e.g. `http://keycloak:8080/realms/dcm`)                                 |
 | `AUTH_JWT_AUDIENCE`                         | `dcm-api`                   | Expected `aud` claim in JWT tokens                                                                            |
-| `AUTH_PROXY_SECRET`                         | _(in `.env.example`)        | Shared secret for proxy-header fallback auth path                                                           |
+| `AUTH_PROXY_SECRET`                         | _(in `.env.example`)        | Shared secret for proxy-header fallback; also `dcm-proxy` client secret / agent `DCM_AUTH_CLIENT_SECRET` |
 | `AUTH_CACHE_TTL`                            | `60s`                       | TTL for the actor resolution cache                                                                          |
+| `DCM_AUTH_TOKEN_ENDPOINT`                   | _(none)_                    | Keycloak token URL for agent registration (required with agent when auth enabled)                         |
+| `DCM_AUTH_CLIENT_ID`                        | `dcm-proxy`                 | OAuth2 client ID for agent → control-plane auth                                                             |
+| `DCM_AUTH_CLIENT_SECRET`                    | _(same as `AUTH_PROXY_SECRET`) | OAuth2 client secret for agent → control-plane auth                                                      |
 | `DCM_ADMIN_SUBJECT`                        | `56deb662-...`              | Keycloak subject UUID for the bootstrap admin actor (required when auth enabled)                            |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD`      | _(in `.env.example`)        | PostgreSQL credentials (also `DB_USER`, `DB_PASS`, `DB_PASSWORD`)                                           |
 | `KEYCLOAK_ADMIN_PASSWORD`                  | _(in `.env.example`)        | Keycloak admin console password                                                                             |

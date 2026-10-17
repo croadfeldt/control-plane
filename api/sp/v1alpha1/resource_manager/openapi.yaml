@@ -353,7 +353,7 @@ components:
           type: object
           description: |
             Service specification following one of the supported service type
-            schemas (VMSpec, ContainerSpec, DatabaseSpec, or ClusterSpec).
+            schemas (VMSpec, ContainerSpec, ClusterSpec, StorageSpec, or NetworkSpec).
           additionalProperties: true
         create_time:
           type: string

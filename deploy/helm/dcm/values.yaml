@@ -17,7 +17,7 @@ nats:
 # -- Control-plane monolith (catalog, policy, placement, SP manager)
 controlPlane:
   image: quay.io/dcm-project/control-plane
-  tag: ""  # defaults to global.imageTag
+  tag: mc-r2  # empty defaults to global.imageTag
   securityContext:
     runAsNonRoot: true
     allowPrivilegeEscalation: false
@@ -67,7 +67,7 @@ auth:
 dcmUi:
   enabled: true
   image: quay.io/dcm-project/dcm-ui
-  tag: ""
+  tag: m2-rc1  # empty defaults to global.imageTag
   route:
     enabled: true
     host: ""
@@ -78,40 +78,23 @@ dcmUi:
     tls: []
     annotations: {}
 
-# -- Optional service providers (disabled by default)
-kubevirtServiceProvider:
+# -- Optional environment-agent (embedded SPs; in-cluster auth only)
+environmentAgent:
   enabled: false
-  image: quay.io/dcm-project/kubevirt-service-provider
-  tag: ""
-  providerName: kubevirt-service-provider
-  namespace: default
-  kubeconfigRef: ""  # optional; pre-existing Secret with key kubeconfig
-
-k8sContainerServiceProvider:
-  enabled: false
-  image: quay.io/dcm-project/k8s-container-service-provider
-  tag: ""
-  spName: k8s-container-provider
-  namespace: default
-  externalSvcType: NodePort
-  kubeconfigRef: ""  # optional external kubeconfig Secret
-
-acmClusterServiceProvider:
-  enabled: false
-  image: quay.io/dcm-project/acm-cluster-service-provider
-  tag: ""
-  spName: acm-cluster-sp
-  namespace: default
+  image: quay.io/dcm-project/environment-agent
+  tag: m2-rc1  # empty defaults to global.imageTag
+  agentName: cluster-agent
+  environment: dev
+  cost: medium
+  embeddedSps: ""  # comma-separated: container, vm, storage, network, cluster
+  containerNamespace: default
+  vmNamespace: default
+  storageNamespace: default
+  networkNamespace: default
+  externalSvcType: LoadBalancer  # NodePort for Kind/lab if needed
+  clusterNamespace: clusters
   baseDomain: ""
-  pullSecretRef: dcm-acm-pull-secret  # pre-created Secret when enabled (see README)
-  defaultInfraEnv: ""
-  agentNamespace: ""
-  kubeconfigRef: ""  # optional external kubeconfig Secret
-
-threeTierDemoServiceProvider:
-  enabled: false
-  image: quay.io/dcm-project/three-tier-app-demo-service-provider
-  tag: ""
-  spName: three-tier-provider
-  namespace: default
-  kubeconfigRef: ""
+  pullSecretRef: ""  # required when embeddedSps includes cluster
+  clusterInfraEnv: ""  # baremetal default InfraEnv (SP_DEFAULT_INFRA_ENV)
+  clusterAgentNamespace: ""  # ACM Agent CR namespace (not the agent Pod namespace)
+  authClientID: dcm-proxy  # Keycloak client for DCM registration when auth.enabled

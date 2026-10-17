@@ -61,6 +61,13 @@ var _ = Describe("CEL validation", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(svc.Seed(ctx)).To(Succeed())
+		// database is no longer seeded; keep a fixture for CEL cross-resource refs.
+		ensureServiceTypeWithSpec(ctx, str, "db-st", "database", map[string]any{
+			"engine":            "",
+			"version":           "",
+			"resources":         map[string]any{},
+			"connection_string": "",
+		})
 	})
 
 	AfterEach(func() {

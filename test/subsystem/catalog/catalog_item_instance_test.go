@@ -378,6 +378,39 @@ var _ = Describe("CatalogItemInstance API", func() {
 			Expect(getResp.StatusCode()).To(Equal(http.StatusNotFound))
 		})
 
+		It("deletes an instance when its placement run was already removed", func() {
+			instID := "inst-del-missing-run-" + uuid.NewString()[:8]
+			params := &v1alpha1.CreateCatalogItemInstanceParams{Id: &instID}
+			body := v1alpha1.CatalogItemInstance{
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Instance With Removed Run",
+				Spec: v1alpha1.CatalogItemInstanceSpec{
+					CatalogItemId: catalogItemID,
+					UserValues:    []v1alpha1.UserValue{},
+				},
+			}
+			createResp, err := apiClient.CreateCatalogItemInstanceWithResponse(context.Background(), params, body)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(createResp.StatusCode()).To(Equal(http.StatusCreated))
+
+			// Model the state after Placement Manager has already cleaned up the failed run.
+			resetWireMock()
+			stubPMDeleteResourceNotFound()
+
+			deleteResp, err := apiClient.DeleteCatalogItemInstanceWithResponse(context.Background(), instID)
+			Expect(err).NotTo(HaveOccurred())
+			verifyPMDeleteResourceCalled(1)
+			Expect(deleteResp.StatusCode()).To(Equal(http.StatusNoContent))
+
+			getResp, err := apiClient.GetCatalogItemInstanceWithResponse(context.Background(), instID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(getResp.StatusCode()).To(Equal(http.StatusNotFound))
+
+			itemResp, err := apiClient.DeleteCatalogItemWithResponse(context.Background(), catalogItemID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(itemResp.StatusCode()).To(Equal(http.StatusNoContent))
+		})
+
 		It("returns 404 for non-existent instance", func() {
 			resp, err := apiClient.DeleteCatalogItemInstanceWithResponse(context.Background(), "does-not-exist")
 			Expect(err).NotTo(HaveOccurred())

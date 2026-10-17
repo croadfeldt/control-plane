@@ -23,7 +23,7 @@ components:
         Provider-agnostic network specification.
 
         Includes common fields (service_type, metadata, provider_hints)
-        plus fields for ports and routing_level.
+        plus fields for ports and optional routing_level.
 
         Providers translate this specification to their native format.
       allOf:
@@ -31,7 +31,6 @@ components:
         - type: object
           required:
             - ports
-            - routing_level
           properties:
             ports:
               type: array
@@ -43,7 +42,7 @@ components:
             routing_level:
               type: string
               description: |
-                Routing tier for the service.
+                Optional routing tier for the service.
 
                 - network: L4 (TCP/UDP) routing
                 - application: L7 (HTTP/gRPC) routing

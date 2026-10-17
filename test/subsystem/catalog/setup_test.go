@@ -219,6 +219,27 @@ func stubPMCreateResourceFailure() {
 	postWireMockMapping(stub)
 }
 
+func stubPMDeleteResourceNotFound() {
+	stub := map[string]any{
+		"request": map[string]any{
+			"method":         "DELETE",
+			"urlPathPattern": "/api/v1alpha1/runs/.*",
+		},
+		"response": map[string]any{
+			"status": 404,
+			"headers": map[string]string{
+				"Content-Type": "application/json",
+			},
+			"jsonBody": map[string]any{
+				"title":  "Not Found",
+				"status": 404,
+				"detail": "run not found",
+			},
+		},
+	}
+	postWireMockMapping(stub)
+}
+
 func stubPMDeleteResourceFailure() {
 	stub := map[string]any{
 		"request": map[string]any{

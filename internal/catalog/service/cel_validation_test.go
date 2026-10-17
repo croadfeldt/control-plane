@@ -61,6 +61,13 @@ var _ = Describe("CEL validation", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(svc.Seed(ctx)).To(Succeed())
+		// database is no longer seeded; keep a fixture for CEL cross-resource refs.
+		ensureServiceTypeWithSpec(ctx, str, "db-st", "database", map[string]any{
+			"engine":            "",
+			"version":           "",
+			"resources":         map[string]any{},
+			"connection_string": "",
+		})
 	})
 
 	AfterEach(func() {
@@ -370,31 +377,34 @@ var _ = Describe("CEL validation", func() {
 		}
 
 		It("rejects a reference to a source input the UDLM class does not declare as an output", func() {
-			catalogItemID := createCatalogItemWithSpec(typedConsumerSpec("database", "db_host", "${src.engine}"))
+			catalogItemID := createCatalogItemWithSpec(typedConsumerSpec("storage", "db_host", "${src.capacity}"))
 			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, service.ErrCELOutputNotDeclared)).To(BeTrue())
-			Expect(err.Error()).To(ContainSubstring("connection_string"))
+			Expect(err.Error()).To(ContainSubstring("volume_handle"))
 		})
 
 		It("still reports an unknown name as not found", func() {
-			catalogItemID := createCatalogItemWithSpec(typedConsumerSpec("database", "db_host", "${src.no_such_output}"))
+			catalogItemID := createCatalogItemWithSpec(typedConsumerSpec("storage", "db_host", "${src.no_such_output}"))
 			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, service.ErrCELServiceTypeOutputNotFound)).To(BeTrue())
 		})
 
+		// The database service type left upstream at m2-rc-final (dcm-project #90); these bind to
+		// storage (UDLM Volume: volume_handle string, attached boolean) and vm (primary_ip string).
 		It("accepts a declared output whose type binds to the consumer field", func() {
-			for path, ref := range map[string]string{"db_port": "${src.port}", "db_host": "${src.host}"} {
-				catalogItemID := createCatalogItemWithSpec(typedConsumerSpec("database", path, ref))
+			for src, binding := range map[string][2]string{"storage": {"db_host", "${src.volume_handle}"}, "vm": {"db_host", "${src.primary_ip}"}} {
+				path, ref := binding[0], binding[1]
+				catalogItemID := createCatalogItemWithSpec(typedConsumerSpec(src, path, ref))
 				_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
 				Expect(err).NotTo(HaveOccurred(), "%s <- %s", path, ref)
 			}
 		})
 
 		It("rejects a declared output whose type does not bind to the consumer field", func() {
-			for path, ref := range map[string]string{"db_host": "${src.port}", "db_port": "${src.connection_string}"} {
-				catalogItemID := createCatalogItemWithSpec(typedConsumerSpec("database", path, ref))
+			for path, ref := range map[string]string{"db_host": "${src.attached}", "db_port": "${src.volume_handle}"} {
+				catalogItemID := createCatalogItemWithSpec(typedConsumerSpec("storage", path, ref))
 				_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
 				Expect(err).To(HaveOccurred(), "%s <- %s", path, ref)
 				Expect(errors.Is(err, service.ErrCELOutputTypeMismatch)).To(BeTrue(), err.Error())
@@ -408,7 +418,7 @@ var _ = Describe("CEL validation", func() {
 		})
 
 		It("rejects a path into a scalar output", func() {
-			catalogItemID := createCatalogItemWithSpec(typedConsumerSpec("database", "db_host", "${src.host[0]}"))
+			catalogItemID := createCatalogItemWithSpec(typedConsumerSpec("storage", "db_host", "${src.volume_handle[0]}"))
 			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, service.ErrCELOutputTypeMismatch)).To(BeTrue())

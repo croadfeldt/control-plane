@@ -10,11 +10,10 @@ type UDLMType struct {
 
 // UDLMTypes maps a service type slug to the UDLM class and version it projects.
 var UDLMTypes = map[string]UDLMType{
-	"cluster":   {ResourceType: "KubernetesCluster", Version: "2.0.1"},
-	"container": {ResourceType: "Container", Version: "1.0.2"},
-	"database":  {ResourceType: "Data.Database", Version: "0.7.8"},
-	"storage":   {ResourceType: "Volume", Version: "0.12.1"},
-	"vm":        {ResourceType: "Machine.VM", Version: "2.0.2"},
+	"cluster":   {ResourceType: "KubernetesCluster", Version: "2.0.4"},
+	"container": {ResourceType: "Container", Version: "1.0.7"},
+	"storage":   {ResourceType: "Volume", Version: "0.12.3"},
+	"vm":        {ResourceType: "Machine.VM", Version: "2.0.6"},
 }
 
 // LookupUDLMType returns the UDLM class behind a service type slug.
@@ -43,13 +42,6 @@ var UDLMOutputs = map[string]map[string]UDLMOutput{
 		"endpoint":     {Type: "string", Sensitive: false},
 		"internal_dns": {Type: "string", Sensitive: false},
 	},
-	"database": {
-		"applied_version":   {Type: "string", Sensitive: false},
-		"connection_string": {Type: "string", Sensitive: true},
-		"host":              {Type: "string", Sensitive: false},
-		"port":              {Type: "integer", Sensitive: false},
-		"username":          {Type: "string", Sensitive: false},
-	},
 	"storage": {
 		"attached":      {Type: "boolean", Sensitive: false},
 		"volume_handle": {Type: "string", Sensitive: false},
@@ -76,7 +68,6 @@ func LookupUDLMOutput(slug, name string) (UDLMOutput, bool) {
 var UDLMElements = map[string][]string{
 	"cluster":   {"network", "release"},
 	"container": {"args", "command", "image", "network", "process", "resources", "runtime"},
-	"database":  {"engine", "metadata", "resources", "version"},
 	"storage":   {"access_mode", "capacity", "layout_entry", "retain_on_release", "storage_class", "volume_mode"},
 	"vm":        {"boot_order", "cpu", "firmware", "guest_os", "instance_size", "layout_ref", "memory", "networks", "placement", "run_state", "storage", "storage_tier"},
 }
@@ -92,7 +83,6 @@ func LookupUDLMElements(slug string) ([]string, bool) {
 var UDLMGroups = map[string][]string{
 	"cluster":   {"compute"},
 	"container": {"compute"},
-	"database":  {},
 	"storage":   {"storage"},
 	"vm":        {"compute"},
 }
@@ -123,4 +113,5 @@ var UDLMUsageGroups = []UDLMUsageGroup{
 	{Term: "observability", Definition: "Things that watch — log shippers, and when they arrive, scrape targets and collectors."},
 	{Term: "services", Definition: "Installed or served software as an orderable thing — services, and templates that compose them into one offering."},
 	{Term: "automation", Definition: "Things that run on behalf of the control plane — jobs, automation runs."},
+	{Term: "authorization", Definition: "What identities may do — groupings with their subject bindings, tenants, cross-tenant grants. The other half of the identity-and-access split: `identity` is who, `authorization` is what."},
 }

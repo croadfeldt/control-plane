@@ -70,15 +70,19 @@ type mapping struct {
 var mappings = []mapping{
 	{"vm", "VM", "machine.vm.json", "DCM Virtual Machine Specification", "virtual machine"},
 	{"container", "Container", "container.json", "DCM Container Specification", "container workload"},
-	{"database", "Database", "data.database.json", "DCM Database Specification", "managed database"},
 	{"cluster", "Cluster", "kubernetes-cluster.json", "DCM Cluster Specification", "Kubernetes cluster"},
 	{"storage", "Storage", "volume.json", "DCM Storage Specification", "storage volume"},
 }
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	udlmDir := flag.String("udlm", "../udlm", "path to a croadfeldt/udlm checkout (contains registry/generated)")
 	outDir := flag.String("out", "api/catalog/v1alpha1/servicetypes", "servicetypes output directory")
 	which := flag.String("type", "all", "service-type slug to generate, or 'all'")
+	metaOnly := flag.Bool("meta-only", false, "write only "+typeTableFile+" (the UDLM metadata table); leave the service-type specs untouched. The specs on main and udlm-native are upstream's (dcm-project); this keeps the class metadata the control plane reads in step with the registry.")
 	flag.Parse()
 
 	var todo []mapping
@@ -89,34 +93,50 @@ func main() {
 	}
 	if len(todo) == 0 {
 		fmt.Fprintf(os.Stderr, "unknown -type %q; known: %s, all\n", *which, slugs())
-		os.Exit(2)
+		return 2
 	}
 
+	specDir := *outDir
+	if *metaOnly {
+		tmp, err := os.MkdirTemp("", "udlm-servicetype-gen-")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			return 1
+		}
+		defer func() { _ = os.RemoveAll(tmp) }()
+		specDir = tmp
+	}
 	generated := map[string]udlmType{}
 	for _, m := range todo {
-		t, err := generate(m, *udlmDir, *outDir)
+		t, err := generate(m, *udlmDir, specDir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "generate %s: %v\n", m.slug, err)
-			os.Exit(1)
+			return 1
 		}
 		generated[m.slug] = t
-		fmt.Printf("generated %s from %s\n", filepath.Join(*outDir, m.slug, "spec.yaml"), m.udlmFile)
+		if !*metaOnly {
+			fmt.Printf("generated %s from %s\n", filepath.Join(*outDir, m.slug, "spec.yaml"), m.udlmFile)
+		}
 	}
 	if *which == "all" {
 		groups, err := readUsageGroups(*udlmDir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
-			os.Exit(1)
+			return 1
 		}
 		if err := writeTypeTable(*outDir, generated, groups); err != nil {
 			fmt.Fprintf(os.Stderr, "write type table: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 		fmt.Printf("generated %s\n", filepath.Join(*outDir, typeTableFile))
+	}
+	if *metaOnly {
+		return 0
 	}
 	fmt.Fprintln(os.Stderr, "\nNext: regenerate Go types for each changed service-type, e.g.")
 	fmt.Fprintln(os.Stderr, "  cd "+*outDir+"/<slug> && oapi-codegen -config spec.gen.cfg \\")
 	fmt.Fprintln(os.Stderr, "    -import-mapping '../common.yaml:github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes' spec.yaml > types.gen.go")
+	return 0
 }
 
 func slugs() string {

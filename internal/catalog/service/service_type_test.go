@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -10,11 +11,28 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/network"
 	"github.com/dcm-project/control-plane/internal/catalog/config"
 	"github.com/dcm-project/control-plane/internal/catalog/service"
 	"github.com/dcm-project/control-plane/internal/catalog/store"
 	"github.com/dcm-project/control-plane/internal/catalog/store/model"
 )
+
+var _ = Describe("NetworkSpec JSON", func() {
+	It("preserves omission of routing_level when round-tripping valid ports JSON", func() {
+		input := []byte(`{"service_type":"network","metadata":{"name":"test-network"},"ports":[{"port":80,"target_port":8080}]}`)
+
+		var spec network.NetworkSpec
+		Expect(json.Unmarshal(input, &spec)).To(Succeed())
+
+		encoded, err := json.Marshal(spec)
+		Expect(err).ToNot(HaveOccurred())
+
+		var result map[string]json.RawMessage
+		Expect(json.Unmarshal(encoded, &result)).To(Succeed())
+		Expect(result).ToNot(HaveKey("routing_level"))
+	})
+})
 
 var _ = Describe("ServiceType Service", func() {
 	var (
@@ -81,18 +99,6 @@ var _ = Describe("ServiceType Service", func() {
 				result, err := svc.ServiceType().Create(ctx, req)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result.ServiceType).To(Equal("cluster"))
-			})
-
-			It("should create a service type with 'database'", func() {
-				req := &service.CreateServiceTypeRequest{
-					ApiVersion:  "v1alpha1",
-					ServiceType: "database",
-					Spec:        map[string]any{"engine": "postgres"},
-				}
-
-				result, err := svc.ServiceType().Create(ctx, req)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(result.ServiceType).To(Equal("database"))
 			})
 
 			It("should create a service type with 'storage'", func() {
@@ -327,7 +333,7 @@ var _ = Describe("ServiceType Service", func() {
 
 			result, err := svc.ServiceType().List(ctx, &service.ServiceTypeListOptions{})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.ServiceTypes).To(HaveLen(7))
+			Expect(result.ServiceTypes).To(HaveLen(6))
 
 			types := make([]string, len(result.ServiceTypes))
 			for i, st := range result.ServiceTypes {
@@ -335,6 +341,7 @@ var _ = Describe("ServiceType Service", func() {
 			}
 			Expect(types).To(ContainElement("storage"))
 			Expect(types).To(ContainElement("network"))
+			Expect(types).ToNot(ContainElement("database"))
 		})
 
 		It("should list service types", func() {
@@ -353,7 +360,7 @@ var _ = Describe("ServiceType Service", func() {
 		})
 
 		It("filters by usage group and reports each type's groups (ADR-082)", func() {
-			for _, st := range []string{"vm", "container", "database"} {
+			for _, st := range []string{"vm", "container", "network"} {
 				_, err := svc.ServiceType().Create(ctx, &service.CreateServiceTypeRequest{
 					ApiVersion:  "v1alpha1",
 					ServiceType: st,
@@ -364,7 +371,7 @@ var _ = Describe("ServiceType Service", func() {
 			compute := "compute"
 			result, err := svc.ServiceType().List(ctx, &service.ServiceTypeListOptions{FiledUnder: &compute})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.ServiceTypes).To(HaveLen(2)) // vm and container are filed under compute; database is filed nowhere yet
+			Expect(result.ServiceTypes).To(HaveLen(2)) // vm and container are filed under compute; network has no UDLM class, so it is filed nowhere
 			for _, st := range result.ServiceTypes {
 				Expect(st.FiledUnder).ToNot(BeNil())
 				Expect(*st.FiledUnder).To(ContainElement("compute"))
@@ -383,7 +390,7 @@ var _ = Describe("ServiceType Service", func() {
 		})
 
 		It("should paginate with page size and offset token", func() {
-			for _, st := range []string{"vm", "container", "cluster", "database"} {
+			for _, st := range []string{"vm", "container", "cluster", "storage"} {
 				_, err := svc.ServiceType().Create(ctx, &service.CreateServiceTypeRequest{
 					ApiVersion:  "v1alpha1",
 					ServiceType: st,

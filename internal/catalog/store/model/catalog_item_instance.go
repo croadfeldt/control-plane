@@ -15,6 +15,8 @@ type CatalogItemInstance struct {
 	UpdateTime  time.Time               `gorm:"column:update_time;autoUpdateTime"`
 	// RunID is the Placement run id
 	RunID string `gorm:"column:run_id"`
+	// ResourceIDs are the service type instance IDs created by the placement run
+	ResourceIDs []string `gorm:"column:resource_ids;type:jsonb;serializer:json"`
 
 	// Indexed field for filtering
 	SpecCatalogItemId string       `gorm:"column:spec_catalog_item_id;not null;index"`

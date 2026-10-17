@@ -193,9 +193,11 @@ var _ = Describe("Placement Client", func() {
 				client = newTestClient(server.URL)
 			})
 
-			It("returns an error", func() {
+			It("returns a structured not found error", func() {
 				err := client.DeleteRun(ctx, "nonexistent")
-				Expect(err).To(HaveOccurred())
+				var pmErr *placement.PlacementError
+				Expect(errors.As(err, &pmErr)).To(BeTrue())
+				Expect(pmErr.StatusCode).To(Equal(http.StatusNotFound))
 			})
 		})
 
@@ -208,9 +210,11 @@ var _ = Describe("Placement Client", func() {
 				client = newTestClient(server.URL)
 			})
 
-			It("returns an error", func() {
+			It("returns a structured internal server error", func() {
 				err := client.DeleteRun(ctx, "some-id")
-				Expect(err).To(HaveOccurred())
+				var pmErr *placement.PlacementError
+				Expect(errors.As(err, &pmErr)).To(BeTrue())
+				Expect(pmErr.StatusCode).To(Equal(http.StatusInternalServerError))
 			})
 		})
 	})

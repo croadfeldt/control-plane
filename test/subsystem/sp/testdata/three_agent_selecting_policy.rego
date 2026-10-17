@@ -15,7 +15,7 @@ main := {"rejected": false, "selected_agent": "__AGENT_B__"} if {
 
 # Unconditional: available_agents is already pre-filtered by service-type
 # capability before Rego runs, so this only ever matches when evaluating a
-# "database" resource (the only service type agentC is registered for).
+# "storage" resource (the only service type agentC is registered for).
 main := {"rejected": false, "selected_agent": "__AGENT_C__"} if {
 	some a in input.available_agents
 	a.name == "__AGENT_C__"

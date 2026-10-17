@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -43,6 +44,7 @@ type CatalogItemInstanceStore interface {
 	Get(ctx context.Context, id string) (*model.CatalogItemInstance, error)
 	Update(ctx context.Context, catalogItemInstance *model.CatalogItemInstance) (*model.CatalogItemInstance, error)
 	UpdateRunID(ctx context.Context, id string, expectedRunID string, newRunID string) (*model.CatalogItemInstance, error)
+	UpdateResourceIDs(ctx context.Context, id string, resourceIDs []string) error
 	Delete(ctx context.Context, id string) error
 }
 
@@ -199,6 +201,25 @@ func (s *catalogItemInstanceStore) UpdateRunID(ctx context.Context, id string, e
 	}
 
 	return s.Get(ctx, id)
+}
+
+// UpdateResourceIDs sets the resource_ids for a catalog item instance.
+func (s *catalogItemInstanceStore) UpdateResourceIDs(ctx context.Context, id string, resourceIDs []string) error {
+	encoded, err := json.Marshal(resourceIDs)
+	if err != nil {
+		return fmt.Errorf("failed to encode resource IDs: %w", err)
+	}
+	result := s.db.WithContext(ctx).Model(&model.CatalogItemInstance{}).
+		Where("id = ?", id).
+		Update("resource_ids", string(encoded))
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to update resource IDs: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrCatalogItemInstanceNotFound
+	}
+	return nil
 }
 
 // Delete deletes a catalog item by ID

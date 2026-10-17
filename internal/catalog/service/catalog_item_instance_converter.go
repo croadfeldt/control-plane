@@ -70,6 +70,10 @@ func catalogItemInstanceToAPIType(m *model.CatalogItemInstance) v1alpha1.Catalog
 		runID := m.RunID
 		out.RunId = &runID
 	}
+	if len(m.ResourceIDs) > 0 {
+		ids := append([]string(nil), m.ResourceIDs...)
+		out.ResourceIds = &ids
+	}
 	return out
 }
 

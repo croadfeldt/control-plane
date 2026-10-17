@@ -41,6 +41,7 @@ func mapCreateCatalogItemErrorToHTTP(err error) server.CreateCatalogItemResponse
 		errors.Is(err, service.ErrDependsOnCycleDetected),
 		errors.Is(err, service.ErrDependsOnPathNotFound),
 		errors.Is(err, service.ErrCatalogItemResourceNameTaken),
+		errors.Is(err, service.ErrCatalogItemFieldPathTaken),
 		errors.Is(err, service.ErrCatalogItemRequiresResourceNotFound),
 		errors.Is(err, service.ErrCatalogItemRequiresCycle):
 		// Validation errors -> 400 Bad Request
@@ -97,6 +98,7 @@ func mapUpdateCatalogItemErrorToHTTP(err error) server.UpdateCatalogItemResponse
 		errors.Is(err, service.ErrDependsOnCycleDetected),
 		errors.Is(err, service.ErrDependsOnPathNotFound),
 		errors.Is(err, service.ErrCatalogItemResourceNameTaken),
+		errors.Is(err, service.ErrCatalogItemFieldPathTaken),
 		errors.Is(err, service.ErrCatalogItemRequiresResourceNotFound),
 		errors.Is(err, service.ErrCatalogItemRequiresCycle):
 		// Validation errors -> 400 Bad Request

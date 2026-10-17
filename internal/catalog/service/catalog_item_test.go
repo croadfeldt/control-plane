@@ -647,6 +647,31 @@ var _ = Describe("CatalogItem Service", func() {
 			Expect(result).To(BeNil())
 		})
 
+		It("should reject duplicate field paths within a resource", func() {
+			spec := v1alpha1.CatalogItemSpec{
+				Resources: []v1alpha1.CatalogResource{
+					{
+						Name:        "net",
+						ServiceType: "vm",
+						Fields: &[]v1alpha1.FieldConfiguration{
+							{Path: "metadata.name", Default: "a"},
+							{Path: "metadata.name", Default: "b"},
+						},
+					},
+				},
+			}
+
+			result, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Duplicate field paths",
+				Spec:        spec,
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrCatalogItemFieldPathTaken)).To(BeTrue())
+			Expect(err.Error()).To(ContainSubstring("metadata.name"))
+			Expect(result).To(BeNil())
+		})
+
 		It("should reject unknown requires_resources reference", func() {
 			requiresMissing := []string{"missing"}
 			spec := v1alpha1.CatalogItemSpec{

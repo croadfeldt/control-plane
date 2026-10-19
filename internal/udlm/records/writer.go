@@ -215,7 +215,7 @@ func (w *Writer) Realized(ctx context.Context, in RealizedInput) {
 			if err != nil {
 				return nil, err
 			}
-			outputs = normalized.(map[string]any)
+			outputs = mapOutputs(w.serviceTypeOf(requested.ResourceType), normalized.(map[string]any))
 		}
 		rec["outputs"] = outputs
 		providerID := "dcm/agents/" + in.AgentName
@@ -245,6 +245,17 @@ func (w *Writer) Realized(ctx context.Context, in RealizedInput) {
 		}
 		return rec, nil
 	})
+}
+
+// serviceTypeOf finds the service type whose class is resourceType, among those
+// with output renames. The record keeps the class, not the service type.
+func (w *Writer) serviceTypeOf(resourceType string) string {
+	for slug := range outputRenames {
+		if t, ok := w.types(slug); ok && t.ResourceType == resourceType {
+			return slug
+		}
+	}
+	return ""
 }
 
 // base fills the envelope every record carries.
@@ -288,7 +299,12 @@ func (w *Writer) typedFields(spec map[string]any) (Type, map[string]any, error) 
 	if err != nil {
 		return Type{}, nil, err
 	}
-	return t, normalized.(map[string]any), nil
+	// The service type's names are upstream's; the record carries the class's.
+	mapped, err := mapFields(st, normalized.(map[string]any))
+	if err != nil {
+		return Type{}, nil, err
+	}
+	return t, mapped, nil
 }
 
 // write runs build, then validates, seals onto the entity's chain, and stores.

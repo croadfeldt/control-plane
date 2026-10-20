@@ -59,6 +59,18 @@ Then open:
 - Control-plane API: http://localhost:8080
 - DCM UI: http://localhost:7007
 
+### Extra control-plane settings
+
+`controlPlane.extraEnv` adds environment variables to the control-plane container, after the
+chart's own. Each entry is a Kubernetes EnvVar: a `name` with a `value` or a `valueFrom`.
+
+```yaml
+controlPlane:
+  extraEnv:
+    - name: HTTPS_PROXY
+      value: http://proxy.example.com:3128
+```
+
 ## Enabling Environment Agent
 
 Deploys the [environment-agent](https://github.com/dcm-project/environment-agent) with embedded

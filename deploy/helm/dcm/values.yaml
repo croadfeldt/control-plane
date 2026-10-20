@@ -35,6 +35,7 @@ controlPlane:
     host: ""
     tls: []
     annotations: {}
+  extraEnv: []  # extra container env entries, appended after the chart's own
 
 # -- Authentication (mirrors compose: Keycloak + control-plane JWT/proxy-header auth)
 auth:

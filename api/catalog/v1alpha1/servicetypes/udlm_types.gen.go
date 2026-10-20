@@ -11,9 +11,9 @@ type UDLMType struct {
 // UDLMTypes maps a service type slug to the UDLM class and version it projects.
 var UDLMTypes = map[string]UDLMType{
 	"cluster":   {ResourceType: "KubernetesCluster", Version: "2.0.4"},
-	"container": {ResourceType: "Container", Version: "1.0.7"},
-	"storage":   {ResourceType: "Volume", Version: "0.12.3"},
-	"vm":        {ResourceType: "Machine.VM", Version: "2.0.6"},
+	"container": {ResourceType: "Container", Version: "1.1.0"},
+	"storage":   {ResourceType: "Volume", Version: "0.13.0"},
+	"vm":        {ResourceType: "Machine.VM", Version: "2.1.0"},
 }
 
 // LookupUDLMType returns the UDLM class behind a service type slug.
@@ -104,7 +104,7 @@ type UDLMClass struct {
 // UDLMCompanions maps a UDLM class name to its version and elements.
 var UDLMCompanions = map[string]UDLMClass{
 	"KubernetesNodePool": {Version: "1.1.2", Elements: []string{"capabilities", "cluster_ref", "labels", "name", "node_count", "node_resources", "taints"}},
-	"StorageLayout":      {Version: "0.6.1", Elements: []string{"entries"}},
+	"StorageLayout":      {Version: "0.7.0", Elements: []string{"entries"}},
 }
 
 // LookupUDLMCompanion returns a companion class by its UDLM name.

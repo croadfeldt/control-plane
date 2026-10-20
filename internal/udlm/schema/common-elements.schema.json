@@ -114,6 +114,16 @@
         "uuid/4c1f8e2a-9b3d-4a67-8c2e-d51f097b3a44@sha256:0000000000000000000000000000000000000000000000000000000000000000"
       ]
     },
+    "LogRecordCriterion": {
+      "$comment": "identifier-scheme.md §9.7 (a criterion over something that is not a record, URF-013); used by LogShipper and LogStore",
+      "type": "string",
+      "format": "udlm-filter-expr",
+      "description": "A filter over log records, written as a URF expression alone (identifier-scheme §9.2 and §9.7): every comparator, glob and connective, no path and no virtual field. Selectors are the fields of the OpenTelemetry Logs Data Model: `severity_number` (1-24; 9 = info, 13 = warn, 17 = error), `severity_text`, `body`, `event_name`, `resource.<key>` (the provider always stamps `resource.host.name` and `resource.udlm.handle`) and `attributes.<key>`. Syslog fields arrive as attributes under OpenTelemetry's RFC 5424 mapping (`attributes.syslog.facility`, `attributes.syslog.msgid`), so one criterion means the same thing whether a line came in as syslog or OTLP. A pattern goes after `=match=` (URF-012). Example: `severity_number=ge=13;resource.host.name==db-*;body=match='.*(timeout|refused).*'`.",
+      "examples": [
+        "severity_number=ge=13;resource.host.name==db-*",
+        "attributes.syslog.facility=in=(auth,authpriv)"
+      ]
+    },
     "Condition": {
       "$comment": "common-elements.md §2.6 (adopts the OSAC/Kubernetes condition envelope)",
       "type": "object",
@@ -416,6 +426,216 @@
         "partition"
       ],
       "description": "The device_class values a single device can take — a socket, a drive, a GPU or a controller is never an aggregate or a bridge. Subset of device_class; the same vocabulary."
+    },
+    "network_zone_ref": {
+      "title": "Network zone (reference)",
+      "allOf": [
+        {
+          "$ref": "data-reference.schema.json#/$defs/data_reference"
+        },
+        {
+          "required": [
+            "reference_data_type"
+          ],
+          "properties": {
+            "reference_data_type": {
+              "const": "network_zone"
+            }
+          }
+        }
+      ],
+      "description": "WHAT KIND OF NETWORK THIS IS — a governed taxonomy term (registry/taxonomies/network-zone.yaml): a classification for placement, never an authorization or a boundary; anything required because of a zone is enforced by policy reading it. One home (ADR-082); every network Base declares `zone` by $ref."
+    },
+    "network_tier_ref": {
+      "title": "Network tier (reference)",
+      "allOf": [
+        {
+          "$ref": "data-reference.schema.json#/$defs/data_reference"
+        },
+        {
+          "required": [
+            "reference_data_type"
+          ],
+          "properties": {
+            "reference_data_type": {
+              "const": "network_tier"
+            }
+          }
+        }
+      ],
+      "description": "HOW GOOD THIS NETWORK IS — a governed `network_tier` term, each denoting a floor (bandwidth, latency) any provider that clears it satisfies; name-selectable but requirements-authoritative (ADR-036). The provider reports it (the party that knows is the party that says). One home (ADR-082); every network Base declares `tier` by $ref."
+    },
+    "partition_mechanism": {
+      "title": "Partition mechanism",
+      "type": "string",
+      "enum": [
+        "sr-iov",
+        "mediated",
+        "mig",
+        "vlan",
+        "macvlan",
+        "ipvlan",
+        "cpu-pinning",
+        "cpu-set",
+        "namespace",
+        "lun",
+        "other"
+      ],
+      "x-extensible-enum": true,
+      "description": "How a partition is carved from its physical parent (common-elements.md §7): SR-IOV VF, a mediated device (vGPU/mdev), an NVIDIA MIG slice, a VLAN/macvlan/ipvlan sub-interface, a pinned CPU set, an NVMe namespace or a LUN. One home (PVD-001); each hardware Base $refs it."
+    },
+    "isa": {
+      "title": "Instruction-set architecture",
+      "type": "string",
+      "enum": [
+        "x86_64",
+        "aarch64",
+        "armv7l",
+        "ppc64le",
+        "s390x",
+        "riscv64"
+      ],
+      "x-extensible-enum": true,
+      "description": "The ISA a processor or host runs, in the uname spelling the estate reports (Redfish ProcessorArchitecture is coarser). One home (PVD-001)."
+    },
+    "oci_architecture": {
+      "title": "OCI platform architecture",
+      "type": "string",
+      "enum": [
+        "amd64",
+        "arm64",
+        "arm",
+        "ppc64le",
+        "s390x",
+        "riscv64",
+        "386"
+      ],
+      "x-extensible-enum": true,
+      "description": "OCI image-spec platform.architecture (GOARCH spelling) — adopted codelist."
+    },
+    "oci_os": {
+      "title": "OCI platform OS",
+      "type": "string",
+      "enum": [
+        "linux",
+        "windows",
+        "darwin",
+        "freebsd"
+      ],
+      "x-extensible-enum": true,
+      "description": "OCI image-spec platform.os (GOOS spelling) — adopted codelist."
+    },
+    "media_type": {
+      "title": "Storage media",
+      "type": "string",
+      "enum": [
+        "hdd",
+        "ssd",
+        "nvme",
+        "optical",
+        "tape",
+        "other"
+      ],
+      "description": "Redfish Drive MediaType, lower-cased. One home (PVD-001)."
+    },
+    "storage_transport": {
+      "title": "Storage transport",
+      "type": "string",
+      "enum": [
+        "sata",
+        "sas",
+        "nvme",
+        "usb",
+        "fc",
+        "iscsi",
+        "virtio",
+        "other"
+      ],
+      "x-extensible-enum": true,
+      "description": "Redfish Drive Protocol (the bus/transport), lower-cased. One home (PVD-001)."
+    },
+    "cvss_severity": {
+      "title": "CVSS qualitative severity",
+      "type": "string",
+      "enum": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "description": "CVSS v3/v4 qualitative severity rating — adopted codelist."
+    },
+    "assurance_level": {
+      "title": "Authenticator assurance level",
+      "type": "string",
+      "enum": [
+        "aal1",
+        "aal2",
+        "aal3"
+      ],
+      "description": "NIST SP 800-63B AAL — adopted codelist."
+    },
+    "purl_type": {
+      "title": "Package URL type",
+      "type": "string",
+      "enum": [
+        "rpm",
+        "deb",
+        "apk",
+        "maven",
+        "npm",
+        "pypi",
+        "golang",
+        "cargo",
+        "gem",
+        "nuget",
+        "oci",
+        "docker",
+        "generic",
+        "other"
+      ],
+      "x-extensible-enum": true,
+      "description": "purl-spec package type — adopted codelist."
+    },
+    "gpu_architecture": {
+      "title": "GPU architecture",
+      "type": "string",
+      "enum": [
+        "rdna2",
+        "rdna3",
+        "rdna4",
+        "cdna2",
+        "cdna3",
+        "ampere",
+        "ada",
+        "hopper",
+        "blackwell",
+        "xe",
+        "other"
+      ],
+      "x-extensible-enum": true,
+      "description": "GPU generation as vendors name it, lower-cased; extensible because a new generation arrives before this list does."
+    },
+    "quantity": {
+      "title": "Quantity",
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+)?([kKMGTPE]i?)?B?$",
+      "description": "A size: a number with an optional decimal part and an optional unit — SI (k, M, G, T, P, E: powers of 1000) or binary (Ki, Mi, Gi, Ti, Pi, Ei: powers of 1024), with or without a trailing B (16Gi, 1TB, 84.2G, 500GiB). No unit means bytes. The Kubernetes resource.Quantity spellings plus the B-suffixed forms Redfish and storage tooling report. One home for every size in the model (#638)."
+    },
+    "cpu_quantity": {
+      "title": "CPU quantity",
+      "anyOf": [
+        {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        {
+          "type": "string",
+          "pattern": "^([0-9]+m|[0-9]+(\\.[0-9]+)?)$"
+        }
+      ],
+      "description": "A CPU amount in cores: a number (0.5, 2) or a Kubernetes quantity string (500m for half a core, \"2\"). One home for every CPU request (#638)."
     }
   }
 }

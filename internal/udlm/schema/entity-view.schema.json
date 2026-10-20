@@ -24,7 +24,7 @@
     "tenant_uuid": {
       "type": "string",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-      "description": "REQUIRED owning Tenant — the uuid of an `Grouping` of group class `tenant_boundary` (registry/classes/access/grouping/_base.yaml; the group-class table is docs/spec/foundations/universal-groups.md §2.2). Every Resource/Service Entity belongs to exactly one Tenant at every lifecycle state (TEN-001/TEN-003, docs/spec/foundations/resource-grouping.md §2.2), schema-enforced per data-model-core §5 [D3]. Existing brownfield stores migrate by minting their tenants and backfilling this field."
+      "description": "REQUIRED owning Tenant — the uuid of an `Grouping` of group class `tenant_boundary` (registry/classes/access/authorization/grouping/_base.yaml; the group-class table is docs/spec/foundations/universal-groups.md §2.2). Every Resource/Service Entity belongs to exactly one Tenant at every lifecycle state (TEN-001/TEN-003, docs/spec/foundations/resource-grouping.md §2.2), schema-enforced per data-model-core §5 [D3]. Existing brownfield stores migrate by minting their tenants and backfilling this field."
     },
     "conforms_to": {
       "type": "string",
@@ -33,7 +33,7 @@
     "resource_type": {
       "type": "string",
       "pattern": "^[A-Z][A-Za-z0-9]+(\\.[A-Z][A-Za-z0-9]+){0,2}$",
-      "description": "Tier-1 vendor-neutral Category.Type name; single-segment permitted for cross-cutting types (e.g. Topology) — one to three segments (Base, Type, Provider class; CLS-001), exactly the record schema's grammar."
+      "description": "The class name — `Base`, `Base.Type` or `Base.Type.Provider` (one segment per tier, CLS-001; single-segment for a Base such as `Topology`), exactly the record schema's grammar. A usage group never appears in it (CLS-012)."
     },
     "filed_under": {
       "type": "array",
@@ -125,7 +125,7 @@
     },
     "portability": {
       "$ref": "state-record.schema.json#/$defs/portability",
-      "description": "INSTANCE portability: the realized entity's actual portability, DEGRADED from the type's declared classification when the entity carries provider-specific data (Provider-Class `SharedDataElement`s — ADR-038; schema realization #199; the retired `provider_extensions` carrier is removed per #202). Base-type-declared, instance-degraded — never silently presented as fully portable. When degraded, the consumer MUST be notified before/at realization (resource-type-hierarchy Transparency principle); a portability-degradation event is emitted."
+      "description": "INSTANCE portability: the realized entity's actual portability, DEGRADED from the type's declared classification when the entity carries provider-specific data (Provider-Class `SharedDataElement`s — ADR-038; schema realization #199; the retired `provider_extensions` carrier is removed per #202). Base-type-declared, instance-degraded — never silently presented as fully portable. When degraded, the consumer MUST be notified before/at realization (class-tiers.md §7 Transparency principle); a portability-degradation event is emitted."
     },
     "handle": {
       "$ref": "state-record.schema.json#/$defs/handle",

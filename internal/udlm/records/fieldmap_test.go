@@ -42,12 +42,11 @@ func TestMapFieldsRenamesToClassElements(t *testing.T) {
 
 func TestMapFieldsRefusesFieldsWithNoClassHome(t *testing.T) {
 	_, err := mapFields("vm", map[string]any{
-		"vcpu":    map[string]any{"count": 2.0},
-		"storage": map[string]any{"disks": []any{map[string]any{"name": "root", "capacity": "50Gi"}}},
-		"access":  map[string]any{"ssh_public_key": "ssh-ed25519 AAAA"},
+		"vcpu":   map[string]any{"count": 2.0},
+		"access": map[string]any{"ssh_public_key": "ssh-ed25519 AAAA"},
 	})
-	if err == nil || !strings.Contains(err.Error(), "storage.disks") || !strings.Contains(err.Error(), "access") {
-		t.Fatalf("want a refusal naming storage.disks and access, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "access") {
+		t.Fatalf("want a refusal naming access, got %v", err)
 	}
 	_, err = mapFields("cluster", map[string]any{"version": "4.18", "nodes": map[string]any{"workers": map[string]any{"count": 3.0}}})
 	if err == nil || !strings.Contains(err.Error(), "KubernetesNodePool") {

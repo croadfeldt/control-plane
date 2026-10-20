@@ -124,7 +124,13 @@ func testWriter(t *testing.T) (*Writer, Store) {
 		}
 		return Type{}, false
 	}
-	w := NewWriter(st, types, "75ccf4ff-3e8d-4963-bc51-459ae1014cb7", slog.Default())
+	classes := func(rt string) (Type, bool) {
+		if rt == "StorageLayout" {
+			return Type{ResourceType: "StorageLayout", Version: "0.6.1", Elements: []string{"entries"}}, true
+		}
+		return Type{}, false
+	}
+	w := NewWriter(st, types, classes, "75ccf4ff-3e8d-4963-bc51-459ae1014cb7", slog.Default())
 	base := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	w.now = func() time.Time { base = base.Add(time.Second); return base }
 	return w, st

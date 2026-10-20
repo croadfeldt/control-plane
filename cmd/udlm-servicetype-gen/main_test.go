@@ -241,3 +241,28 @@ func TestPascalAndSingular(t *testing.T) {
 		}
 	}
 }
+
+// A companion contributes only its class metadata: name, version and elements.
+func TestReadClassForACompanion(t *testing.T) {
+	root := t.TempDir()
+	rtDir := filepath.Join(root, "registry", "generated")
+	if err := os.MkdirAll(rtDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rtDir, "test.widget.json"), []byte(fixtureUDLM), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readClass(root, "test.widget.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.resourceType != "Test.Widget" || got.version != "1.2.3" {
+		t.Errorf("readClass = %+v", got)
+	}
+	if !strings.Contains(strings.Join(got.elements, ","), "shape") || !strings.Contains(strings.Join(got.elements, ","), "ports") {
+		t.Errorf("readClass elements = %v", got.elements)
+	}
+	if _, err := readClass(root, "missing.json"); err == nil {
+		t.Error("a missing class file must fail")
+	}
+}

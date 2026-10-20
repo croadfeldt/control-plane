@@ -18,7 +18,7 @@ import (
 // sent; filing it under a same-named element whose meaning differs would make the
 // record claim something false (Machine.VM `storage` is a requirements
 // descriptor; upstream's `storage.disks[]` is per-disk shape, which UDLM keeps on
-// a StorageLayout).
+// a StorageLayout, so layout.go splits it out before this mapping runs).
 
 // fieldRenames maps a service-type field (dot path) to the class element path.
 var fieldRenames = map[string]map[string]string{
@@ -37,8 +37,7 @@ var outputRenames = map[string]map[string]string{
 // each with where it belongs, so the refusal says what would make it legal.
 var noClassHome = map[string]map[string]string{
 	"vm": {
-		"storage.disks": "per-disk shape is a StorageLayout the VM references by layout_ref (expansion not built yet)",
-		"access":        "an SSH key has no Machine element yet (pending a UDLM ruling)",
+		"access": "an SSH key has no Machine element yet (pending a UDLM ruling)",
 	},
 	"cluster": {
 		"nodes": "node groups are KubernetesNodePool records contained by the cluster, UDLM row 072 (expansion not built yet)",

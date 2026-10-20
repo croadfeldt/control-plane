@@ -107,31 +107,44 @@ func actorID(ctx context.Context) string {
 }
 
 // Intent writes an intent_record. It is the chain root for the entity. A spec
-// that expands into a companion (a VM's disks are a StorageLayout) writes the
-// companion's intent record first, and the entity references it.
+// that expands into companions writes their intent records too: a VM's disks
+// are a StorageLayout the VM references, written first; a cluster's node groups
+// are KubernetesNodePools that reference the cluster, written after it.
 func (w *Writer) Intent(ctx context.Context, in IntentInput) {
 	if w == nil {
 		return
 	}
-	t, fields, layout, err := w.typedFields(in.Spec)
+	t, fields, exp, err := w.typedFields(in.Spec)
 	if err != nil {
-		w.log.ErrorContext(ctx, "udlm record not written", "kind", "intent", "entity_uuid", in.EntityUUID, "error", err)
+		w.fail(ctx, "intent", in.EntityUUID, err)
 		return
 	}
-	if layout != nil {
+	if exp.layout != nil {
 		layoutEntity := uuid.NewString()
-		name := ""
-		if in.Name != "" {
-			name = in.Name + " disks"
-		}
-		if !w.writeIntent(ctx, layoutEntity, layout.t, layout.fields, name) {
-			w.log.ErrorContext(ctx, "udlm record not written", "kind", "intent", "entity_uuid", in.EntityUUID,
-				"error", "its StorageLayout record was not written")
+		if !w.writeIntent(ctx, layoutEntity, exp.layout.t, exp.layout.fields, suffixed(in.Name, "disks")) {
+			w.fail(ctx, "intent", in.EntityUUID, errors.New("its StorageLayout record was not written"))
 			return
 		}
-		fields[layoutRefElement] = layoutRef(layoutEntity)
+		fields[layoutRefElement] = entityRef(layoutEntity)
 	}
-	w.writeIntent(ctx, in.EntityUUID, t, fields, in.Name)
+	if !w.writeIntent(ctx, in.EntityUUID, t, fields, in.Name) {
+		return
+	}
+	for _, p := range exp.pools {
+		p.fields[clusterRefElement] = entityRef(in.EntityUUID)
+		w.writeIntent(ctx, uuid.NewString(), p.t, p.fields, suffixed(in.Name, p.name))
+	}
+}
+
+func suffixed(name, suffix string) string {
+	if name == "" {
+		return ""
+	}
+	return name + " " + suffix
+}
+
+func (w *Writer) fail(ctx context.Context, kind, entity string, err error) {
+	w.log.ErrorContext(ctx, "udlm record not written", "kind", kind, "entity_uuid", entity, "error", err)
 }
 
 func (w *Writer) writeIntent(ctx context.Context, entity string, t Type, fields map[string]any, name string) bool {
@@ -151,44 +164,80 @@ func (w *Writer) writeIntent(ctx context.Context, entity string, t Type, fields 
 
 // Requested writes a requested_record pointing at the entity's latest intent
 // record. The selected agent is noted on the record; the binding to a provider
-// is the realized record's to carry. A companion the intent expanded into gets
-// its own requested record, a child of this order (DEP-015).
+// is the realized record's to carry. Each companion the intent expanded into
+// gets its own requested record, a child of this order (DEP-015).
 func (w *Writer) Requested(ctx context.Context, in RequestedInput) {
 	if w == nil {
 		return
 	}
-	t, fields, layout, err := w.typedFields(in.Spec)
+	t, fields, exp, err := w.typedFields(in.Spec)
 	if err != nil {
-		w.log.ErrorContext(ctx, "udlm record not written", "kind", "requested", "entity_uuid", in.EntityUUID, "error", err)
+		w.fail(ctx, "requested", in.EntityUUID, err)
 		return
 	}
 	var layoutEntity string
-	if layout != nil {
+	if exp.layout != nil {
 		// The layout entity is the one the intent named; the evaluated spec carries
 		// the disks again, not the reference.
 		intent, err := w.store.Latest(ctx, in.EntityUUID, "Intent")
 		if err != nil {
-			w.log.ErrorContext(ctx, "udlm record not written", "kind", "requested", "entity_uuid", in.EntityUUID,
-				"error", fmt.Errorf("no intent record to reference: %w", err))
+			w.fail(ctx, "requested", in.EntityUUID, fmt.Errorf("no intent record to reference: %w", err))
 			return
 		}
 		intentFields, _ := intent.Body["fields"].(map[string]any)
 		if layoutEntity = layoutEntityOf(intentFields); layoutEntity == "" {
-			w.log.ErrorContext(ctx, "udlm record not written", "kind", "requested", "entity_uuid", in.EntityUUID,
-				"error", "the request carries disks but its intent record names no StorageLayout")
+			w.fail(ctx, "requested", in.EntityUUID, errors.New("the request carries disks but its intent record names no StorageLayout"))
 			return
 		}
-		fields[layoutRefElement] = layoutRef(layoutEntity)
+		fields[layoutRefElement] = entityRef(layoutEntity)
 	}
-	if !w.writeRequested(ctx, in.EntityUUID, t, fields, in.AgentName, "") || layout == nil {
+	if !w.writeRequested(ctx, in.EntityUUID, t, fields, in.AgentName, "") || (exp.layout == nil && len(exp.pools) == 0) {
 		return
 	}
 	root, err := w.store.Latest(ctx, in.EntityUUID, "Requested")
 	if err != nil {
-		w.log.ErrorContext(ctx, "udlm record not written", "kind", "requested", "entity_uuid", layoutEntity, "error", err)
+		w.fail(ctx, "requested", in.EntityUUID, err)
 		return
 	}
-	w.writeRequested(ctx, layoutEntity, layout.t, layout.fields, in.AgentName, root.RecordUUID)
+	if exp.layout != nil {
+		w.writeRequested(ctx, layoutEntity, exp.layout.t, exp.layout.fields, in.AgentName, root.RecordUUID)
+	}
+	if len(exp.pools) == 0 {
+		return
+	}
+	pools, err := w.poolsOf(ctx, in.EntityUUID)
+	if err != nil {
+		w.fail(ctx, "requested", in.EntityUUID, err)
+		return
+	}
+	for _, p := range exp.pools {
+		entity, ok := pools[p.name]
+		if !ok {
+			w.fail(ctx, "requested", in.EntityUUID, fmt.Errorf("the request carries node group %q but its intent had no such pool", p.name))
+			continue
+		}
+		p.fields[clusterRefElement] = entityRef(in.EntityUUID)
+		w.writeRequested(ctx, entity, p.t, p.fields, in.AgentName, root.RecordUUID)
+	}
+}
+
+// poolsOf returns a cluster's pool entities by pool name, read from their
+// intent records.
+func (w *Writer) poolsOf(ctx context.Context, cluster string) (map[string]string, error) {
+	ids, err := w.store.Contained(ctx, cluster)
+	if err != nil {
+		return nil, err
+	}
+	pools := make(map[string]string, len(ids))
+	for _, id := range ids {
+		intent, err := w.store.Latest(ctx, id, "Intent")
+		if err != nil {
+			return nil, err
+		}
+		f, _ := intent.Body["fields"].(map[string]any)
+		pools[stringOf(f["name"])] = id
+	}
+	return pools, nil
 }
 
 // writeRequested writes one requested record. root is the record_uuid of the
@@ -214,16 +263,25 @@ func (w *Writer) writeRequested(ctx context.Context, entity string, t Type, fiel
 			root = stringOf(rec["record_uuid"])
 		}
 		rec["root_request_uuid"] = root
-		// The receipt of what crossed to the provider (DSP-004). The layout
-		// reference did not cross: the provider was sent the disks, and those are
-		// on the layout's own receipt.
+		// The receipt of what crossed to the provider (DSP-004). A reference the
+		// writer filled did not cross: the provider was sent the cluster's node
+		// groups or the VM's disks, and those are on the companion's own receipt.
+		// Each such reference is recorded as the edge it stands for.
 		sent := fields
-		if layoutEntity := layoutEntityOf(fields); layoutEntity != "" {
+		refs := sortedKeys(fieldsWithRefs(fields))
+		if len(refs) > 0 {
 			sent = cloneMap(fields)
-			delete(sent, layoutRefElement)
-			rec["dependencies"] = []any{map[string]any{
-				"edge_type": "references", "target_uuid": layoutEntity, "relation": "storage_layout",
-			}}
+		}
+		var deps []any
+		for _, el := range refs {
+			delete(sent, el)
+			e := refEdges[el]
+			deps = append(deps, map[string]any{
+				"edge_type": e.edgeType, "target_uuid": refEntity(fields[el]), "relation": e.relation,
+			})
+		}
+		if len(deps) > 0 {
+			rec["dependencies"] = deps
 		}
 		receipt, err := dispatchReceipt("dcm/agents/"+agent, sent, t)
 		if err != nil {
@@ -257,8 +315,8 @@ func (w *Writer) writeRequested(ctx context.Context, entity string, t Type, fiel
 
 // Realized writes a realized_record: the latest requested record's fields, the
 // agent's outputs, and the agent as provider. A later realized record for the
-// same entity supersedes the earlier one. The VM's provider realizes its disks
-// with it, so the layout the VM references is realized by the same report.
+// same entity supersedes the earlier one. The provider realizes a VM's disks and
+// a cluster's pools with it, so those companions are realized by the same report.
 func (w *Writer) Realized(ctx context.Context, in RealizedInput) {
 	if w == nil {
 		return
@@ -270,11 +328,20 @@ func (w *Writer) Realized(ctx context.Context, in RealizedInput) {
 	if err != nil {
 		return
 	}
+	// The agent reports nothing per disk or per pool, so a companion's outputs
+	// are empty: they are filled only by what a provider actually reports.
 	fields, _ := requested.Body["fields"].(map[string]any)
+	var companions []string
 	if layoutEntity := layoutEntityOf(fields); layoutEntity != "" {
-		// The agent reports no per-disk volumes, so the layout's outputs are empty:
-		// realized_volumes is filled only by what a provider actually reports.
-		w.writeRealized(ctx, RealizedInput{EntityUUID: layoutEntity, AgentName: in.AgentName, RunID: in.RunID, At: in.At})
+		companions = append(companions, layoutEntity)
+	}
+	pools, err := w.store.Contained(ctx, in.EntityUUID)
+	if err != nil {
+		w.fail(ctx, "realized", in.EntityUUID, err)
+		return
+	}
+	for _, entity := range append(companions, pools...) {
+		w.writeRealized(ctx, RealizedInput{EntityUUID: entity, AgentName: in.AgentName, RunID: in.RunID, At: in.At})
 	}
 }
 
@@ -370,15 +437,16 @@ func (w *Writer) base(recordType, state, entityUUID string, t Type, timeSource s
 
 // typedFields resolves the UDLM type from the spec's service_type and returns
 // the spec minus the envelope keys, under the class's names. A VM's disks come
-// back separately, as the StorageLayout they expand into (nil when there are none).
-func (w *Writer) typedFields(spec map[string]any) (Type, map[string]any, *companion, error) {
+// back separately, as the StorageLayout they expand into, and a cluster's node
+// groups as KubernetesNodePools.
+func (w *Writer) typedFields(spec map[string]any) (Type, map[string]any, expansion, error) {
 	st := stringOf(spec["service_type"])
 	if st == "" {
-		return Type{}, nil, nil, errors.New("spec carries no service_type")
+		return Type{}, nil, expansion{}, errors.New("spec carries no service_type")
 	}
 	t, ok := w.types(st)
 	if !ok {
-		return Type{}, nil, nil, fmt.Errorf("service type %q has no UDLM class", st)
+		return Type{}, nil, expansion{}, fmt.Errorf("service type %q has no UDLM class", st)
 	}
 	fields := make(map[string]any, len(spec))
 	for k, v := range spec {
@@ -390,19 +458,23 @@ func (w *Writer) typedFields(spec map[string]any) (Type, map[string]any, *compan
 	// JSON-typed) compares like with like.
 	normalized, err := roundTrip(fields)
 	if err != nil {
-		return Type{}, nil, nil, err
+		return Type{}, nil, expansion{}, err
 	}
 	fields = normalized.(map[string]any)
 	layout, err := w.splitLayout(st, fields)
 	if err != nil {
-		return Type{}, nil, nil, err
+		return Type{}, nil, expansion{}, err
+	}
+	pools, err := w.splitPools(st, fields)
+	if err != nil {
+		return Type{}, nil, expansion{}, err
 	}
 	// The service type's names are upstream's; the record carries the class's.
 	mapped, err := mapFields(st, fields)
 	if err != nil {
-		return Type{}, nil, nil, err
+		return Type{}, nil, expansion{}, err
 	}
-	return t, mapped, layout, nil
+	return t, mapped, expansion{layout: layout, pools: pools}, nil
 }
 
 // write runs build, then validates, seals onto the entity's chain, and stores.
@@ -454,6 +526,7 @@ func (w *Writer) write(ctx context.Context, kind string, build func() (map[strin
 		ResourceType: stringOf(body["resource_type"]),
 		Generation:   int(generation),
 		Head:         stringOf(body["integrity"].(map[string]any)["head"]),
+		ContainedBy:  containerOf(body),
 		Body:         body,
 	}
 	if err := w.store.Put(ctx, row); err != nil {
@@ -467,4 +540,25 @@ func (w *Writer) write(ctx context.Context, kind string, build func() (map[strin
 func stringOf(v any) string {
 	s, _ := v.(string)
 	return s
+}
+
+// fieldsWithRefs returns the reference elements in fields that the writer filled.
+func fieldsWithRefs(fields map[string]any) map[string]bool {
+	out := map[string]bool{}
+	for el := range refEdges {
+		if refEntity(fields[el]) != "" {
+			out[el] = true
+		}
+	}
+	return out
+}
+
+// containerOf is the entity a record's entity is contained by, when the writer
+// made the containment (a node pool's cluster_ref).
+func containerOf(body map[string]any) string {
+	if stringOf(body["resource_type"]) != poolClass {
+		return ""
+	}
+	fields, _ := body["fields"].(map[string]any)
+	return refEntity(fields[clusterRefElement])
 }

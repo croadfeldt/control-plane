@@ -11,16 +11,19 @@ import (
 // StateRecord is one immutable per-state record as stored. The columns beside
 // Body exist for lookup only; Body is the record and is never edited.
 type StateRecord struct {
-	RecordUUID   string         `gorm:"primaryKey;type:varchar(36)"`
-	EntityUUID   string         `gorm:"column:entity_uuid;type:varchar(36);index;not null"`
-	TenantUUID   string         `gorm:"column:tenant_uuid;type:varchar(36);index;not null"`
-	RecordType   string         `gorm:"column:record_type;type:varchar(32);not null"`
-	State        string         `gorm:"column:state;type:varchar(16);not null"`
-	ResourceType string         `gorm:"column:resource_type;type:varchar(128);not null"`
-	Generation   int            `gorm:"column:generation;not null;default:1"`
-	Head         string         `gorm:"column:head;type:varchar(80);not null"`
-	Body         map[string]any `gorm:"column:body;type:jsonb;serializer:json;not null"`
-	CreatedAt    time.Time      `gorm:"column:created_at;autoCreateTime"`
+	RecordUUID   string `gorm:"primaryKey;type:varchar(36)"`
+	EntityUUID   string `gorm:"column:entity_uuid;type:varchar(36);index;not null"`
+	TenantUUID   string `gorm:"column:tenant_uuid;type:varchar(36);index;not null"`
+	RecordType   string `gorm:"column:record_type;type:varchar(32);not null"`
+	State        string `gorm:"column:state;type:varchar(16);not null"`
+	ResourceType string `gorm:"column:resource_type;type:varchar(128);not null"`
+	Generation   int    `gorm:"column:generation;not null;default:1"`
+	Head         string `gorm:"column:head;type:varchar(80);not null"`
+	// ContainedBy is the entity this one is contained by, when the writer made the
+	// containment (a cluster's node pool); empty otherwise.
+	ContainedBy string         `gorm:"column:contained_by;type:varchar(36);index"`
+	Body        map[string]any `gorm:"column:body;type:jsonb;serializer:json;not null"`
+	CreatedAt   time.Time      `gorm:"column:created_at;autoCreateTime"`
 }
 
 // TableName keeps the table apart from every upstream table.
@@ -38,6 +41,8 @@ type Store interface {
 	Tail(ctx context.Context, entityUUID string) (*StateRecord, error)
 	// ListByEntity returns every record for an entity, oldest first.
 	ListByEntity(ctx context.Context, entityUUID string) ([]StateRecord, error)
+	// Contained returns the entities contained by a parent, in uuid order.
+	Contained(ctx context.Context, parentUUID string) ([]string, error)
 	// ListEntities pages through the entities that have records.
 	ListEntities(ctx context.Context, pageSize int, pageToken string) ([]EntitySummary, string, error)
 }
@@ -82,6 +87,15 @@ func (s *gormStore) ListByEntity(ctx context.Context, entityUUID string) ([]Stat
 		Order("created_at ASC, record_uuid ASC").
 		Find(&recs).Error
 	return recs, err
+}
+
+func (s *gormStore) Contained(ctx context.Context, parentUUID string) ([]string, error) {
+	var ids []string
+	err := s.db.WithContext(ctx).Model(&StateRecord{}).
+		Where("contained_by = ?", parentUUID).
+		Distinct().Order("entity_uuid ASC").
+		Pluck("entity_uuid", &ids).Error
+	return ids, err
 }
 
 // EntitySummary is one row of ListEntities.

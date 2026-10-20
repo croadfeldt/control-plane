@@ -103,7 +103,8 @@ type UDLMClass struct {
 
 // UDLMCompanions maps a UDLM class name to its version and elements.
 var UDLMCompanions = map[string]UDLMClass{
-	"StorageLayout": {Version: "0.6.1", Elements: []string{"entries"}},
+	"KubernetesNodePool": {Version: "1.1.2", Elements: []string{"capabilities", "cluster_ref", "labels", "name", "node_count", "node_resources", "taints"}},
+	"StorageLayout":      {Version: "0.6.1", Elements: []string{"entries"}},
 }
 
 // LookupUDLMCompanion returns a companion class by its UDLM name.

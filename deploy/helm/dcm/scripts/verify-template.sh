@@ -141,3 +141,8 @@ printf '%s' "$ea_auth_out" | awk 'BEGIN{RS="---"} /templates\/environment-agent.
 if printf '%s' "$ea_out" | grep -Fq 'DCM_AUTH_TOKEN_ENDPOINT'; then
 	fail "environment-agent must not set DCM_AUTH_* when auth.enabled=false"
 fi
+
+# Control-plane extraEnv is appended to the container env
+cp_env_out="$(helm_out --set 'controlPlane.extraEnv[0].name=EXAMPLE_SETTING' --set 'controlPlane.extraEnv[0].value=enabled')"
+printf '%s' "$cp_env_out" | awk 'BEGIN{RS="---"} /templates\/control-plane.yaml/ && /kind: Deployment/ && /name: EXAMPLE_SETTING/ && /value: "?enabled"?/ {found=1} END{exit !found}' \
+	|| fail "control-plane must render controlPlane.extraEnv entries"

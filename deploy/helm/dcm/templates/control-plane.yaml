@@ -67,6 +67,9 @@ spec:
               value: {{ .Values.auth.jwtAudience | quote }}
             {{- end }}
             {{- end }}
+            {{- with .Values.controlPlane.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
 ---
 apiVersion: v1
 kind: Service

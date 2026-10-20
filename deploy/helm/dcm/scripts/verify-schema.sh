@@ -76,5 +76,12 @@ expect_lint_fail "capabilities typo dropp instead of drop" \
 expect_lint_fail "seccompProfile typo typ instead of type" \
 	--set 'controlPlane.securityContext.seccompProfile.typ=RuntimeDefault'
 
+# Test (g): controlPlane.extraEnv entries are EnvVars
+expect_lint_pass "extraEnv with name and value" \
+	--set 'controlPlane.extraEnv[0].name=EXAMPLE_SETTING,controlPlane.extraEnv[0].value=on'
+
+expect_lint_fail "extraEnv entry without a name" \
+	--set 'controlPlane.extraEnv[0].value=on'
+
 echo ""
 echo "All schema negative tests passed!"

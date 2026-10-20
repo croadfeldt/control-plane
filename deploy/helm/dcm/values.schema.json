@@ -189,7 +189,7 @@
         "tag": {
           "type": "string",
           "description": "Image tag. Empty defaults to global.imageTag.",
-          "default": "m2-rc1"
+          "default": "m2"
         },
         "agentName": {
           "type": "string"
@@ -275,7 +275,7 @@
         "tag": {
           "type": "string",
           "description": "Image tag. Empty defaults to global.imageTag.",
-          "default": "mc-r2"
+          "default": "m2"
         },
         "securityContext": {
           "$ref": "#/definitions/securityContext"
@@ -285,6 +285,28 @@
         },
         "ingress": {
           "$ref": "#/definitions/ingress"
+        },
+        "extraEnv": {
+          "type": "array",
+          "description": "Extra environment variables for the control-plane container, in Kubernetes EnvVar form (name with value or valueFrom). Appended after the chart's own entries.",
+          "default": [],
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "value": {
+                "type": "string"
+              },
+              "valueFrom": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
+          }
         }
       }
     },
@@ -417,7 +439,7 @@
         "tag": {
           "type": "string",
           "description": "Image tag. Empty defaults to global.imageTag.",
-          "default": "m2-rc1"
+          "default": "m2"
         },
         "route": {
           "$ref": "#/definitions/route"

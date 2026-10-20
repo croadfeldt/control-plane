@@ -59,6 +59,18 @@ Then open:
 - Control-plane API: http://localhost:8080
 - DCM UI: http://localhost:7007
 
+### Extra control-plane settings
+
+`controlPlane.extraEnv` adds environment variables to the control-plane container, after the
+chart's own. Each entry is a Kubernetes EnvVar: a `name` with a `value` or a `valueFrom`.
+
+```yaml
+controlPlane:
+  extraEnv:
+    - name: HTTPS_PROXY
+      value: http://proxy.example.com:3128
+```
+
 ## Enabling Environment Agent
 
 Deploys the [environment-agent](https://github.com/dcm-project/environment-agent) with embedded
@@ -77,7 +89,7 @@ Environment Agent's embedded SP mapping to a backend platform :
 | `network` | Kubernetes Services |
 | `cluster` | ACM/MCE HyperShift |
 
-Escape commas in `--set` values (for example `container\,vm`). Workload namespaces default to
+Escape commas in `--set` values (for example `container\\,vm`). Workload namespaces default to
 `default`. If you change `containerNamespace`, `vmNamespace`, `storageNamespace`,
 `networkNamespace`, or `clusterNamespace`, create those namespaces before install/upgrade.
 
@@ -92,7 +104,7 @@ To include `container` and `vm`:
 ```bash
 helm upgrade dcm deploy/helm/dcm --reuse-values \
   --set environmentAgent.enabled=true \
-  --set environmentAgent.embeddedSps=container\,vm \
+  --set environmentAgent.embeddedSps=container\\,vm \
   --set environmentAgent.externalSvcType=LoadBalancer
 ```
 
@@ -111,7 +123,7 @@ kubectl create secret generic dcm-acm-pull-secret \
 
 helm upgrade dcm deploy/helm/dcm --reuse-values \
   --set environmentAgent.enabled=true \
-  --set environmentAgent.embeddedSps=container\,cluster \
+  --set environmentAgent.embeddedSps=container\\,cluster \
   --set environmentAgent.pullSecretRef=dcm-acm-pull-secret \
   --set environmentAgent.clusterNamespace=clusters \
   --set environmentAgent.baseDomain=example.com

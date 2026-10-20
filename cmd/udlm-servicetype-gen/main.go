@@ -74,6 +74,11 @@ var mappings = []mapping{
 	{"storage", "Storage", "volume.json", "DCM Storage Specification", "storage volume"},
 }
 
+// companions are UDLM classes with no service type of their own that the control
+// plane still writes records for, because a service type's spec expands into them:
+// a VM's disks are a StorageLayout. Only the class metadata is emitted for these.
+var companions = []string{"storage-layout.json"}
+
 func main() {
 	os.Exit(run())
 }
@@ -124,7 +129,16 @@ func run() int {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			return 1
 		}
-		if err := writeTypeTable(*outDir, generated, groups); err != nil {
+		comps := map[string]udlmType{}
+		for _, f := range companions {
+			t, err := readClass(*udlmDir, f)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "companion %s: %v\n", f, err)
+				return 1
+			}
+			comps[t.resourceType] = t
+		}
+		if err := writeTypeTable(*outDir, generated, comps, groups); err != nil {
 			fmt.Fprintf(os.Stderr, "write type table: %v\n", err)
 			return 1
 		}
@@ -168,7 +182,7 @@ type outputInfo struct {
 // on a full run so the control plane can name the class behind a service type.
 const typeTableFile = "udlm_types.gen.go"
 
-func writeTypeTable(outDir string, types map[string]udlmType, usageGroups []usageGroup) error {
+func writeTypeTable(outDir string, types, comps map[string]udlmType, usageGroups []usageGroup) error {
 	slugs := make([]string, 0, len(types))
 	for s := range types {
 		slugs = append(slugs, s)
@@ -235,6 +249,27 @@ func writeTypeTable(outDir string, types map[string]udlmType, usageGroups []usag
 	sb.WriteString("}\n\n")
 	sb.WriteString("// LookupUDLMGroups returns the usage groups of a service type's UDLM class.\n")
 	sb.WriteString("func LookupUDLMGroups(slug string) ([]string, bool) {\n\tg, ok := UDLMGroups[slug]\n\treturn g, ok\n}\n\n")
+	names := make([]string, 0, len(comps))
+	for n := range comps {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	sb.WriteString("// UDLMClass is a UDLM class the control plane writes records for without a service type of its own,\n// because a service type's spec expands into it (a VM's disks are a StorageLayout).\n")
+	sb.WriteString("type UDLMClass struct {\n\tVersion string\n\t// Elements are the class's top-level element names (DSP-002).\n\tElements []string\n}\n\n")
+	sb.WriteString("// UDLMCompanions maps a UDLM class name to its version and elements.\n")
+	sb.WriteString("var UDLMCompanions = map[string]UDLMClass{\n")
+	for _, n := range names {
+		els := append([]string(nil), comps[n].elements...)
+		sort.Strings(els)
+		quoted := make([]string, len(els))
+		for i, e := range els {
+			quoted[i] = fmt.Sprintf("%q", e)
+		}
+		fmt.Fprintf(&sb, "\t%q: {Version: %q, Elements: []string{%s}},\n", n, comps[n].version, strings.Join(quoted, ", "))
+	}
+	sb.WriteString("}\n\n")
+	sb.WriteString("// LookupUDLMCompanion returns a companion class by its UDLM name.\n")
+	sb.WriteString("func LookupUDLMCompanion(resourceType string) (UDLMClass, bool) {\n\tc, ok := UDLMCompanions[resourceType]\n\treturn c, ok\n}\n\n")
 	sb.WriteString("// UDLMUsageGroup is one term of the registry's usage-group vocabulary (registry/taxonomies/usage-group.yaml).\n")
 	sb.WriteString("type UDLMUsageGroup struct {\n\tTerm       string\n\tDefinition string\n}\n\n")
 	sb.WriteString("// UDLMUsageGroups is the vocabulary, in the registry's order. The catalog's shelves.\n")
@@ -252,11 +287,12 @@ func writeTypeTable(outDir string, types map[string]udlmType, usageGroups []usag
 
 // generate reads the UDLM flat spec for m and writes servicetypes/<slug>/spec.yaml,
 // returning the UDLM type it was generated from.
-func generate(m mapping, udlmDir, outDir string) (udlmType, error) {
-	src := filepath.Join(udlmDir, "registry", "generated", m.udlmFile)
+// readFlatSpec parses registry/generated/<file> and returns its root and spec.
+func readFlatSpec(udlmDir, file string) (root, spec *yaml.Node, err error) {
+	src := filepath.Join(udlmDir, "registry", "generated", file)
 	raw, err := os.ReadFile(src)
 	if err != nil {
-		return udlmType{}, fmt.Errorf("read %s: %w", src, err)
+		return nil, nil, fmt.Errorf("read %s: %w", src, err)
 	}
 
 	// JSON is valid YAML flow syntax, so yaml.v3 parses both .json and .yaml while
@@ -264,19 +300,36 @@ func generate(m mapping, udlmDir, outDir string) (udlmType, error) {
 	// stable and human-readable.
 	var doc yaml.Node
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return udlmType{}, fmt.Errorf("parse %s: %w", src, err)
+		return nil, nil, fmt.Errorf("parse %s: %w", src, err)
 	}
-	root := &doc
+	root = &doc
 	if root.Kind == yaml.DocumentNode && len(root.Content) == 1 {
 		root = root.Content[0]
 	}
 	if root.Kind != yaml.MappingNode {
-		return udlmType{}, fmt.Errorf("%s: expected a mapping at the document root", src)
+		return nil, nil, fmt.Errorf("%s: expected a mapping at the document root", src)
 	}
-
-	spec := mapGet(root, "spec")
+	spec = mapGet(root, "spec")
 	if spec == nil || spec.Kind != yaml.MappingNode {
-		return udlmType{}, fmt.Errorf("%s: missing object 'spec'", src)
+		return nil, nil, fmt.Errorf("%s: missing object 'spec'", src)
+	}
+	return root, spec, nil
+}
+
+// readClass returns a class's name, version and elements, for a companion.
+func readClass(udlmDir, file string) (udlmType, error) {
+	root, spec, err := readFlatSpec(udlmDir, file)
+	if err != nil {
+		return udlmType{}, err
+	}
+	return udlmType{resourceType: scalarValue(mapGet(root, "resource_type")), version: scalarValue(mapGet(root, "version")), elements: propertyNames(mapGet(spec, "properties"))}, nil
+}
+
+func generate(m mapping, udlmDir, outDir string) (udlmType, error) {
+	src := filepath.Join(udlmDir, "registry", "generated", m.udlmFile)
+	root, spec, err := readFlatSpec(udlmDir, m.udlmFile)
+	if err != nil {
+		return udlmType{}, err
 	}
 	resourceType := scalarValue(mapGet(root, "resource_type"))
 	udlmVersion := scalarValue(mapGet(root, "version"))

@@ -144,6 +144,10 @@ func Run() int {
 				elements, _ := servicetypes.LookupUDLMElements(slug)
 				return udlmrecords.Type{ResourceType: t.ResourceType, Version: t.Version, Elements: elements}, ok
 			},
+			func(resourceType string) (udlmrecords.Type, bool) {
+				c, ok := servicetypes.LookupUDLMCompanion(resourceType)
+				return udlmrecords.Type{ResourceType: resourceType, Version: c.Version, Elements: c.Elements}, ok
+			},
 			cfg.UDLM.DefaultTenantUUID,
 			slog.Default(),
 		)

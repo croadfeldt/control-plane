@@ -43,7 +43,7 @@ var _ = Describe("UDLM per-state records", func() {
 			}
 			return records.Type{}, false
 		}
-		writer := records.NewWriter(recordStore, lookup, "00000000-0000-4000-8000-000000000000", slog.Default())
+		writer := records.NewWriter(recordStore, lookup, nil, "00000000-0000-4000-8000-000000000000", slog.Default())
 		agents := &mockAgentClient{agents: []placementagent.Info{{Name: "default-agent", Environment: "prod", ServiceTypes: []string{"vm"}, Cost: "low"}}}
 		placementSvc = service.NewPlacementService(store.NewStore(db), &mockPolicyClient{}, &mockSPRMClient{},
 			service.WithAgentClient(agents), service.WithRecordWriter(writer))

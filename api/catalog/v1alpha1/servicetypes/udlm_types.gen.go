@@ -93,6 +93,25 @@ func LookupUDLMGroups(slug string) ([]string, bool) {
 	return g, ok
 }
 
+// UDLMClass is a UDLM class the control plane writes records for without a service type of its own,
+// because a service type's spec expands into it (a VM's disks are a StorageLayout).
+type UDLMClass struct {
+	Version string
+	// Elements are the class's top-level element names (DSP-002).
+	Elements []string
+}
+
+// UDLMCompanions maps a UDLM class name to its version and elements.
+var UDLMCompanions = map[string]UDLMClass{
+	"StorageLayout": {Version: "0.6.1", Elements: []string{"entries"}},
+}
+
+// LookupUDLMCompanion returns a companion class by its UDLM name.
+func LookupUDLMCompanion(resourceType string) (UDLMClass, bool) {
+	c, ok := UDLMCompanions[resourceType]
+	return c, ok
+}
+
 // UDLMUsageGroup is one term of the registry's usage-group vocabulary (registry/taxonomies/usage-group.yaml).
 type UDLMUsageGroup struct {
 	Term       string

@@ -77,7 +77,7 @@ Environment Agent's embedded SP mapping to a backend platform :
 | `network` | Kubernetes Services |
 | `cluster` | ACM/MCE HyperShift |
 
-Escape commas in `--set` values (for example `container\,vm`). Workload namespaces default to
+Escape commas in `--set` values (for example `container\\,vm`). Workload namespaces default to
 `default`. If you change `containerNamespace`, `vmNamespace`, `storageNamespace`,
 `networkNamespace`, or `clusterNamespace`, create those namespaces before install/upgrade.
 
@@ -92,7 +92,7 @@ To include `container` and `vm`:
 ```bash
 helm upgrade dcm deploy/helm/dcm --reuse-values \
   --set environmentAgent.enabled=true \
-  --set environmentAgent.embeddedSps=container\,vm \
+  --set environmentAgent.embeddedSps=container\\,vm \
   --set environmentAgent.externalSvcType=LoadBalancer
 ```
 
@@ -111,7 +111,7 @@ kubectl create secret generic dcm-acm-pull-secret \
 
 helm upgrade dcm deploy/helm/dcm --reuse-values \
   --set environmentAgent.enabled=true \
-  --set environmentAgent.embeddedSps=container\,cluster \
+  --set environmentAgent.embeddedSps=container\\,cluster \
   --set environmentAgent.pullSecretRef=dcm-acm-pull-secret \
   --set environmentAgent.clusterNamespace=clusters \
   --set environmentAgent.baseDomain=example.com

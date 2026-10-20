@@ -76,8 +76,9 @@ var mappings = []mapping{
 
 // companions are UDLM classes with no service type of their own that the control
 // plane still writes records for, because a service type's spec expands into them:
-// a VM's disks are a StorageLayout. Only the class metadata is emitted for these.
-var companions = []string{"storage-layout.json"}
+// a VM's disks are a StorageLayout, a cluster's node groups are KubernetesNodePools.
+// Only the class metadata is emitted for these.
+var companions = []string{"kubernetes-node-pool.json", "storage-layout.json"}
 
 func main() {
 	os.Exit(run())

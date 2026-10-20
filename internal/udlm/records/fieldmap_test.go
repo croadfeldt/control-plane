@@ -48,10 +48,6 @@ func TestMapFieldsRefusesFieldsWithNoClassHome(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "access") {
 		t.Fatalf("want a refusal naming access, got %v", err)
 	}
-	_, err = mapFields("cluster", map[string]any{"version": "4.18", "nodes": map[string]any{"workers": map[string]any{"count": 3.0}}})
-	if err == nil || !strings.Contains(err.Error(), "KubernetesNodePool") {
-		t.Fatalf("want a refusal pointing at KubernetesNodePool, got %v", err)
-	}
 	if _, err := mapFields("vm", map[string]any{"vcpu": map[string]any{"count": 2.0}, "storage": map[string]any{"disks": []any{}}}); err != nil {
 		t.Fatalf("an empty disks list carries nothing and must not refuse: %v", err)
 	}

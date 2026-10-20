@@ -122,11 +122,19 @@ func testWriter(t *testing.T) (*Writer, Store) {
 				"memory", "networks", "placement", "run_state", "storage", "storage_tier",
 			}}, true
 		}
+		if s == "cluster" {
+			return Type{ResourceType: "KubernetesCluster", Version: "2.0.4", Elements: []string{"network", "release"}}, true
+		}
 		return Type{}, false
 	}
 	classes := func(rt string) (Type, bool) {
 		if rt == "StorageLayout" {
 			return Type{ResourceType: "StorageLayout", Version: "0.6.1", Elements: []string{"entries"}}, true
+		}
+		if rt == "KubernetesNodePool" {
+			return Type{ResourceType: "KubernetesNodePool", Version: "1.1.2", Elements: []string{
+				"capabilities", "cluster_ref", "labels", "name", "node_count", "node_resources", "taints",
+			}}, true
 		}
 		return Type{}, false
 	}

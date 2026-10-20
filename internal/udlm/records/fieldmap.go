@@ -39,9 +39,6 @@ var noClassHome = map[string]map[string]string{
 	"vm": {
 		"access": "an SSH key has no Machine element yet (pending a UDLM ruling)",
 	},
-	"cluster": {
-		"nodes": "node groups are KubernetesNodePool records contained by the cluster, UDLM row 072 (expansion not built yet)",
-	},
 }
 
 // mapFields returns the spec's fields under the class's names, or an error naming

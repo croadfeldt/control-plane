@@ -26,7 +26,26 @@ var diskKeys = map[string]string{"name": "name", "capacity": "size"}
 // companion is a class record the writer writes beside the one the spec names.
 type companion struct {
 	t      Type
+	name   string // the pool name, for a node pool; empty for a layout
 	fields map[string]any
+}
+
+// expansion is what a spec splits into beside its own fields.
+type expansion struct {
+	layout *companion
+	pools  []companion
+}
+
+// class looks up a companion class, naming the spec path that needs it.
+func (w *Writer) class(resourceType, path string) (Type, error) {
+	if w.classes == nil {
+		return Type{}, fmt.Errorf("%s needs the %s class, which the writer was not given", path, resourceType)
+	}
+	t, ok := w.classes(resourceType)
+	if !ok {
+		return Type{}, fmt.Errorf("%s needs the %s class, which the writer does not know", path, resourceType)
+	}
+	return t, nil
 }
 
 // splitLayout removes a VM's disks from fields and returns them as StorageLayout
@@ -46,12 +65,9 @@ func (w *Writer) splitLayout(serviceType string, fields map[string]any) (*compan
 	if !ok {
 		return nil, fmt.Errorf("%s is not a list", disksPath)
 	}
-	if w.classes == nil {
-		return nil, fmt.Errorf("%s needs the %s class, which the writer was not given", disksPath, layoutClass)
-	}
-	t, ok := w.classes(layoutClass)
-	if !ok {
-		return nil, fmt.Errorf("%s needs the %s class, which the writer does not know", disksPath, layoutClass)
+	t, err := w.class(layoutClass, disksPath)
+	if err != nil {
+		return nil, err
 	}
 	entries := make([]any, 0, len(disks))
 	for i, d := range disks {
@@ -93,14 +109,14 @@ func layoutEntry(d any) (map[string]any, error) {
 	return entry, nil
 }
 
-// layoutRef is the URF reference to a layout entity (identifier-scheme §9).
-func layoutRef(entity string) string { return "uuid/" + entity }
+// entityRef is the URF reference to an entity by uuid (identifier-scheme §9).
+func entityRef(entity string) string { return "uuid/" + entity }
 
-// layoutEntityOf returns the layout entity a VM's fields reference, when the
-// reference is one the writer made (uuid form). A handle the consumer wrote is
-// not a layout the writer expanded, so it returns empty.
-func layoutEntityOf(fields map[string]any) string {
-	ref, ok := strings.CutPrefix(stringOf(fields[layoutRefElement]), "uuid/")
+// refEntity returns the entity a reference names, when it is in the uuid form
+// the writer makes. A handle the consumer wrote is not one the writer made, so
+// it returns empty.
+func refEntity(v any) string {
+	ref, ok := strings.CutPrefix(stringOf(v), "uuid/")
 	if !ok {
 		return ""
 	}
@@ -108,4 +124,15 @@ func layoutEntityOf(fields map[string]any) string {
 		ref = ref[:i]
 	}
 	return ref
+}
+
+// layoutEntityOf returns the layout entity a VM's fields reference.
+func layoutEntityOf(fields map[string]any) string { return refEntity(fields[layoutRefElement]) }
+
+// refEdges are the reference elements the writer fills, with the edge each
+// stands for on the record (the class's declared relationship). The reference
+// never crosses to the provider, so it is kept off the dispatch receipt.
+var refEdges = map[string]struct{ edgeType, relation string }{
+	layoutRefElement:  {"references", "storage_layout"},
+	clusterRefElement: {"contained_by", "cluster"},
 }

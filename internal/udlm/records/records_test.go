@@ -130,7 +130,7 @@ func testWriter(t *testing.T) (*Writer, Store) {
 	classes := func(rt string) (Type, bool) {
 		if rt == "KubernetesNodePool" {
 			return Type{ResourceType: "KubernetesNodePool", Version: "1.1.2", Elements: []string{
-				"capabilities", "cluster_ref", "labels", "name", "node_count", "node_resources", "taints",
+				"capabilities", "cluster_ref", "labels", "name", "node_count", "node_disks", "node_resources", "taints",
 			}}, true
 		}
 		return Type{}, false

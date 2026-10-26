@@ -32,9 +32,12 @@ var nodeKeys = map[string]string{
 }
 
 // nodeNoHome names node-group fields the pool class has no element for, with why.
-var nodeNoHome = map[string]string{
-	"storage": "per-node disk size has no KubernetesNodePool element yet, udlm#650",
-}
+var nodeNoHome = map[string]string{}
+
+// Upstream sizes a node group's disk as one quantity, `storage`; the pool
+// class carries disks as `node_disks`, a list in the shared disk shape (UDLM
+// row 117). One size is a one-entry list: the node's boot disk.
+const nodeStorageKey = "storage"
 
 // splitPools removes a cluster's node groups from fields and returns them as
 // KubernetesNodePool fields, one per non-empty group, in pool-name order.
@@ -91,6 +94,10 @@ func poolFields(name string, g any) (map[string]any, error) {
 	var homeless []string
 	pool := map[string]any{"name": name}
 	for k, v := range group {
+		if k == nodeStorageKey {
+			pool["node_disks"] = []any{map[string]any{"name": "root", "size": v, "role": "boot"}}
+			continue
+		}
 		to, ok := nodeKeys[k]
 		if !ok {
 			why := nodeNoHome[k]

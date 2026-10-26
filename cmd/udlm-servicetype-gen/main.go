@@ -377,6 +377,7 @@ type generator struct {
 	order      []string
 	registry   string                // <udlm>/registry — base for resolving ../<file>#/<pointer> refs
 	files      map[string]*yaml.Node // parsed sibling schema files, by path
+	refFile    string                // the sibling file the last resolved $ref came from; a local #/ ref inside it resolves there
 	err        error                 // first translation error (reported by generate)
 }
 
@@ -743,16 +744,30 @@ func (g *generator) buildOneOf(name string, sch, one *yaml.Node) *yaml.Node {
 	return out
 }
 
-// resolveRef resolves a registry-relative reference of the form
-// ../<file>#/<json-pointer> against <udlm>/registry and returns the target node.
-// Only sibling-file refs occur in the flat specs; anything else is an error so a
-// new ref shape is noticed rather than silently dropped.
+// resolveRef resolves a reference against <udlm>/registry and returns the target
+// node. A flat spec refers to a sibling schema as ../<file>#/<pointer>. Inside a
+// sibling schema, a definition refers to another in the same file as #/<pointer>
+// (common-elements' `disk.size` is its own `quantity`) or to another sibling as
+// <file>#/<pointer>; both resolve relative to the file the last reference came
+// from. Anything else is an error so a new ref shape is noticed rather than
+// silently dropped.
 func (g *generator) resolveRef(ref string) (*yaml.Node, error) {
 	file, pointer, ok := strings.Cut(ref, "#")
-	if !ok || !strings.HasPrefix(file, "../") || !strings.HasPrefix(pointer, "/") {
+	if !ok || !strings.HasPrefix(pointer, "/") {
 		return nil, fmt.Errorf("unsupported $ref %q (expected ../<file>#/<pointer>)", ref)
 	}
-	path := filepath.Join(g.registry, strings.TrimPrefix(file, "../"))
+	var path string
+	switch {
+	case strings.HasPrefix(file, "../"):
+		path = filepath.Join(g.registry, strings.TrimPrefix(file, "../"))
+	case file == "" && g.refFile != "":
+		path = g.refFile
+	case file != "" && !strings.Contains(file, "/"):
+		path = filepath.Join(g.registry, file)
+	default:
+		return nil, fmt.Errorf("unsupported $ref %q (expected ../<file>#/<pointer>, or #/<pointer> inside a sibling schema)", ref)
+	}
+	g.refFile = path
 	root, cached := g.files[path]
 	if !cached {
 		raw, err := os.ReadFile(path)

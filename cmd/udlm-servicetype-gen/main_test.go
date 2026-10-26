@@ -28,6 +28,7 @@ const fixtureUDLM = `{
       "metadata": {"type": "object", "properties": {"owner": {"type": "string"}}},
       "layout_ref": {"$ref": "../common-elements.schema.json#/$defs/Reference", "description": "own wording wins"},
       "zone": {"allOf": [{"$ref": "../data-reference.schema.json#/$defs/data_reference"}, {"required": ["reference_data_type"], "properties": {"reference_data_type": {"const": "network_zone"}}}]},
+      "disks": {"type": "array", "items": {"$ref": "../common-elements.schema.json#/$defs/Disk"}},
       "guest_os": {"description": "inline or reference", "oneOf": [{"type": "object", "required": ["type"], "properties": {"type": {"type": "string"}}}, {"$ref": "../common-elements.schema.json#/$defs/Reference"}]}
     },
     "oneOf": [{"required": ["size_class"]}, {"required": ["engine"]}]
@@ -42,7 +43,7 @@ const fixtureUDLM = `{
 }`
 
 const (
-	fixtureCommonElements = `{"$defs": {"Reference": {"type": "string", "format": "udlm-ref-url", "description": "shared wording"}}}`
+	fixtureCommonElements = `{"$defs": {"Reference": {"type": "string", "format": "udlm-ref-url", "description": "shared wording"}, "Quantity": {"type": "string", "pattern": "^[0-9]+Gi$"}, "Disk": {"type": "object", "required": ["size"], "properties": {"size": {"$ref": "#/$defs/Quantity", "description": "a local ref inside the sibling"}}}}}`
 	fixtureDataReference  = `{"$defs": {"data_reference": {"type": "string", "format": "udlm-ref-url", "description": "a reference-data pointer"}}}`
 )
 

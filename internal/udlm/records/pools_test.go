@@ -95,11 +95,28 @@ func TestWriterExpandsClusterNodesIntoNodePools(t *testing.T) {
 	}
 }
 
+// A node group's single disk size becomes the pool's node_disks: one boot disk.
+func TestWriterMapsNodeStorageOntoNodeDisks(t *testing.T) {
+	ctx := context.Background()
+	w, st := testWriter(t)
+	cluster := "da7c9a41-8e3d-4b6a-9c15-7d2e4f8a1b03"
+	spec := clusterWithNodes(map[string]any{"workers": map[string]any{"count": 2, "storage": "120GB"}})
+	w.Intent(ctx, IntentInput{EntityUUID: cluster, Spec: spec, Name: "dev"})
+	pools, err := st.Contained(ctx, cluster)
+	if err != nil || len(pools) != 1 {
+		t.Fatalf("want one pool, got %v (%v)", pools, err)
+	}
+	recs, _ := st.ListByEntity(ctx, pools[0])
+	got := fmt.Sprint(recs[0].Body["fields"].(map[string]any)["node_disks"])
+	if got != "[map[name:root role:boot size:120GB]]" {
+		t.Errorf("node_disks = %s", got)
+	}
+}
+
 func TestWriterRefusesNodeGroupsItCannotPlace(t *testing.T) {
 	ctx := context.Background()
 	cases := map[string]map[string]any{
-		"per-node storage": {"workers": map[string]any{"count": 2, "storage": "120GB"}},
-		"unknown group":    {"infra": map[string]any{"count": 2}},
+		"unknown group": {"infra": map[string]any{"count": 2}},
 	}
 	for name, nodes := range cases {
 		t.Run(name, func(t *testing.T) {

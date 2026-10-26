@@ -81,6 +81,9 @@ func TestGenerateTransform(t *testing.T) {
 		t.Fatalf("read output: %v", err)
 	}
 	text := string(raw)
+	if !strings.Contains(text, "^[0-9]+Gi$") {
+		t.Error("a local #/ ref inside the sibling schema (Disk.size -> Quantity) should resolve to its pattern")
+	}
 
 	var doc map[string]any
 	if err := yaml.Unmarshal(raw, &doc); err != nil {

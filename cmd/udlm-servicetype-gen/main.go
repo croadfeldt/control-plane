@@ -76,9 +76,9 @@ var mappings = []mapping{
 
 // companions are UDLM classes with no service type of their own that the control
 // plane still writes records for, because a service type's spec expands into them:
-// a VM's disks are a StorageLayout, a cluster's node groups are KubernetesNodePools.
+// a cluster's node groups are KubernetesNodePools.
 // Only the class metadata is emitted for these.
-var companions = []string{"kubernetes-node-pool.json", "storage-layout.json"}
+var companions = []string{"kubernetes-node-pool.json"}
 
 func main() {
 	os.Exit(run())
@@ -255,7 +255,7 @@ func writeTypeTable(outDir string, types, comps map[string]udlmType, usageGroups
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	sb.WriteString("// UDLMClass is a UDLM class the control plane writes records for without a service type of its own,\n// because a service type's spec expands into it (a VM's disks are a StorageLayout).\n")
+	sb.WriteString("// UDLMClass is a UDLM class the control plane writes records for without a service type of its own,\n// because a service type's spec expands into it (a cluster's node groups are KubernetesNodePools).\n")
 	sb.WriteString("type UDLMClass struct {\n\tVersion string\n\t// Elements are the class's top-level element names (DSP-002).\n\tElements []string\n}\n\n")
 	sb.WriteString("// UDLMCompanions maps a UDLM class name to its version and elements.\n")
 	sb.WriteString("var UDLMCompanions = map[string]UDLMClass{\n")

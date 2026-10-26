@@ -10,10 +10,10 @@ type UDLMType struct {
 
 // UDLMTypes maps a service type slug to the UDLM class and version it projects.
 var UDLMTypes = map[string]UDLMType{
-	"cluster":   {ResourceType: "KubernetesCluster", Version: "2.0.4"},
-	"container": {ResourceType: "Container", Version: "1.1.0"},
-	"storage":   {ResourceType: "Volume", Version: "0.13.0"},
-	"vm":        {ResourceType: "Machine.VM", Version: "2.1.0"},
+	"cluster":   {ResourceType: "KubernetesCluster", Version: "2.0.5"},
+	"container": {ResourceType: "Container", Version: "1.3.0"},
+	"storage":   {ResourceType: "Volume", Version: "0.14.0"},
+	"vm":        {ResourceType: "Machine.VM", Version: "2.4.0"},
 }
 
 // LookupUDLMType returns the UDLM class behind a service type slug.
@@ -53,6 +53,7 @@ var UDLMOutputs = map[string]map[string]UDLMOutput{
 		"observed_run_state": {Type: "string", Sensitive: false},
 		"primary_ip":         {Type: "string", Sensitive: false},
 		"provider_handle":    {Type: "string", Sensitive: false},
+		"realized_volumes":   {Type: "array", Sensitive: false},
 		"target_segment":     {Type: "string", Sensitive: false},
 	},
 }
@@ -68,8 +69,8 @@ func LookupUDLMOutput(slug, name string) (UDLMOutput, bool) {
 var UDLMElements = map[string][]string{
 	"cluster":   {"network", "release"},
 	"container": {"args", "command", "image", "network", "process", "resources", "runtime"},
-	"storage":   {"access_mode", "capacity", "layout_entry", "retain_on_release", "storage_class", "volume_mode"},
-	"vm":        {"boot_order", "cpu", "firmware", "guest_os", "instance_size", "layout_ref", "memory", "networks", "placement", "run_state", "storage", "storage_tier"},
+	"storage":   {"access_mode", "capacity", "disk_entry", "retain_on_release", "storage_class", "volume_mode"},
+	"vm":        {"boot_order", "cpu", "disks", "firmware", "guest_os", "instance_size", "memory", "networks", "placement", "run_state", "storage", "storage_tier"},
 }
 
 // LookupUDLMElements returns the element names of a service type's UDLM class.
@@ -94,7 +95,7 @@ func LookupUDLMGroups(slug string) ([]string, bool) {
 }
 
 // UDLMClass is a UDLM class the control plane writes records for without a service type of its own,
-// because a service type's spec expands into it (a VM's disks are a StorageLayout).
+// because a service type's spec expands into it (a cluster's node groups are KubernetesNodePools).
 type UDLMClass struct {
 	Version string
 	// Elements are the class's top-level element names (DSP-002).
@@ -103,8 +104,7 @@ type UDLMClass struct {
 
 // UDLMCompanions maps a UDLM class name to its version and elements.
 var UDLMCompanions = map[string]UDLMClass{
-	"KubernetesNodePool": {Version: "1.1.2", Elements: []string{"capabilities", "cluster_ref", "labels", "name", "node_count", "node_resources", "taints"}},
-	"StorageLayout":      {Version: "0.7.0", Elements: []string{"entries"}},
+	"KubernetesNodePool": {Version: "1.1.4", Elements: []string{"capabilities", "cluster_ref", "labels", "name", "node_count", "node_resources", "taints"}},
 }
 
 // LookupUDLMCompanion returns a companion class by its UDLM name.

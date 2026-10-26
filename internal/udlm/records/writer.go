@@ -33,7 +33,7 @@ type Type struct {
 }
 
 // ClassLookup maps a UDLM class name to the class, for the companions a service
-// type's spec expands into (a VM's disks are a StorageLayout).
+// type's spec expands into (a cluster's node groups are KubernetesNodePools).
 type ClassLookup func(resourceType string) (Type, bool)
 
 // TypeLookup maps a control-plane service type (the `service_type` value in a
@@ -107,9 +107,9 @@ func actorID(ctx context.Context) string {
 }
 
 // Intent writes an intent_record. It is the chain root for the entity. A spec
-// that expands into companions writes their intent records too: a VM's disks
-// are a StorageLayout the VM references, written first; a cluster's node groups
-// are KubernetesNodePools that reference the cluster, written after it.
+// that expands into companions writes their intent records too: a cluster's
+// node groups are KubernetesNodePools that reference the cluster, written
+// after it.
 func (w *Writer) Intent(ctx context.Context, in IntentInput) {
 	if w == nil {
 		return
@@ -118,14 +118,6 @@ func (w *Writer) Intent(ctx context.Context, in IntentInput) {
 	if err != nil {
 		w.fail(ctx, "intent", in.EntityUUID, err)
 		return
-	}
-	if exp.layout != nil {
-		layoutEntity := uuid.NewString()
-		if !w.writeIntent(ctx, layoutEntity, exp.layout.t, exp.layout.fields, suffixed(in.Name, "disks")) {
-			w.fail(ctx, "intent", in.EntityUUID, errors.New("its StorageLayout record was not written"))
-			return
-		}
-		fields[layoutRefElement] = entityRef(layoutEntity)
 	}
 	if !w.writeIntent(ctx, in.EntityUUID, t, fields, in.Name) {
 		return
@@ -175,34 +167,12 @@ func (w *Writer) Requested(ctx context.Context, in RequestedInput) {
 		w.fail(ctx, "requested", in.EntityUUID, err)
 		return
 	}
-	var layoutEntity string
-	if exp.layout != nil {
-		// The layout entity is the one the intent named; the evaluated spec carries
-		// the disks again, not the reference.
-		intent, err := w.store.Latest(ctx, in.EntityUUID, "Intent")
-		if err != nil {
-			w.fail(ctx, "requested", in.EntityUUID, fmt.Errorf("no intent record to reference: %w", err))
-			return
-		}
-		intentFields, _ := intent.Body["fields"].(map[string]any)
-		if layoutEntity = layoutEntityOf(intentFields); layoutEntity == "" {
-			w.fail(ctx, "requested", in.EntityUUID, errors.New("the request carries disks but its intent record names no StorageLayout"))
-			return
-		}
-		fields[layoutRefElement] = entityRef(layoutEntity)
-	}
-	if !w.writeRequested(ctx, in.EntityUUID, t, fields, in.AgentName, "") || (exp.layout == nil && len(exp.pools) == 0) {
+	if !w.writeRequested(ctx, in.EntityUUID, t, fields, in.AgentName, "") || len(exp.pools) == 0 {
 		return
 	}
 	root, err := w.store.Latest(ctx, in.EntityUUID, "Requested")
 	if err != nil {
 		w.fail(ctx, "requested", in.EntityUUID, err)
-		return
-	}
-	if exp.layout != nil {
-		w.writeRequested(ctx, layoutEntity, exp.layout.t, exp.layout.fields, in.AgentName, root.RecordUUID)
-	}
-	if len(exp.pools) == 0 {
 		return
 	}
 	pools, err := w.poolsOf(ctx, in.EntityUUID)
@@ -315,8 +285,8 @@ func (w *Writer) writeRequested(ctx context.Context, entity string, t Type, fiel
 
 // Realized writes a realized_record: the latest requested record's fields, the
 // agent's outputs, and the agent as provider. A later realized record for the
-// same entity supersedes the earlier one. The provider realizes a VM's disks and
-// a cluster's pools with it, so those companions are realized by the same report.
+// same entity supersedes the earlier one. The provider realizes a cluster's pools
+// with it, so those companions are realized by the same report.
 func (w *Writer) Realized(ctx context.Context, in RealizedInput) {
 	if w == nil {
 		return
@@ -324,23 +294,14 @@ func (w *Writer) Realized(ctx context.Context, in RealizedInput) {
 	if !w.writeRealized(ctx, in) {
 		return
 	}
-	requested, err := w.store.Latest(ctx, in.EntityUUID, "Requested")
-	if err != nil {
-		return
-	}
-	// The agent reports nothing per disk or per pool, so a companion's outputs
-	// are empty: they are filled only by what a provider actually reports.
-	fields, _ := requested.Body["fields"].(map[string]any)
-	var companions []string
-	if layoutEntity := layoutEntityOf(fields); layoutEntity != "" {
-		companions = append(companions, layoutEntity)
-	}
+	// The agent reports nothing per pool, so a companion's outputs are empty:
+	// they are filled only by what a provider actually reports.
 	pools, err := w.store.Contained(ctx, in.EntityUUID)
 	if err != nil {
 		w.fail(ctx, "realized", in.EntityUUID, err)
 		return
 	}
-	for _, entity := range append(companions, pools...) {
+	for _, entity := range pools {
 		w.writeRealized(ctx, RealizedInput{EntityUUID: entity, AgentName: in.AgentName, RunID: in.RunID, At: in.At})
 	}
 }
@@ -436,9 +397,8 @@ func (w *Writer) base(recordType, state, entityUUID string, t Type, timeSource s
 }
 
 // typedFields resolves the UDLM type from the spec's service_type and returns
-// the spec minus the envelope keys, under the class's names. A VM's disks come
-// back separately, as the StorageLayout they expand into, and a cluster's node
-// groups as KubernetesNodePools.
+// the spec minus the envelope keys, under the class's names. A cluster's node
+// groups come back separately, as the KubernetesNodePools they expand into.
 func (w *Writer) typedFields(spec map[string]any) (Type, map[string]any, expansion, error) {
 	st := stringOf(spec["service_type"])
 	if st == "" {
@@ -461,10 +421,6 @@ func (w *Writer) typedFields(spec map[string]any) (Type, map[string]any, expansi
 		return Type{}, nil, expansion{}, err
 	}
 	fields = normalized.(map[string]any)
-	layout, err := w.splitLayout(st, fields)
-	if err != nil {
-		return Type{}, nil, expansion{}, err
-	}
 	pools, err := w.splitPools(st, fields)
 	if err != nil {
 		return Type{}, nil, expansion{}, err
@@ -474,7 +430,7 @@ func (w *Writer) typedFields(spec map[string]any) (Type, map[string]any, expansi
 	if err != nil {
 		return Type{}, nil, expansion{}, err
 	}
-	return t, mapped, expansion{layout: layout, pools: pools}, nil
+	return t, mapped, expansion{pools: pools}, nil
 }
 
 // write runs build, then validates, seals onto the entity's chain, and stores.

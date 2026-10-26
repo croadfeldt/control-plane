@@ -91,10 +91,33 @@
       "type": "string",
       "enum": [
         "ipv4",
+        "ipv6"
+      ],
+      "description": "The one address family of a thing that has exactly one: an address, a pool, a subnet, a DHCP scope. Canonical name is `ip_family` (not `family`). A thing that may carry both uses `ip_families` (#644)."
+    },
+    "ip_families": {
+      "$comment": "common-elements.md §2.4",
+      "type": "string",
+      "enum": [
+        "ipv4",
         "ipv6",
         "dual"
       ],
-      "description": "Address family. Canonical name is `ip_family` (not `family`)."
+      "description": "The address families of a thing that may carry both, such as a gateway that routes IPv4 and IPv6: `ipv4`, `ipv6`, or `dual` for both (#644)."
+    },
+    "identity": {
+      "$comment": "common-elements.md §5a (SPEC-DESIGN-REQUIREMENTS §27)",
+      "title": "Identity",
+      "type": "object",
+      "properties": {
+        "manufacturer": {"type": "string", "description": "Who made it (Redfish Manufacturer)."},
+        "model": {"type": "string", "description": "Type identity, the part number or model name: equal across identical units (Redfish Model)."},
+        "serial_number": {"type": "string", "description": "Hardware serial, globally unique: it follows the part across a move to another parent (Redfish SerialNumber)."},
+        "asset_tag": {"type": "string", "description": "Org-assigned asset tag (Redfish AssetTag)."},
+        "location": {"type": "string", "description": "Position within the parent, unique there and stable across reboots: a slot, bay or socket (Redfish PhysicalLocation). The primary discriminator."},
+        "role": {"type": "string", "description": "Semantic use that tells same-model units apart by purpose, such as boot, data or ceph-osd."}
+      },
+      "description": "What binds an entity's uuid to one physical or named instance (common-elements §5a). Discriminator precedence: `location`, then `serial_number`, then `role`. Open: a class declares its own extra discriminators beside it, such as `wwn` for a drive or `mac_address` for an interface (#644)."
     },
     "ip_address": {
       "$comment": "common-elements.md §2.4",
@@ -444,7 +467,7 @@
           }
         }
       ],
-      "description": "WHAT KIND OF NETWORK THIS IS — a governed taxonomy term (registry/taxonomies/network-zone.yaml): a classification for placement, never an authorization or a boundary; anything required because of a zone is enforced by policy reading it. One home (ADR-082); every network Base declares `zone` by $ref."
+      "description": "WHAT KIND OF NETWORK THIS IS — a governed taxonomy term (registry/taxonomies/network-zone.yaml): a classification for placement, never an authorization or a boundary; anything required because of a zone is enforced by policy reading it. One home (ADR-082). Declared by the Bases placement selects a network by — VLAN, Subnet, VirtualNetwork — and by no other: an address, pool, scope or service carries its network's zone through the edge it already declares (row 110)."
     },
     "network_tier_ref": {
       "title": "Network tier (reference)",
@@ -463,7 +486,7 @@
           }
         }
       ],
-      "description": "HOW GOOD THIS NETWORK IS — a governed `network_tier` term, each denoting a floor (bandwidth, latency) any provider that clears it satisfies; name-selectable but requirements-authoritative (ADR-036). The provider reports it (the party that knows is the party that says). One home (ADR-082); every network Base declares `tier` by $ref."
+      "description": "HOW GOOD THIS NETWORK IS — a governed `network_tier` term, each denoting a floor (bandwidth, latency) any provider that clears it satisfies; name-selectable but requirements-authoritative (ADR-036). The provider reports it (the party that knows is the party that says). One home (ADR-082). Declared by VLAN, Subnet and VirtualNetwork, the networks placement selects; everything else reaches its network's tier through its edge (row 110)."
     },
     "partition_mechanism": {
       "title": "Partition mechanism",
@@ -636,6 +659,18 @@
         }
       ],
       "description": "A CPU amount in cores: a number (0.5, 2) or a Kubernetes quantity string (500m for half a core, \"2\"). One home for every CPU request (#638)."
+    },
+    "uuid_v4": {
+      "title": "UUID v4",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "An RFC 9562 version 4 UUID: the identity of an entity, a definition, a tenant, an actor, a provider or a request (identifier-scheme §2.1). Minted once and frozen for the thing's life (ADR-051). Every field that names one of these uses it (#639)."
+    },
+    "uuid_v7": {
+      "title": "UUID v7",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "An RFC 9562 version 7 UUID: the identity of a time-ordered artifact, such as a state record, an audit-chain leaf, an audit record, a commit-log entry or an event, so its stream sorts by identity (identifier-scheme §2.1). Every field that names one of these uses it (#639)."
     }
   }
 }

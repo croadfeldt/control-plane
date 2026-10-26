@@ -17,8 +17,8 @@ import (
 // would make the dispatch receipt (DSP-004) claim less than the provider was
 // sent; filing it under a same-named element whose meaning differs would make the
 // record claim something false (Machine.VM `storage` is a requirements
-// descriptor; upstream's `storage.disks[]` is per-disk shape, which UDLM keeps on
-// a StorageLayout, so layout.go splits it out before this mapping runs).
+// descriptor; upstream's `storage.disks[]` is per-disk shape, which is the
+// machine's `disks` element, mapped below).
 
 // fieldRenames maps a service-type field (dot path) to the class element path.
 var fieldRenames = map[string]map[string]string{
@@ -49,6 +49,11 @@ func mapFields(serviceType string, fields map[string]any) (map[string]any, error
 			serviceType, strings.Join(missing, "; "))
 	}
 	out := cloneMap(fields)
+	if serviceType == "vm" {
+		if err := mapDisks(out); err != nil {
+			return nil, err
+		}
+	}
 	for from, to := range fieldRenames[serviceType] {
 		v, ok := takePath(out, from)
 		if !ok {
@@ -165,4 +170,58 @@ func cloneMap(m map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+// Upstream's VM carries its disks as `storage.disks[]` ({name, capacity});
+// Machine carries them as `disks[]` ({name, size, role}), since UDLM row 112.
+// Upstream's rule is that the root volume is the disk named "boot", which is
+// the `boot` role. A disk field with no home on the entry is refused, not
+// dropped (DSP-004).
+const (
+	disksPath = "storage.disks"
+	bootDisk  = "boot"
+)
+
+var diskKeys = map[string]string{"name": "name", "capacity": "size"}
+
+func mapDisks(out map[string]any) error {
+	raw, ok := getPath(out, disksPath)
+	if !ok || isEmpty(raw) {
+		return nil
+	}
+	if _, set := out["disks"]; set {
+		return fmt.Errorf("the spec sets both %s and disks; a VM's disks come from one of them", disksPath)
+	}
+	list, ok := raw.([]any)
+	if !ok {
+		return fmt.Errorf("%s is not a list", disksPath)
+	}
+	disks := make([]any, 0, len(list))
+	for i, d := range list {
+		disk, ok := d.(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s[%d]: not an object", disksPath, i)
+		}
+		entry := map[string]any{}
+		var homeless []string
+		for k, v := range disk {
+			to, ok := diskKeys[k]
+			if !ok {
+				homeless = append(homeless, k)
+				continue
+			}
+			entry[to] = v
+		}
+		if len(homeless) > 0 {
+			sort.Strings(homeless)
+			return fmt.Errorf("%s[%d]: fields with no home on a Machine disk: %s", disksPath, i, strings.Join(homeless, ", "))
+		}
+		if entry["name"] == bootDisk {
+			entry["role"] = "boot"
+		}
+		disks = append(disks, entry)
+	}
+	takePath(out, disksPath)
+	out["disks"] = disks
+	return nil
 }

@@ -118,7 +118,7 @@ func testWriter(t *testing.T) (*Writer, Store) {
 		if s == "vm" {
 			// The class's elements, as registry/generated/machine.vm.json declares them (DSP-002).
 			return Type{ResourceType: "Machine.VM", Version: "2.0.0", Elements: []string{
-				"boot_order", "cpu", "firmware", "guest_os", "instance_size", "layout_ref",
+				"boot_order", "cpu", "disks", "firmware", "guest_os", "instance_size",
 				"memory", "networks", "placement", "run_state", "storage", "storage_tier",
 			}}, true
 		}
@@ -128,9 +128,6 @@ func testWriter(t *testing.T) (*Writer, Store) {
 		return Type{}, false
 	}
 	classes := func(rt string) (Type, bool) {
-		if rt == "StorageLayout" {
-			return Type{ResourceType: "StorageLayout", Version: "0.6.1", Elements: []string{"entries"}}, true
-		}
 		if rt == "KubernetesNodePool" {
 			return Type{ResourceType: "KubernetesNodePool", Version: "1.1.2", Elements: []string{
 				"capabilities", "cluster_ref", "labels", "name", "node_count", "node_resources", "taints",

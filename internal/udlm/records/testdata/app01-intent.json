@@ -1,11 +1,18 @@
 {
-  "at": "2026-09-03T14:02:11Z",
+  "at": "2026-10-25T09:00:00Z",
   "conforms_to": "udlm/0.1",
   "entity_uuid": "2f7c9a41-8e3d-4b6a-9c15-7d2e4f8a1b03",
   "fields": {
     "cpu": {
       "count": 4
     },
+    "disks": [
+      {
+        "name": "root",
+        "role": "boot",
+        "size": "100Gi"
+      }
+    ],
     "firmware": {
       "secure_boot": true,
       "type": "uefi"
@@ -14,7 +21,6 @@
       "type": "linux-server-9",
       "version": "9.6"
     },
-    "layout_ref": "lab/storage/layout/app-01",
     "memory": {
       "size": "16Gi"
     },
@@ -31,9 +37,9 @@
   "generation": 1,
   "handle": "lab/vm/app-01",
   "integrity": {
-    "algorithm": "sha256-jcs",
-    "head": "sha256:684dcef63408595dc5df1728083640c205dc406c15f4ff4f9da8c431b341c4ac",
-    "previous": null
+    "algorithm": "sha256_jcs",
+    "head": "sha256:b693a7748df16fcac9ca0b90e4e578d942e49ca5453b34ab7c078280e8d018c5",
+    "previous": "sha256:d921fad83313b2c572088fc7f253d92801e7c7e5f1b5f2448a04b7d214d2d7b3"
   },
   "metadata": {
     "display_name": "app-01 (KVM guest on host-a)"
@@ -41,6 +47,17 @@
   "origin": "declared",
   "provenance": {
     "cpu.count": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ],
+    "disks": [
       {
         "operation_type": "set",
         "sequence": 1,
@@ -74,17 +91,6 @@
       }
     ],
     "guest_os": [
-      {
-        "operation_type": "set",
-        "sequence": 1,
-        "source": {
-          "id": "lab/users/app-team-lead",
-          "kind": "actor"
-        },
-        "timestamp": "2026-09-03T14:02:11Z"
-      }
-    ],
-    "layout_ref": [
       {
         "operation_type": "set",
         "sequence": 1,
@@ -130,14 +136,14 @@
     ]
   },
   "record_type": "intent_record",
-  "record_uuid": "01a0e3cb-34d0-7261-9517-df3cbac3ce20",
+  "record_uuid": "01a178b9-bd68-7001-8001-000000000001",
   "resource_type": "Machine.VM",
   "state": "Intent",
   "supersedes": [
-    "01a09398-433d-756d-a0a3-f5fc061ba409"
+    "01a17249-c680-7000-8000-00d15c000000"
   ],
   "tenant_uuid": "75ccf4ff-3e8d-4963-bc51-459ae1014cb7",
   "time_source": "dcm-api",
-  "type_ref": "https://udlm.dev/registry/udlm/0.1/class/Machine.VM/2.0.0",
+  "type_ref": "https://udlm.dev/registry/udlm/0.1/Machine.VM/2.0.0",
   "type_version": "2.0.0"
 }

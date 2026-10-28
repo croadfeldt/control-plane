@@ -12,7 +12,11 @@ import (
 
 // Algorithm names the integrity chain algorithm the registry's checker expects
 // (registry/tools/integrity_chain.py ALGORITHM).
-const Algorithm = "sha256-jcs"
+const Algorithm = "sha256_jcs"
+
+// LegacyAlgorithm is the spelling every record sealed before udlm row 120 carries. The spelling is
+// not hashed and those records are never re-sealed (udlm row 121), so both name one rule on read.
+const LegacyAlgorithm = "sha256-jcs"
 
 // maxSafeInteger is the I-JSON safe range the registry's canonicalizer enforces.
 const maxSafeInteger = 1 << 53

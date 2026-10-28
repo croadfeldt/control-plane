@@ -12,7 +12,7 @@
   "conforms_to": "udlm/0.1",
   "correlation_ids": [
     {
-      "scheme": "libvirt-domain-uuid",
+      "scheme": "libvirt_domain_uuid",
       "value": "4e2a7c19-6b3d-4f8e-a1c5-9d0b2e7f3a64"
     },
     {
@@ -53,9 +53,9 @@
   "generation": 1,
   "handle": "lab/vm/app-01",
   "integrity": {
-    "algorithm": "sha256-jcs",
-    "head": "sha256:12497c4e8b893398f0ab1e0de9922ca51e9befceb5c5f68613a36624c0606366",
-    "previous": "sha256:2e87c019f61c38a449dedbadfdd0fcbd754822304fb90c56ca700cc75d93d64b"
+    "algorithm": "sha256_jcs",
+    "head": "sha256:23e6cf3ce315f6f81058589eb090ade72d7ac1a1640e0bcfd8e37ac3b2be888a",
+    "previous": "sha256:141e4a6dc2bfcfa0e178818e0cf00962711084597b8ac9cf90247c61276bc544"
   },
   "lifecycle_state": "Realized",
   "metadata": {
@@ -101,6 +101,17 @@
         "timestamp": "2026-09-03T14:02:14Z"
       }
     ],
+    "disks": [
+      {
+        "operation_type": "set",
+        "sequence": 1,
+        "source": {
+          "id": "lab/users/app-team-lead",
+          "kind": "actor"
+        },
+        "timestamp": "2026-09-03T14:02:11Z"
+      }
+    ],
     "firmware.secure_boot": [
       {
         "operation_type": "set",
@@ -135,17 +146,6 @@
       }
     ],
     "guest_os": [
-      {
-        "operation_type": "set",
-        "sequence": 1,
-        "source": {
-          "id": "lab/users/app-team-lead",
-          "kind": "actor"
-        },
-        "timestamp": "2026-09-03T14:02:11Z"
-      }
-    ],
-    "layout_ref": [
       {
         "operation_type": "set",
         "sequence": 1,
@@ -303,7 +303,7 @@
           "desired_state": "running"
         }
       },
-      "origin": "discovered-derived",
+      "origin": "discovered_derived",
       "outputs": {
         "mac_addresses": [
           "52:54:00:ab:12:34"
@@ -314,11 +314,18 @@
       "time_source": "discovery-sweep"
     },
     "intent": {
-      "at": "2026-09-03T14:02:11Z",
+      "at": "2026-10-25T09:00:00Z",
       "fields": {
         "cpu": {
           "count": 4
         },
+        "disks": [
+          {
+            "name": "root",
+            "role": "boot",
+            "size": "100Gi"
+          }
+        ],
         "firmware": {
           "secure_boot": true,
           "type": "uefi"
@@ -327,7 +334,6 @@
           "type": "linux-server-9",
           "version": "9.6"
         },
-        "layout_ref": "lab/storage/layout/app-01",
         "memory": {
           "size": "16Gi"
         },
@@ -345,13 +351,20 @@
       "time_source": "dcm-api"
     },
     "realized": {
-      "at": "2026-09-03T14:03:40Z",
+      "at": "2026-10-25T09:00:00Z",
       "fields": {
         "cpu": {
           "cores_per_socket": 4,
           "count": 4,
           "sockets": 1
         },
+        "disks": [
+          {
+            "name": "root",
+            "role": "boot",
+            "size": "100Gi"
+          }
+        ],
         "firmware": {
           "secure_boot": true,
           "type": "uefi",
@@ -361,7 +374,6 @@
           "type": "linux-server-9",
           "version": "9.6"
         },
-        "layout_ref": "lab/storage/layout/app-01",
         "memory": {
           "size": "16Gi"
         },
@@ -393,8 +405,8 @@
         "provider_handle": "app-01"
       },
       "provider": "lab/providers/libvirt-host-a",
-      "requested_ref": "01a0eb91-3cbf-756c-bc00-a4e7eb1900e9",
-      "requested_ref_head": "sha256:eb9de91bd6f2a9c69c5884cc751af7f12412d183239f8be6571893a040588c01",
+      "requested_ref": "01a178b9-cd08-7005-8005-000000000005",
+      "requested_ref_head": "sha256:53d6fe5884e96c6514ef8a574a9cfcac4ba89948414108346ef3bdaec1803437",
       "time_source": "provider-callback"
     },
     "requested": {
@@ -445,7 +457,7 @@
         "excluded_layers": [],
         "unapplied": []
       },
-      "at": "2026-09-03T14:02:14Z",
+      "at": "2026-10-25T09:00:00Z",
       "dispatch": {
         "admitted": [
           "cpu.count",
@@ -458,7 +470,9 @@
           "firmware.secure_boot",
           "firmware.vtpm",
           "networks",
-          "layout_ref",
+          "disks[0].name",
+          "disks[0].role",
+          "disks[0].size",
           "placement.location_ref",
           "run_state.desired_state"
         ],
@@ -472,6 +486,13 @@
           "count": 4,
           "sockets": 1
         },
+        "disks": [
+          {
+            "name": "root",
+            "role": "boot",
+            "size": "100Gi"
+          }
+        ],
         "firmware": {
           "secure_boot": true,
           "type": "uefi",
@@ -481,7 +502,6 @@
           "type": "linux-server-9",
           "version": "9.6"
         },
-        "layout_ref": "lab/storage/layout/app-01",
         "memory": {
           "size": "16Gi"
         },
@@ -499,8 +519,8 @@
           "desired_state": "running"
         }
       },
-      "intent_ref": "01a0e3cb-34d0-7261-9517-df3cbac3ce20",
-      "intent_ref_head": "sha256:684dcef63408595dc5df1728083640c205dc406c15f4ff4f9da8c431b341c4ac",
+      "intent_ref": "01a178b9-bd68-7001-8001-000000000001",
+      "intent_ref_head": "sha256:b693a7748df16fcac9ca0b90e4e578d942e49ca5453b34ab7c078280e8d018c5",
       "origin": "declared",
       "policies": [
         {
@@ -539,7 +559,7 @@
           "version": "3.0.0"
         }
       ],
-      "root_request_uuid": "01a0eb91-3cbf-756c-bc00-a4e7eb1900e9",
+      "root_request_uuid": "01a178b9-cd08-7005-8005-000000000005",
       "time_source": "dcm-api"
     }
   },
@@ -555,7 +575,7 @@
     "state": "Running"
   },
   "tenant_uuid": "75ccf4ff-3e8d-4963-bc51-459ae1014cb7",
-  "type_ref": "https://udlm.dev/registry/udlm/0.1/class/Machine.VM/2.0.0",
+  "type_ref": "https://udlm.dev/registry/udlm/0.1/Machine.VM/2.0.0",
   "type_version": "2.0.0",
   "uuid": "2f7c9a41-8e3d-4b6a-9c15-7d2e4f8a1b03"
 }

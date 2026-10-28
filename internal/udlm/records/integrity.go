@@ -54,8 +54,8 @@ func Verify(record map[string]any) error {
 	if !ok {
 		return fmt.Errorf("record carries no integrity block")
 	}
-	if integ["algorithm"] != Algorithm {
-		return fmt.Errorf("algorithm %v is not %s", integ["algorithm"], Algorithm)
+	if a := integ["algorithm"]; a != Algorithm && a != LegacyAlgorithm {
+		return fmt.Errorf("algorithm %v is not %s", a, Algorithm)
 	}
 	var previous *string
 	if p, ok := integ["previous"].(string); ok {

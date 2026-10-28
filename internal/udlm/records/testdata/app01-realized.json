@@ -9,11 +9,11 @@
       "translated": false
     }
   ],
-  "at": "2026-09-03T14:03:40Z",
+  "at": "2026-10-25T09:00:00Z",
   "conforms_to": "udlm/0.1",
   "correlation_ids": [
     {
-      "scheme": "libvirt-domain-uuid",
+      "scheme": "libvirt_domain_uuid",
       "value": "4e2a7c19-6b3d-4f8e-a1c5-9d0b2e7f3a64"
     },
     {
@@ -57,6 +57,13 @@
       "count": 4,
       "sockets": 1
     },
+    "disks": [
+      {
+        "name": "root",
+        "role": "boot",
+        "size": "100Gi"
+      }
+    ],
     "firmware": {
       "secure_boot": true,
       "type": "uefi",
@@ -66,7 +73,6 @@
       "type": "linux-server-9",
       "version": "9.6"
     },
-    "layout_ref": "lab/storage/layout/app-01",
     "memory": {
       "size": "16Gi"
     },
@@ -87,9 +93,9 @@
   "generation": 1,
   "handle": "lab/vm/app-01",
   "integrity": {
-    "algorithm": "sha256-jcs",
-    "head": "sha256:12497c4e8b893398f0ab1e0de9922ca51e9befceb5c5f68613a36624c0606366",
-    "previous": "sha256:2e87c019f61c38a449dedbadfdd0fcbd754822304fb90c56ca700cc75d93d64b"
+    "algorithm": "sha256_jcs",
+    "head": "sha256:23e6cf3ce315f6f81058589eb090ade72d7ac1a1640e0bcfd8e37ac3b2be888a",
+    "previous": "sha256:141e4a6dc2bfcfa0e178818e0cf00962711084597b8ac9cf90247c61276bc544"
   },
   "origin": "declared",
   "outputs": {
@@ -179,9 +185,9 @@
   },
   "provider": "lab/providers/libvirt-host-a",
   "record_type": "realized_record",
-  "record_uuid": "01a0eb91-3cc0-706d-80c5-4709fc3f7e6b",
-  "requested_ref": "01a0eb91-3cbf-756c-bc00-a4e7eb1900e9",
-  "requested_ref_head": "sha256:eb9de91bd6f2a9c69c5884cc751af7f12412d183239f8be6571893a040588c01",
+  "record_uuid": "01a178b9-d8c0-7008-8008-000000000008",
+  "requested_ref": "01a178b9-cd08-7005-8005-000000000005",
+  "requested_ref_head": "sha256:53d6fe5884e96c6514ef8a574a9cfcac4ba89948414108346ef3bdaec1803437",
   "resource_type": "Machine.VM",
   "sovereignty": {
     "classification": "internal",
@@ -204,10 +210,10 @@
     "state": "Running"
   },
   "supersedes": [
-    "01a0eb4f-c4f6-7795-bde3-ee7d4e50598a"
+    "01a17249-ce50-7002-8002-00d15c000002"
   ],
   "tenant_uuid": "75ccf4ff-3e8d-4963-bc51-459ae1014cb7",
   "time_source": "provider-callback",
-  "type_ref": "https://udlm.dev/registry/udlm/0.1/class/Machine.VM/2.0.0",
+  "type_ref": "https://udlm.dev/registry/udlm/0.1/Machine.VM/2.0.0",
   "type_version": "2.0.0"
 }

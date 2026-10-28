@@ -21,7 +21,7 @@ func loadJSON(t *testing.T, name string) map[string]any {
 }
 
 // The registry's worked example (registry/examples/example-vm-app01-*-record.yaml)
-// folded by registry/tools/entity_view.py build_views on 2026-09-26 is
+// folded by registry/tools/entity_view.py build_views on 2026-10-28 (udlm 154f1e10, row 120 spellings) is
 // testdata/app01-view.json. The Go fold must produce the same document.
 func TestFoldMatchesRegistryTool(t *testing.T) {
 	records := []map[string]any{loadJSON(t, "app01-intent.json"), loadJSON(t, "app01-requested.json"), loadJSON(t, "app01-realized.json"), loadJSON(t, "app01-discovered.json")}

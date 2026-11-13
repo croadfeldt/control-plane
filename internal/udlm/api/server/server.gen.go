@@ -163,6 +163,33 @@ type Error struct {
 	Type     string  `json:"type"`
 }
 
+// Observation A discovered_record without the parts the store assigns. The shape of
+// everything else is the registry's registry/state-record.schema.json;
+// this API does not restate it.
+type Observation struct {
+	// At When the observation was made
+	At         string `json:"at"`
+	ConformsTo string `json:"conforms_to"`
+
+	// CorrelationIds The natural keys the store finds the entity by
+	CorrelationIds []struct {
+		Scheme string `json:"scheme"`
+		Value  string `json:"value"`
+	} `json:"correlation_ids"`
+	Fields map[string]interface{} `json:"fields"`
+
+	// ResourceType The UDLM class, e.g. SoftwareBillOfMaterials
+	ResourceType string `json:"resource_type"`
+
+	// TenantUuid The tenant the observed thing belongs to. Stated, never defaulted.
+	TenantUuid string `json:"tenant_uuid"`
+
+	// TimeSource Which clock stamped `at`
+	TimeSource           string                 `json:"time_source"`
+	TypeVersion          string                 `json:"type_version"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
 // StateRecord One UDLM per-state record exactly as stored. The shape is the registry's
 // registry/state-record.schema.json; this API does not restate it.
 type StateRecord struct {
@@ -187,6 +214,12 @@ type StateRecordList struct {
 // EntityUuidPath defines model for EntityUuidPath.
 type EntityUuidPath = string
 
+// BadRequest RFC 7807 compliant error response
+type BadRequest = Error
+
+// Conflict RFC 7807 compliant error response
+type Conflict = Error
+
 // DefaultError RFC 7807 compliant error response
 type DefaultError = Error
 
@@ -207,6 +240,9 @@ type ListUdlmEntitiesParams struct {
 	// PageToken Token for pagination
 	PageToken *string `form:"page_token,omitempty" json:"page_token,omitempty"`
 }
+
+// CreateUdlmDiscoveredRecordJSONRequestBody defines body for CreateUdlmDiscoveredRecord for application/json ContentType.
+type CreateUdlmDiscoveredRecordJSONRequestBody = Observation
 
 // Getter for additional properties for EntityView. Returns the specified
 // element and whether it was found
@@ -304,6 +340,167 @@ func (a EntityView) MarshalJSON() ([]byte, error) {
 	object["uuid"], err = json.Marshal(a.Uuid)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling 'uuid': %w", err)
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
+
+// Getter for additional properties for Observation. Returns the specified
+// element and whether it was found
+func (a Observation) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for Observation
+func (a *Observation) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for Observation to handle AdditionalProperties
+func (a *Observation) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["at"]; found {
+		err = json.Unmarshal(raw, &a.At)
+		if err != nil {
+			return fmt.Errorf("error reading 'at': %w", err)
+		}
+		delete(object, "at")
+	}
+
+	if raw, found := object["conforms_to"]; found {
+		err = json.Unmarshal(raw, &a.ConformsTo)
+		if err != nil {
+			return fmt.Errorf("error reading 'conforms_to': %w", err)
+		}
+		delete(object, "conforms_to")
+	}
+
+	if raw, found := object["correlation_ids"]; found {
+		err = json.Unmarshal(raw, &a.CorrelationIds)
+		if err != nil {
+			return fmt.Errorf("error reading 'correlation_ids': %w", err)
+		}
+		delete(object, "correlation_ids")
+	}
+
+	if raw, found := object["fields"]; found {
+		err = json.Unmarshal(raw, &a.Fields)
+		if err != nil {
+			return fmt.Errorf("error reading 'fields': %w", err)
+		}
+		delete(object, "fields")
+	}
+
+	if raw, found := object["resource_type"]; found {
+		err = json.Unmarshal(raw, &a.ResourceType)
+		if err != nil {
+			return fmt.Errorf("error reading 'resource_type': %w", err)
+		}
+		delete(object, "resource_type")
+	}
+
+	if raw, found := object["tenant_uuid"]; found {
+		err = json.Unmarshal(raw, &a.TenantUuid)
+		if err != nil {
+			return fmt.Errorf("error reading 'tenant_uuid': %w", err)
+		}
+		delete(object, "tenant_uuid")
+	}
+
+	if raw, found := object["time_source"]; found {
+		err = json.Unmarshal(raw, &a.TimeSource)
+		if err != nil {
+			return fmt.Errorf("error reading 'time_source': %w", err)
+		}
+		delete(object, "time_source")
+	}
+
+	if raw, found := object["type_version"]; found {
+		err = json.Unmarshal(raw, &a.TypeVersion)
+		if err != nil {
+			return fmt.Errorf("error reading 'type_version': %w", err)
+		}
+		delete(object, "type_version")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for Observation to handle AdditionalProperties
+func (a Observation) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	object["at"], err = json.Marshal(a.At)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'at': %w", err)
+	}
+
+	object["conforms_to"], err = json.Marshal(a.ConformsTo)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'conforms_to': %w", err)
+	}
+
+	if a.CorrelationIds != nil {
+		object["correlation_ids"], err = json.Marshal(a.CorrelationIds)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'correlation_ids': %w", err)
+		}
+	}
+
+	if a.Fields != nil {
+		object["fields"], err = json.Marshal(a.Fields)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'fields': %w", err)
+		}
+	}
+
+	object["resource_type"], err = json.Marshal(a.ResourceType)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'resource_type': %w", err)
+	}
+
+	object["tenant_uuid"], err = json.Marshal(a.TenantUuid)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'tenant_uuid': %w", err)
+	}
+
+	object["time_source"], err = json.Marshal(a.TimeSource)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'time_source': %w", err)
+	}
+
+	object["type_version"], err = json.Marshal(a.TypeVersion)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'type_version': %w", err)
 	}
 
 	for fieldName, field := range a.AdditionalProperties {
@@ -422,6 +619,9 @@ func (a StateRecord) MarshalJSON() ([]byte, error) {
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// Record an observation
+	// (POST /udlm/discovered)
+	CreateUdlmDiscoveredRecord(w http.ResponseWriter, r *http.Request)
 	// List entities that have UDLM records
 	// (GET /udlm/entities)
 	ListUdlmEntities(w http.ResponseWriter, r *http.Request, params ListUdlmEntitiesParams)
@@ -436,6 +636,12 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// Record an observation
+// (POST /udlm/discovered)
+func (_ Unimplemented) CreateUdlmDiscoveredRecord(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // List entities that have UDLM records
 // (GET /udlm/entities)
@@ -463,6 +669,26 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// CreateUdlmDiscoveredRecord operation middleware
+func (siw *ServerInterfaceWrapper) CreateUdlmDiscoveredRecord(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateUdlmDiscoveredRecord(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // ListUdlmEntities operation middleware
 func (siw *ServerInterfaceWrapper) ListUdlmEntities(w http.ResponseWriter, r *http.Request) {
@@ -694,6 +920,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/udlm/discovered", wrapper.CreateUdlmDiscoveredRecord)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/udlm/entities", wrapper.ListUdlmEntities)
 	})
 	r.Group(func(r chi.Router) {
@@ -706,11 +935,116 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	return r
 }
 
+type BadRequestApplicationProblemPlusJSONResponse Error
+
+type ConflictApplicationProblemPlusJSONResponse Error
+
 type DefaultErrorApplicationProblemPlusJSONResponse Error
 
 type NotFoundApplicationProblemPlusJSONResponse Error
 
 type UnauthorizedApplicationProblemPlusJSONResponse Error
+
+type CreateUdlmDiscoveredRecordRequestObject struct {
+	Body *CreateUdlmDiscoveredRecordJSONRequestBody
+}
+
+type CreateUdlmDiscoveredRecordResponseObject interface {
+	VisitCreateUdlmDiscoveredRecordResponse(w http.ResponseWriter) error
+}
+
+type CreateUdlmDiscoveredRecord200JSONResponse StateRecord
+
+func (response CreateUdlmDiscoveredRecord200JSONResponse) VisitCreateUdlmDiscoveredRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUdlmDiscoveredRecord201JSONResponse StateRecord
+
+func (response CreateUdlmDiscoveredRecord201JSONResponse) VisitCreateUdlmDiscoveredRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUdlmDiscoveredRecord400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response CreateUdlmDiscoveredRecord400ApplicationProblemPlusJSONResponse) VisitCreateUdlmDiscoveredRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUdlmDiscoveredRecord401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateUdlmDiscoveredRecord401ApplicationProblemPlusJSONResponse) VisitCreateUdlmDiscoveredRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUdlmDiscoveredRecord409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response CreateUdlmDiscoveredRecord409ApplicationProblemPlusJSONResponse) VisitCreateUdlmDiscoveredRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUdlmDiscoveredRecorddefaultApplicationProblemPlusJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateUdlmDiscoveredRecorddefaultApplicationProblemPlusJSONResponse) VisitCreateUdlmDiscoveredRecordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type ListUdlmEntitiesRequestObject struct {
 	Params ListUdlmEntitiesParams
@@ -911,6 +1245,9 @@ func (response ListUdlmEntityRecordsdefaultApplicationProblemPlusJSONResponse) V
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// Record an observation
+	// (POST /udlm/discovered)
+	CreateUdlmDiscoveredRecord(ctx context.Context, request CreateUdlmDiscoveredRecordRequestObject) (CreateUdlmDiscoveredRecordResponseObject, error)
 	// List entities that have UDLM records
 	// (GET /udlm/entities)
 	ListUdlmEntities(ctx context.Context, request ListUdlmEntitiesRequestObject) (ListUdlmEntitiesResponseObject, error)
@@ -949,6 +1286,37 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// CreateUdlmDiscoveredRecord operation middleware
+func (sh *strictHandler) CreateUdlmDiscoveredRecord(w http.ResponseWriter, r *http.Request) {
+	var request CreateUdlmDiscoveredRecordRequestObject
+
+	var body CreateUdlmDiscoveredRecordJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateUdlmDiscoveredRecord(ctx, request.(CreateUdlmDiscoveredRecordRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateUdlmDiscoveredRecord")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateUdlmDiscoveredRecordResponseObject); ok {
+		if err := validResponse.VisitCreateUdlmDiscoveredRecordResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // ListUdlmEntities operation middleware

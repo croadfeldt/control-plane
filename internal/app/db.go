@@ -84,6 +84,7 @@ func openDB(cfg *Config) (*gorm.DB, error) {
 		&policymodel.Policy{},
 		&spmodel.ServiceTypeInstance{},
 		&udlmrecords.StateRecord{},
+		&udlmrecords.EntityKey{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate schema: %w", err)
 	}

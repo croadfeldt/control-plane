@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // StateRecord is one immutable per-state record as stored. The columns beside
@@ -29,6 +30,26 @@ type StateRecord struct {
 // TableName keeps the table apart from every upstream table.
 func (StateRecord) TableName() string { return "udlm_records" }
 
+// EntityKey binds one natural key to the entity it identifies. It is the index
+// that lets an observation which names a thing by key reach that thing's entity
+// uuid (state-record.schema.json `correlation_ids`: a new observation matching
+// an existing entity by these keys merges into that entity). A key is unique
+// within a tenant and a class.
+type EntityKey struct {
+	TenantUUID   string    `gorm:"column:tenant_uuid;type:varchar(36);primaryKey"`
+	ResourceType string    `gorm:"column:resource_type;type:varchar(128);primaryKey"`
+	Scheme       string    `gorm:"column:scheme;type:varchar(64);primaryKey"`
+	Value        string    `gorm:"column:value;type:varchar(1024);primaryKey"`
+	EntityUUID   string    `gorm:"column:entity_uuid;type:varchar(36);index;not null"`
+	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime"`
+}
+
+// TableName keeps the table apart from every upstream table.
+func (EntityKey) TableName() string { return "udlm_entity_keys" }
+
+// Key is one natural key: a scheme and a value.
+type Key struct{ Scheme, Value string }
+
 // ErrNotFound is returned when no record matches.
 var ErrNotFound = errors.New("udlm record not found")
 
@@ -43,6 +64,12 @@ type Store interface {
 	ListByEntity(ctx context.Context, entityUUID string) ([]StateRecord, error)
 	// Contained returns the entities contained by a parent, in uuid order.
 	Contained(ctx context.Context, parentUUID string) ([]string, error)
+	// EntitiesByKeys returns the distinct entities the given natural keys are
+	// bound to, within one tenant and class. Unbound keys contribute nothing.
+	EntitiesByKeys(ctx context.Context, tenantUUID, resourceType string, keys []Key) ([]string, error)
+	// PutDiscovered stores an observed record and binds its natural keys to the
+	// record's entity, together or not at all. Keys already bound are left alone.
+	PutDiscovered(ctx context.Context, rec *StateRecord, keys []Key) error
 	// ListEntities pages through the entities that have records.
 	ListEntities(ctx context.Context, pageSize int, pageToken string) ([]EntitySummary, string, error)
 }
@@ -54,6 +81,39 @@ func NewStore(db *gorm.DB) Store { return &gormStore{db: db} }
 
 func (s *gormStore) Put(ctx context.Context, rec *StateRecord) error {
 	return s.db.WithContext(ctx).Create(rec).Error
+}
+
+func (s *gormStore) EntitiesByKeys(ctx context.Context, tenantUUID, resourceType string, keys []Key) ([]string, error) {
+	seen := map[string]bool{}
+	var out []string
+	for _, k := range keys {
+		var ids []string
+		err := s.db.WithContext(ctx).Model(&EntityKey{}).
+			Where("tenant_uuid = ? AND resource_type = ? AND scheme = ? AND value = ?", tenantUUID, resourceType, k.Scheme, k.Value).
+			Pluck("entity_uuid", &ids).Error
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range ids {
+			if !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
+		}
+	}
+	return out, nil
+}
+
+func (s *gormStore) PutDiscovered(ctx context.Context, rec *StateRecord, keys []Key) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, k := range keys {
+			row := EntityKey{TenantUUID: rec.TenantUUID, ResourceType: rec.ResourceType, Scheme: k.Scheme, Value: k.Value, EntityUUID: rec.EntityUUID}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Create(rec).Error
+	})
 }
 
 func (s *gormStore) Latest(ctx context.Context, entityUUID, state string) (*StateRecord, error) {

@@ -1,6 +1,7 @@
 // Package v1alpha1 implements the HTTP handlers of the UDLM read API: the
 // per-state records the control plane writes and the entity view computed from
-// them (docs/udlm-native.md, increment 3). Nothing here writes.
+// them (docs/udlm-native.md, increment 3), and the one write: an observed
+// record from a discovery probe or a scanner (increment 10).
 package v1alpha1
 
 import (
@@ -14,14 +15,15 @@ import (
 	"github.com/dcm-project/control-plane/internal/udlm/records"
 )
 
-// Handler serves the UDLM read API over the records store.
+// Handler serves the UDLM API over the records store.
 type Handler struct {
-	store records.Store
+	store    records.Store
+	ingester *records.Ingester
 }
 
 // NewHandler returns a Handler over the given store.
 func NewHandler(store records.Store) *Handler {
-	return &Handler{store: store}
+	return &Handler{store: store, ingester: records.NewIngester(store)}
 }
 
 var _ server.StrictServerInterface = (*Handler)(nil)
@@ -133,6 +135,64 @@ func (h *Handler) ListUdlmEntityRecords(ctx context.Context, req server.ListUdlm
 		out = append(out, toStateRecord(recs[i].Body))
 	}
 	return server.ListUdlmEntityRecords200JSONResponse(server.StateRecordList{Records: out}), nil
+}
+
+// CreateUdlmDiscoveredRecord stores one observation as a discovered_record.
+func (h *Handler) CreateUdlmDiscoveredRecord(ctx context.Context, req server.CreateUdlmDiscoveredRecordRequestObject) (server.CreateUdlmDiscoveredRecordResponseObject, error) {
+	if req.Body == nil {
+		return badObservation("the request has no body"), nil
+	}
+	// Through JSON, so the observation reaches the store as the document the
+	// caller sent, named fields and the rest alike.
+	raw, err := json.Marshal(req.Body)
+	if err != nil {
+		return badObservation(err.Error()), nil
+	}
+	var observation map[string]any
+	if err := json.Unmarshal(raw, &observation); err != nil {
+		return badObservation(err.Error()), nil
+	}
+	rec, created, err := h.ingester.Discovered(ctx, observation)
+	switch {
+	case errors.Is(err, records.ErrInvalidObservation):
+		return badObservation(err.Error()), nil
+	case errors.Is(err, records.ErrAmbiguousEntity):
+		return server.CreateUdlmDiscoveredRecord409ApplicationProblemPlusJSONResponse{
+			ConflictApplicationProblemPlusJSONResponse: server.ConflictApplicationProblemPlusJSONResponse(
+				newError("ambiguous-entity", "The natural keys name more than one entity", err.Error(), http.StatusConflict)),
+		}, nil
+	case err != nil:
+		slog.ErrorContext(ctx, "CreateUdlmDiscoveredRecord failed", "error", err)
+		return server.CreateUdlmDiscoveredRecorddefaultApplicationProblemPlusJSONResponse{
+			Body:       newError("ingest-error", "Failed to store the observation", internalErrorDetail, http.StatusInternalServerError),
+			StatusCode: http.StatusInternalServerError,
+		}, nil
+	}
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	return discoveredRecordResponse{record: toStateRecord(rec.Body), status: status}, nil
+}
+
+func badObservation(detail string) server.CreateUdlmDiscoveredRecordResponseObject {
+	return server.CreateUdlmDiscoveredRecord400ApplicationProblemPlusJSONResponse{
+		BadRequestApplicationProblemPlusJSONResponse: server.BadRequestApplicationProblemPlusJSONResponse(
+			newError("invalid-observation", "The observation is refused as written", detail, http.StatusBadRequest)),
+	}
+}
+
+// discoveredRecordResponse writes the record through StateRecord's own
+// MarshalJSON, for the reason entityViewResponse does.
+type discoveredRecordResponse struct {
+	record server.StateRecord
+	status int
+}
+
+func (r discoveredRecordResponse) VisitCreateUdlmDiscoveredRecordResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(r.status)
+	return json.NewEncoder(w).Encode(r.record)
 }
 
 // toEntityView splits the computed view into the generated type's named fields

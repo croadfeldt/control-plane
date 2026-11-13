@@ -41,10 +41,33 @@ model. Enhancement #91 asks to reconcile the auth actor model with UDLM `Identit
 | 7 | **Policy verdict three-state and override.** The policy response distinguishes refused (permanent) from pending (transient), and an `override` policy type is honored per policy-contract §18. | `internal/policy`, `internal/placement/policy` | 11, 16, 19 | after 2 |
 | 8 | **Identity reconciliation** with UDLM `Identity.*` (upstream enhancement #91). | `internal/auth` | none in the release set | when #91 moves |
 | 9 | **Usage groups → the catalog's shelves (udlm ADR-082).** A class is filed under one or more usage groups; the compile carries `filed_under` into the served spec; the generator emits `UDLMGroups` (slug → groups) and `UDLMUsageGroups` (the vocabulary) beside `UDLMTypes`. Service types and catalog items expose `filed_under` read-only — inherited from the class, never declared per item; a catalog item is on every shelf any of its resources is on. `GET /usage-groups` lists the vocabulary; `?filed_under=` filters both list endpoints with the same term a URF criterion uses. The free-form `labels.category` example is retired. | `cmd/udlm-servicetype-gen`, `api/catalog/v1alpha1/openapi.yaml`, `internal/catalog/{service,store,handlers}` | 3 | done |
+| 10 | **Observed records from outside.** `POST /api/v1alpha1/udlm/discovered` takes what a discovery probe or a scanner observed and stores it as a `discovered_record`. The store finds the entity by the observation's natural keys (`correlation_ids`) in a new `udlm_entity_keys` table and issues the entity uuid when no key is bound yet; it assigns `generation`, `supersedes` and `integrity` on the entity's Discovered stream. | `api/udlm/v1alpha1`, `internal/udlm/records/ingest.go`, `internal/udlm/handlers` | none claimed | this PR |
 
 Audit chain (rows 15, 21) and graph queries over stored edges (rows 7, 8, 9) are not scheduled here. The
 audit chain needs a writer that does not exist in either tree; graph ordering exists upstream inside a
 run and should be lifted to stored edges there, not re-implemented here.
+
+## Increment 10 as built
+
+The control plane writes intent, requested and realized records for what it provisions. Everything it
+did not provision (hosts, images, bills of materials) reaches it as an observation, and this endpoint
+is the way in. The estate ruling of 2026-09-28 puts Discovered records in this store.
+
+- **The observer sends the record without the parts the store assigns.** `entity_uuid`, `record_uuid`,
+  `generation`, `supersedes` and `integrity` are refused if sent (400). `tenant_uuid` is required and
+  never defaulted.
+- **The entity is found by natural key.** A key is unique within a tenant and a class. No bound key
+  issues a new entity; one bound entity receives the record and any new keys; keys bound to two
+  entities are refused (409), because the store does not choose which one was meant.
+- **A repeat stores nothing.** The same content with the same `at` returns the stored record with 200.
+  The same content with a later `at` is a new observation: it is stored, so the latest `at` says when
+  the thing was last seen.
+- **The record is validated against the state-record schema only.** `fields` are not checked against
+  the class, because the control plane carries class tables for its four service types and no others.
+- **Edges stay as the observer wrote them,** named by `target_key`. Nothing here resolves a key to a
+  `target_uuid`; a reader joins by key.
+- **One observation is ingested at a time,** by a lock in the process, so two records cannot chain onto
+  the same previous one. That holds for the single replica the chart runs.
 
 ## Increment 2 as built
 

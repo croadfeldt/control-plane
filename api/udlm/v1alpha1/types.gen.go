@@ -156,6 +156,33 @@ type Error struct {
 	Type     string  `json:"type"`
 }
 
+// Observation A discovered_record without the parts the store assigns. The shape of
+// everything else is the registry's registry/state-record.schema.json;
+// this API does not restate it.
+type Observation struct {
+	// At When the observation was made
+	At         string `json:"at"`
+	ConformsTo string `json:"conforms_to"`
+
+	// CorrelationIds The natural keys the store finds the entity by
+	CorrelationIds []struct {
+		Scheme string `json:"scheme"`
+		Value  string `json:"value"`
+	} `json:"correlation_ids"`
+	Fields map[string]interface{} `json:"fields"`
+
+	// ResourceType The UDLM class, e.g. SoftwareBillOfMaterials
+	ResourceType string `json:"resource_type"`
+
+	// TenantUuid The tenant the observed thing belongs to. Stated, never defaulted.
+	TenantUuid string `json:"tenant_uuid"`
+
+	// TimeSource Which clock stamped `at`
+	TimeSource           string                 `json:"time_source"`
+	TypeVersion          string                 `json:"type_version"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
 // StateRecord One UDLM per-state record exactly as stored. The shape is the registry's
 // registry/state-record.schema.json; this API does not restate it.
 type StateRecord struct {
@@ -180,6 +207,12 @@ type StateRecordList struct {
 // EntityUuidPath defines model for EntityUuidPath.
 type EntityUuidPath = string
 
+// BadRequest RFC 7807 compliant error response
+type BadRequest = Error
+
+// Conflict RFC 7807 compliant error response
+type Conflict = Error
+
 // DefaultError RFC 7807 compliant error response
 type DefaultError = Error
 
@@ -200,6 +233,9 @@ type ListUdlmEntitiesParams struct {
 	// PageToken Token for pagination
 	PageToken *string `form:"page_token,omitempty" json:"page_token,omitempty"`
 }
+
+// CreateUdlmDiscoveredRecordJSONRequestBody defines body for CreateUdlmDiscoveredRecord for application/json ContentType.
+type CreateUdlmDiscoveredRecordJSONRequestBody = Observation
 
 // Getter for additional properties for EntityView. Returns the specified
 // element and whether it was found
@@ -297,6 +333,167 @@ func (a EntityView) MarshalJSON() ([]byte, error) {
 	object["uuid"], err = json.Marshal(a.Uuid)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling 'uuid': %w", err)
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
+
+// Getter for additional properties for Observation. Returns the specified
+// element and whether it was found
+func (a Observation) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for Observation
+func (a *Observation) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for Observation to handle AdditionalProperties
+func (a *Observation) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["at"]; found {
+		err = json.Unmarshal(raw, &a.At)
+		if err != nil {
+			return fmt.Errorf("error reading 'at': %w", err)
+		}
+		delete(object, "at")
+	}
+
+	if raw, found := object["conforms_to"]; found {
+		err = json.Unmarshal(raw, &a.ConformsTo)
+		if err != nil {
+			return fmt.Errorf("error reading 'conforms_to': %w", err)
+		}
+		delete(object, "conforms_to")
+	}
+
+	if raw, found := object["correlation_ids"]; found {
+		err = json.Unmarshal(raw, &a.CorrelationIds)
+		if err != nil {
+			return fmt.Errorf("error reading 'correlation_ids': %w", err)
+		}
+		delete(object, "correlation_ids")
+	}
+
+	if raw, found := object["fields"]; found {
+		err = json.Unmarshal(raw, &a.Fields)
+		if err != nil {
+			return fmt.Errorf("error reading 'fields': %w", err)
+		}
+		delete(object, "fields")
+	}
+
+	if raw, found := object["resource_type"]; found {
+		err = json.Unmarshal(raw, &a.ResourceType)
+		if err != nil {
+			return fmt.Errorf("error reading 'resource_type': %w", err)
+		}
+		delete(object, "resource_type")
+	}
+
+	if raw, found := object["tenant_uuid"]; found {
+		err = json.Unmarshal(raw, &a.TenantUuid)
+		if err != nil {
+			return fmt.Errorf("error reading 'tenant_uuid': %w", err)
+		}
+		delete(object, "tenant_uuid")
+	}
+
+	if raw, found := object["time_source"]; found {
+		err = json.Unmarshal(raw, &a.TimeSource)
+		if err != nil {
+			return fmt.Errorf("error reading 'time_source': %w", err)
+		}
+		delete(object, "time_source")
+	}
+
+	if raw, found := object["type_version"]; found {
+		err = json.Unmarshal(raw, &a.TypeVersion)
+		if err != nil {
+			return fmt.Errorf("error reading 'type_version': %w", err)
+		}
+		delete(object, "type_version")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for Observation to handle AdditionalProperties
+func (a Observation) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	object["at"], err = json.Marshal(a.At)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'at': %w", err)
+	}
+
+	object["conforms_to"], err = json.Marshal(a.ConformsTo)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'conforms_to': %w", err)
+	}
+
+	if a.CorrelationIds != nil {
+		object["correlation_ids"], err = json.Marshal(a.CorrelationIds)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'correlation_ids': %w", err)
+		}
+	}
+
+	if a.Fields != nil {
+		object["fields"], err = json.Marshal(a.Fields)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'fields': %w", err)
+		}
+	}
+
+	object["resource_type"], err = json.Marshal(a.ResourceType)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'resource_type': %w", err)
+	}
+
+	object["tenant_uuid"], err = json.Marshal(a.TenantUuid)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'tenant_uuid': %w", err)
+	}
+
+	object["time_source"], err = json.Marshal(a.TimeSource)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'time_source': %w", err)
+	}
+
+	object["type_version"], err = json.Marshal(a.TypeVersion)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'type_version': %w", err)
 	}
 
 	for fieldName, field := range a.AdditionalProperties {

@@ -7,7 +7,9 @@ info:
     view computed from them: the latest record of each state, folded into one
     document the way the UDLM registry's entity_view tool folds it.
 
-    Records are immutable and are never written through this API.
+    Records are immutable. The control plane writes intent, requested and
+    realized records itself; the one write here is `POST /udlm/discovered`,
+    which takes what a discovery probe or a scanner observed.
   title: UDLM API
   version: v1alpha1
   license:
@@ -108,6 +110,54 @@ paths:
         default:
           $ref: '#/components/responses/DefaultError'
 
+  /udlm/discovered:
+    post:
+      tags:
+        - udlm
+      summary: Record an observation
+      operationId: createUdlmDiscoveredRecord
+      description: |
+        Stores what a discovery probe or a scanner observed, as one
+        discovered_record. The body is the record without the parts the store
+        assigns: `entity_uuid`, `record_uuid`, `generation`, `supersedes` and
+        `integrity` must not be sent.
+
+        The entity is found by the observation's natural keys
+        (`correlation_ids`, at least one) within its tenant and class; a new
+        entity uuid is issued when no key is bound yet. The record is appended
+        to that entity's Discovered stream and sealed onto its integrity chain.
+
+        Sending the same observation again stores nothing and returns the
+        stored record with 200. The same content with a later `at` is a new
+        observation and returns 201.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Observation'
+      responses:
+        '200':
+          description: This observation was already stored; the stored record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StateRecord'
+        '201':
+          description: Stored; the record as stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StateRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/DefaultError'
+
 components:
   parameters:
     EntityUuidPath:
@@ -120,6 +170,18 @@ components:
         pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
 
   responses:
+    BadRequest:
+      description: The observation is refused as written; the detail says why
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: The natural keys are bound to more than one entity
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
     Unauthorized:
       description: Authentication required
       content:
@@ -203,6 +265,55 @@ components:
           type: string
         record_uuid:
           type: string
+      additionalProperties: true
+
+    Observation:
+      type: object
+      description: |
+        A discovered_record without the parts the store assigns. The shape of
+        everything else is the registry's registry/state-record.schema.json;
+        this API does not restate it.
+      required:
+        - tenant_uuid
+        - resource_type
+        - type_version
+        - conforms_to
+        - at
+        - time_source
+        - fields
+        - correlation_ids
+      properties:
+        tenant_uuid:
+          type: string
+          description: The tenant the observed thing belongs to. Stated, never defaulted.
+        resource_type:
+          type: string
+          description: The UDLM class, e.g. SoftwareBillOfMaterials
+        type_version:
+          type: string
+        conforms_to:
+          type: string
+        at:
+          type: string
+          description: When the observation was made
+        time_source:
+          type: string
+          description: Which clock stamped `at`
+        fields:
+          type: object
+          additionalProperties: true
+        correlation_ids:
+          type: array
+          minItems: 1
+          description: The natural keys the store finds the entity by
+          items:
+            type: object
+            required: [scheme, value]
+            properties:
+              scheme:
+                type: string
+              value:
+                type: string
       additionalProperties: true
 
     StateRecordList:

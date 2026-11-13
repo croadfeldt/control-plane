@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -26,7 +27,7 @@ func newServer(t *testing.T) (http.Handler, records.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&records.StateRecord{}); err != nil {
+	if err := db.AutoMigrate(&records.StateRecord{}, &records.EntityKey{}); err != nil {
 		t.Fatal(err)
 	}
 	st := records.NewStore(db)
@@ -137,5 +138,156 @@ func TestNotFound(t *testing.T) {
 	code, page := get(t, h, "/api/v1alpha1/udlm/entities")
 	if code != http.StatusOK || len(page["entities"].([]any)) != 0 {
 		t.Errorf("empty list: %d %v", code, page)
+	}
+}
+
+const tenant = "75ccf4ff-3e8d-4963-bc51-459ae1014cb7"
+
+// observation is a host as a discovery sweep reports it: named by its machine
+// id, with one edge to a disk named by its WWN.
+func observation(at string) map[string]any {
+	return map[string]any{
+		"tenant_uuid":   tenant,
+		"conforms_to":   "udlm/1.0",
+		"resource_type": "Machine",
+		"type_version":  "2.6.0",
+		"at":            at,
+		"time_source":   "discovery-sweep",
+		"origin":        "discovered_derived",
+		"fields":        map[string]any{"hostname": "host-01"},
+		"correlation_ids": []any{
+			map[string]any{"scheme": "machine_id", "value": "4c4c4544004d3610805ac4c04f4d3632"},
+		},
+		"dependencies": []any{
+			map[string]any{"edge_type": "contained_by", "target_key": map[string]any{"scheme": "wwn", "value": "0x5000c500a1b2c3d4"}},
+		},
+	}
+}
+
+func post(t *testing.T, h http.Handler, body map[string]any) (int, map[string]any) {
+	t.Helper()
+	b, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1alpha1/udlm/discovered", strings.NewReader(string(b)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("body is not JSON: %v: %s", err, rec.Body.String())
+	}
+	return rec.Code, out
+}
+
+func TestDiscoveredIngest(t *testing.T) {
+	h, _ := newServer(t)
+
+	// A first observation issues the entity and roots its Discovered chain.
+	code, first := post(t, h, observation("2026-11-13T04:00:00Z"))
+	if code != http.StatusCreated {
+		t.Fatalf("first: %d %v", code, first)
+	}
+	id := first["entity_uuid"].(string)
+	if first["record_type"] != "discovered_record" || first["state"] != "Discovered" || first["generation"] != float64(1) {
+		t.Errorf("first envelope: %v", first)
+	}
+	if first["integrity"].(map[string]any)["previous"] != nil || first["supersedes"] != nil {
+		t.Errorf("the first record is a chain root and supersedes nothing: %v %v", first["integrity"], first["supersedes"])
+	}
+	if first["fields"].(map[string]any)["hostname"] != "host-01" || first["dependencies"] == nil {
+		t.Errorf("the response must carry the whole record: %v", first)
+	}
+
+	// The same observation again stores nothing.
+	code, again := post(t, h, observation("2026-11-13T04:00:00Z"))
+	if code != http.StatusOK || again["record_uuid"] != first["record_uuid"] {
+		t.Errorf("a repeat must return the stored record with 200: %d %v", code, again["record_uuid"])
+	}
+
+	// A later observation of the same key lands on the same entity and chains on.
+	code, second := post(t, h, observation("2026-11-14T04:00:00Z"))
+	if code != http.StatusCreated {
+		t.Fatalf("second: %d %v", code, second)
+	}
+	if second["entity_uuid"] != id {
+		t.Errorf("the same natural key must reach the same entity: %v != %v", second["entity_uuid"], id)
+	}
+	if second["generation"] != float64(2) ||
+		second["integrity"].(map[string]any)["previous"] != first["integrity"].(map[string]any)["head"] ||
+		second["supersedes"].([]any)[0] != first["record_uuid"] {
+		t.Errorf("the second record must supersede and chain onto the first: %v", second)
+	}
+
+	code, list := get(t, h, "/api/v1alpha1/udlm/entities/"+id+"/records")
+	if code != http.StatusOK {
+		t.Fatalf("records: %d %v", code, list)
+	}
+	recs := list["records"].([]any)
+	if len(recs) != 2 {
+		t.Fatalf("expected 2 stored records, got %d", len(recs))
+	}
+	for i, r := range recs {
+		if err := records.Validate(r.(map[string]any)); err != nil {
+			t.Errorf("stored record %d does not validate: %v", i, err)
+		}
+		if err := records.Verify(r.(map[string]any)); err != nil {
+			t.Errorf("stored record %d does not verify: %v", i, err)
+		}
+	}
+	code, view := get(t, h, "/api/v1alpha1/udlm/entities/"+id)
+	if code != http.StatusOK || view["lifecycle_state"] != "Discovered" {
+		t.Errorf("view: %d %v", code, view["lifecycle_state"])
+	}
+
+	// The same key in another class or another tenant is another entity.
+	other := observation("2026-11-13T04:00:00Z")
+	other["tenant_uuid"] = "791e6713-656c-44bf-8a4b-865804eb0872"
+	if code, rec := post(t, h, other); code != http.StatusCreated || rec["entity_uuid"] == id {
+		t.Errorf("another tenant must get its own entity: %d %v", code, rec["entity_uuid"])
+	}
+}
+
+func TestDiscoveredIngestRefusals(t *testing.T) {
+	h, _ := newServer(t)
+	for name, change := range map[string]func(map[string]any){
+		"entity_uuid supplied": func(o map[string]any) { o["entity_uuid"] = entity },
+		"integrity supplied":   func(o map[string]any) { o["integrity"] = map[string]any{"head": "sha256:00"} },
+		"another state":        func(o map[string]any) { o["state"] = "Realized" },
+		"no natural key":       func(o map[string]any) { o["correlation_ids"] = []any{} },
+		"no tenant":            func(o map[string]any) { delete(o, "tenant_uuid") },
+		"unknown key scheme":   func(o map[string]any) { o["correlation_ids"].([]any)[0].(map[string]any)["scheme"] = "nickname" },
+		"an edge with a relation": func(o map[string]any) {
+			o["dependencies"].([]any)[0].(map[string]any)["relation"] = "boot_disk"
+		},
+	} {
+		o := observation("2026-11-13T04:00:00Z")
+		change(o)
+		code, body := post(t, h, o)
+		if code != http.StatusBadRequest || body["type"] != "invalid-observation" {
+			t.Errorf("%s: want 400 invalid-observation, got %d %v", name, code, body)
+		}
+	}
+	if code, page := get(t, h, "/api/v1alpha1/udlm/entities"); code != http.StatusOK || len(page["entities"].([]any)) != 0 {
+		t.Errorf("a refused observation must store nothing: %v", page)
+	}
+}
+
+func TestDiscoveredIngestAmbiguousKeys(t *testing.T) {
+	h, _ := newServer(t)
+	a := observation("2026-11-13T04:00:00Z")
+	b := observation("2026-11-13T04:00:00Z")
+	b["correlation_ids"] = []any{map[string]any{"scheme": "serial_number", "value": "SN-0001"}}
+	for _, o := range []map[string]any{a, b} {
+		if code, body := post(t, h, o); code != http.StatusCreated {
+			t.Fatalf("setup: %d %v", code, body)
+		}
+	}
+	// One observation carrying both keys would join two entities; the store refuses to choose.
+	both := observation("2026-11-15T04:00:00Z")
+	both["correlation_ids"] = append(both["correlation_ids"].([]any), map[string]any{"scheme": "serial_number", "value": "SN-0001"})
+	if code, body := post(t, h, both); code != http.StatusConflict || body["type"] != "ambiguous-entity" {
+		t.Errorf("want 409 ambiguous-entity, got %d %v", code, body)
 	}
 }

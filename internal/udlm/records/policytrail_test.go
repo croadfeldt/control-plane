@@ -15,7 +15,7 @@ const (
 func sources(t *testing.T, prov map[string]any, path string) []string {
 	t.Helper()
 	entries, _ := prov[path].([]any)
-	var out []string
+	out := make([]string, 0, len(entries))
 	for i, e := range entries {
 		entry := e.(map[string]any)
 		if got := entry["sequence"]; got != float64(i+1) {
@@ -90,7 +90,7 @@ func TestRequestedRecordNamesEachPolicy(t *testing.T) {
 		t.Errorf("policies = %v\nwant       %v", got, wantPolicies)
 	}
 	applied := rec.Body["assembly"].(map[string]any)["applied"].([]any)
-	var appliedIDs []string
+	appliedIDs := make([]string, 0, len(applied))
 	for _, a := range applied {
 		appliedIDs = append(appliedIDs, stringOf(a.(map[string]any)["source"].(map[string]any)["id"]))
 	}

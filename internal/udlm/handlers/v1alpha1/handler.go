@@ -129,10 +129,18 @@ func (h *Handler) ListUdlmEntityRecords(ctx context.Context, req server.ListUdlm
 		}, nil
 	}
 	out := make([]server.StateRecord, 0, len(recs))
+	contexts := map[string]map[string]any{}
 	for i := range recs {
 		out = append(out, toStateRecord(recs[i].Body))
+		if recs[i].Context != nil {
+			contexts[recs[i].RecordUUID] = recs[i].Context
+		}
 	}
-	return server.ListUdlmEntityRecords200JSONResponse(server.StateRecordList{Records: out}), nil
+	list := server.StateRecordList{Records: out}
+	if len(contexts) > 0 {
+		list.Contexts = &contexts
+	}
+	return server.ListUdlmEntityRecords200JSONResponse(list), nil
 }
 
 // toEntityView splits the computed view into the generated type's named fields

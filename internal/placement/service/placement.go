@@ -87,6 +87,7 @@ func (s *PlacementService) CreateRun(ctx context.Context, req *types.CreateRunRe
 	type preparedResource struct {
 		resource      model.Resource
 		evaluatedSpec map[string]any
+		policies      []policy.PolicyOutcome
 	}
 
 	availableAgents, err := s.listAvailableAgents(ctx)
@@ -125,6 +126,7 @@ func (s *PlacementService) CreateRun(ctx context.Context, req *types.CreateRunRe
 				ApprovalStatus:        &evaluated.Status,
 			},
 			evaluatedSpec: evaluated.EvaluatedSpec,
+			policies:      evaluated.Policies,
 		})
 	}
 
@@ -197,9 +199,11 @@ func (s *PlacementService) CreateRun(ctx context.Context, req *types.CreateRunRe
 		}
 		provisionedIDs = append(provisionedIDs, p.resource.ID)
 		s.records.Requested(ctx, records.RequestedInput{
-			EntityUUID: p.resource.ID,
-			Spec:       p.evaluatedSpec,
-			AgentName:  *p.resource.AgentName,
+			EntityUUID:  p.resource.ID,
+			Spec:        p.evaluatedSpec,
+			AgentName:   *p.resource.AgentName,
+			PolicyInput: p.resource.Spec,
+			Policies:    recordPolicies(p.policies),
 		})
 	}
 
@@ -683,4 +687,20 @@ func (s *PlacementService) evaluateResourcePolicy(ctx context.Context, resourceI
 		return nil, NewPolicyInternalError("policy response missing selected agent")
 	}
 	return policyResponse, nil
+}
+
+// recordPolicies hands the policy outcomes to the UDLM record writer in its own
+// types, so internal/udlm/records does not depend on the policy packages.
+func recordPolicies(outcomes []policy.PolicyOutcome) []records.PolicyOutcome {
+	if len(outcomes) == 0 {
+		return nil
+	}
+	out := make([]records.PolicyOutcome, len(outcomes))
+	for i, o := range outcomes {
+		out[i] = records.PolicyOutcome{ID: o.PolicyID, Spec: o.Spec, Reason: o.Reason}
+		for _, c := range o.Consulted {
+			out[i].Consulted = append(out[i].Consulted, records.Citation{UUID: c.UUID, Version: c.Version, Head: c.Head})
+		}
+	}
+	return out
 }

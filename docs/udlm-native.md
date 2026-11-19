@@ -41,6 +41,7 @@ model. Enhancement #91 asks to reconcile the auth actor model with UDLM `Identit
 | 7 | **Policy verdict three-state and override.** The policy response distinguishes refused (permanent) from pending (transient), and an `override` policy type is honored per policy-contract §18. | `internal/policy`, `internal/placement/policy` | 11, 16, 19 | after 2 |
 | 8 | **Identity reconciliation** with UDLM `Identity.*` (upstream enhancement #91). | `internal/auth` | none in the release set | when #91 moves |
 | 9 | **Usage groups → the catalog's shelves (udlm ADR-082).** A class is filed under one or more usage groups; the compile carries `filed_under` into the served spec; the generator emits `UDLMGroups` (slug → groups) and `UDLMUsageGroups` (the vocabulary) beside `UDLMTypes`. Service types and catalog items expose `filed_under` read-only — inherited from the class, never declared per item; a catalog item is on every shelf any of its resources is on. `GET /usage-groups` lists the vocabulary; `?filed_under=` filters both list endpoints with the same term a URF criterion uses. The free-form `labels.category` example is retired. | `cmd/udlm-servicetype-gen`, `api/catalog/v1alpha1/openapi.yaml`, `internal/catalog/{service,store,handlers}` | 3 | done |
+| 10 | **Each policy named for what it set, and the records it consulted cited.** A requested record's changed fields are attributed to the policy that changed them (`dcm/policies/<id>`), not to placement as a whole; the record lists every policy that decided (`policies[]`); and a policy that read outside records to decide (an information provider's answer) cites them as `{uuid, version, head}` in the record's `udlm_context` facet, stored beside the record. | `internal/policy/{opa,service}`, `internal/placement`, `internal/udlm/records`, `api/udlm/v1alpha1` | 5, 14 | in review |
 
 Audit chain (rows 15, 21) and graph queries over stored edges (rows 7, 8, 9) are not scheduled here. The
 audit chain needs a writer that does not exist in either tree; graph ordering exists upstream inside a
@@ -112,6 +113,42 @@ provider. So:
 - Leaf paths are dot-paths into objects; arrays and scalars are leaves, as in the example
   (`outputs.ip_addresses`, `cpu.count`). Fields and outputs are JSON-normalized before diffing so a
   stored record and a fresh spec compare like with like.
+
+## Increment 10 as built
+
+Increment 4 put every field placement changed down to one source, `dcm/placement`, because policy
+evaluation returned only the final spec. It now returns what each policy did, and the writer walks the
+spec through the steps the request took.
+
+- **A policy's decision may carry two more keys.** `reason` is its own one-line account. `consulted` is
+  a list of citations, each exactly `{uuid, version, head}` with `head` optional: the entry shape of
+  `consulted` in UDLM's `udlm_context` facet (ADR-059: the seal carries attribution and cause, and cites
+  any record that materially took part in a decision). A citation names the record that was read, never
+  the provider that served it. An entry with any other key, a uuid that is not v4, or a head that is not
+  `sha256:<64 hex>` fails the evaluation: it is neither dropped nor passed through.
+- **Who set what.** The walk is: the intent's fields, the spec placement handed to policy, the spec as
+  each patching policy left it, the spec that was sent. Each step's changes get a provenance entry from
+  whoever made the step: `dcm/placement` for the binding before policy and for anything left over,
+  `dcm/policies/<id>` for a policy's patch. A field two steps changed carries both entries, in order,
+  each with the value it replaced. A policy that used a provider's answer to patch is still the source:
+  it decided and it wrote the patch. A companion record (a node pool, a disk layout) keeps the single
+  placement attribution; the per-policy account is on the root's record.
+- **What ran.** `policies[]` gets one entry per policy that returned a decision: the policy, `decision:
+  allow`, the paths it changed, and its reason. `assembly.applied` lists placement and then each policy
+  that changed something.
+- **Where the citations live.** The state-record schema has no place for them, and ADR-059 keeps them on
+  the seal and out of the working record. The control plane writes no seal yet, so the writer builds the
+  `udlm_context` facet, validates it against the vendored facet schema, and stores it in a new `context`
+  column beside the record: `principal` (the actor the intent record names, carried through),
+  `pathway_ref` (the request, by `root_request_uuid`), `policy_decisions` (`transform` for a policy that
+  changed a field, `permit` otherwise) and `consulted` (each record once). It is not part of the record's
+  integrity hash. `GET .../records` returns it under `contexts`, keyed by `record_uuid`. A facet the
+  schema refuses stops the write of its record. A requested record no policy decided anything about has
+  no facet.
+- **Not built.** The facet has no `intent_ref` (a citation's uuid is v4 and a record uuid is v7), no
+  `request_chain_head`, and nothing seals it. A request that policy refuses still writes no requested
+  record. A policy cannot yet hold a request, so a change freeze can be stated and cited but not enforced
+  as a deferral.
 
 ## Increment 3 as built
 

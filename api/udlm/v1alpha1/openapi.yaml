@@ -91,7 +91,7 @@ paths:
         - udlm
       summary: List the entity's records
       operationId: listUdlmEntityRecords
-      description: Every per-state record for the entity, oldest first, each as stored.
+      description: Every per-state record for the entity, oldest first, each as stored, with the context facet of each record that has one.
       parameters:
         - $ref: '#/components/parameters/EntityUuidPath'
       responses:
@@ -214,6 +214,18 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/StateRecord'
+        contexts:
+          type: object
+          description: |
+            The udlm_context facet of each record that has one, keyed by the
+            record's record_uuid: who caused the write, the policy decisions that
+            permitted it, and the records those policies consulted. The shape is
+            the registry's registry/facets/udlm-context.facet.json. UDLM keeps
+            this beside the record and not in it, so it is not part of the
+            record's integrity hash. Absent when no record has one.
+          additionalProperties:
+            type: object
+            additionalProperties: true
 
     EntityView:
       type: object

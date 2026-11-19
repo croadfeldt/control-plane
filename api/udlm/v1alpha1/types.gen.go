@@ -174,7 +174,14 @@ type StateRecordState string
 
 // StateRecordList defines model for StateRecordList.
 type StateRecordList struct {
-	Records []StateRecord `json:"records"`
+	// Contexts The udlm_context facet of each record that has one, keyed by the
+	// record's record_uuid: who caused the write, the policy decisions that
+	// permitted it, and the records those policies consulted. The shape is
+	// the registry's registry/facets/udlm-context.facet.json. UDLM keeps
+	// this beside the record and not in it, so it is not part of the
+	// record's integrity hash. Absent when no record has one.
+	Contexts *map[string]map[string]interface{} `json:"contexts,omitempty"`
+	Records  []StateRecord                      `json:"records"`
 }
 
 // EntityUuidPath defines model for EntityUuidPath.

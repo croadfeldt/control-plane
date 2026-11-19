@@ -26,29 +26,31 @@ func compiledSchema(id string) (*jsonschema.Schema, error) {
 	compileOnce.Do(func() {
 		c := jsonschema.NewCompiler()
 		c.UseRegexpEngine(patternEngine)
-		entries, err := fs.ReadDir(schema.Files, ".")
+		// Every vendored file is registered under the path it has in the registry
+		// (a facet lives under facets/ and refers up to ../common-elements).
+		err := fs.WalkDir(schema.Files, ".", func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			raw, err := schema.Files.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			var doc any
+			if err := json.Unmarshal(raw, &doc); err != nil {
+				return fmt.Errorf("parse %s: %w", path, err)
+			}
+			if err := c.AddResource(schema.BaseURL+path, doc); err != nil {
+				return fmt.Errorf("add %s: %w", path, err)
+			}
+			return nil
+		})
 		if err != nil {
 			compileErr = err
 			return
 		}
-		for _, e := range entries {
-			raw, err := schema.Files.ReadFile(e.Name())
-			if err != nil {
-				compileErr = err
-				return
-			}
-			var doc any
-			if err := json.Unmarshal(raw, &doc); err != nil {
-				compileErr = fmt.Errorf("parse %s: %w", e.Name(), err)
-				return
-			}
-			if err := c.AddResource(schema.BaseURL+e.Name(), doc); err != nil {
-				compileErr = fmt.Errorf("add %s: %w", e.Name(), err)
-				return
-			}
-		}
 		compiled = map[string]*jsonschema.Schema{}
-		for _, id := range []string{schema.StateRecord, schema.EntityView} {
+		for _, id := range []string{schema.StateRecord, schema.EntityView, schema.ContextFacet} {
 			sch, err := c.Compile(id)
 			if err != nil {
 				compileErr = fmt.Errorf("compile %s: %w", id, err)
@@ -98,6 +100,11 @@ func Validate(record map[string]any) error {
 // entity-view schema.
 func ValidateView(view map[string]any) error {
 	return validateAgainst(schema.EntityView, view)
+}
+
+// ValidateContext checks a udlm_context facet against the registry's facet schema.
+func ValidateContext(facet map[string]any) error {
+	return validateAgainst(schema.ContextFacet, facet)
 }
 
 func validateAgainst(id string, doc map[string]any) error {

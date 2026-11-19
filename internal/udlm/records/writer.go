@@ -78,6 +78,31 @@ type RequestedInput struct {
 	EntityUUID string
 	Spec       map[string]any // the evaluated spec as sent to the agent
 	AgentName  string         // the agent placement selected
+	// PolicyInput is the spec placement handed to policy evaluation. With it, a
+	// change placement made before any policy ran is not put down to a policy.
+	// Nil means it is not known, and then the intent's fields stand in for it.
+	PolicyInput map[string]any
+	// Policies is what each policy that returned a decision did, in evaluation
+	// order. Nil means no policy decided anything.
+	Policies []PolicyOutcome
+}
+
+// PolicyOutcome is one policy's part in the evaluation behind a requested record.
+type PolicyOutcome struct {
+	ID        string         // the policy's id in the control plane's policy store
+	Spec      map[string]any // the spec as this policy left it; nil when it patched nothing
+	Reason    string         // the policy's own account of its decision, when it gave one
+	Consulted []Citation     // the records it read and that mattered
+}
+
+// Citation names one consulted record: which record, which of its published
+// versions, and its chain head when it has one (the `consulted` entry of UDLM's
+// udlm_context facet, ADR-059). It names no provider: which provider serves a
+// record is a fact on that record.
+type Citation struct {
+	UUID    string
+	Version string
+	Head    string
 }
 
 // RealizedInput is what the agent reported when the resource reached RUNNING.
@@ -167,7 +192,7 @@ func (w *Writer) Requested(ctx context.Context, in RequestedInput) {
 		w.fail(ctx, "requested", in.EntityUUID, err)
 		return
 	}
-	if !w.writeRequested(ctx, in.EntityUUID, t, fields, in.AgentName, "") || len(exp.pools) == 0 {
+	if !w.writeRequested(ctx, in.EntityUUID, t, fields, in.AgentName, "", w.policyTrail(in)) || len(exp.pools) == 0 {
 		return
 	}
 	root, err := w.store.Latest(ctx, in.EntityUUID, "Requested")
@@ -187,7 +212,10 @@ func (w *Writer) Requested(ctx context.Context, in RequestedInput) {
 			continue
 		}
 		p.fields[clusterRefElement] = entityRef(in.EntityUUID)
-		w.writeRequested(ctx, entity, p.t, p.fields, in.AgentName, root.RecordUUID)
+		// A companion's fields are cut out of the root's spec. Which policy set
+		// what is told on the root's record; the companion keeps the one
+		// placement attribution.
+		w.writeRequested(ctx, entity, p.t, p.fields, in.AgentName, root.RecordUUID, nil)
 	}
 }
 
@@ -212,8 +240,9 @@ func (w *Writer) poolsOf(ctx context.Context, cluster string) (map[string]string
 
 // writeRequested writes one requested record. root is the record_uuid of the
 // requested record at the root of the order, or empty when this one is the root.
-func (w *Writer) writeRequested(ctx context.Context, entity string, t Type, fields map[string]any, agent, root string) bool {
-	return w.write(ctx, "requested", func() (map[string]any, error) {
+func (w *Writer) writeRequested(ctx context.Context, entity string, t Type, fields map[string]any, agent, root string, trail *policyTrail) bool {
+	var facet map[string]any
+	return w.writeWith(ctx, "requested", &facet, func() (map[string]any, error) {
 		intent, err := w.store.Latest(ctx, entity, "Intent")
 		if err != nil {
 			return nil, fmt.Errorf("no intent record to reference: %w", err)
@@ -259,19 +288,15 @@ func (w *Writer) writeRequested(ctx context.Context, entity string, t Type, fiel
 		}
 		rec["dispatch"] = receipt
 		intentFields, _ := intent.Body["fields"].(map[string]any)
-		prov, changed := diffProvenance(intentFields, fields, "policy", "dcm/placement", stringOf(rec["at"]))
-		if len(prov) > 0 {
-			rec["provenance"] = prov
+		told := trail.tell(intentFields, fields, stringOf(rec["at"]))
+		if len(told.provenance) > 0 {
+			rec["provenance"] = told.provenance
 		}
-		applied := map[string]any{"source": map[string]any{"kind": "policy", "id": "dcm/placement"}}
-		if len(changed) > 0 {
-			paths := make([]any, len(changed))
-			for i, c := range changed {
-				paths[i] = c
-			}
-			applied["fields"] = paths
+		rec["assembly"] = map[string]any{"applied": told.applied}
+		if len(told.policies) > 0 {
+			rec["policies"] = told.policies
+			facet = contextFacet(intent, stringOf(rec["root_request_uuid"]), actorID(ctx), told)
 		}
-		rec["assembly"] = map[string]any{"applied": []any{applied}}
 		rec["metadata"] = map[string]any{
 			"notes": []any{map[string]any{
 				"at":     rec["at"],
@@ -436,6 +461,14 @@ func (w *Writer) typedFields(spec map[string]any) (Type, map[string]any, expansi
 // write runs build, then validates, seals onto the entity's chain, and stores.
 // Every failure is logged at error level and dropped.
 func (w *Writer) write(ctx context.Context, kind string, build func() (map[string]any, error)) bool {
+	return w.writeWith(ctx, kind, nil, build)
+}
+
+// writeWith is write for a record that may come with a udlm_context facet. The
+// builder fills *facet; the facet is validated and stored beside the record,
+// never inside it. A facet that does not validate refuses the whole write: a
+// record that drops its citations would say less than what happened.
+func (w *Writer) writeWith(ctx context.Context, kind string, facet *map[string]any, build func() (map[string]any, error)) bool {
 	rec, err := build()
 	if errors.Is(err, errNothingChanged) {
 		w.log.DebugContext(ctx, "udlm record skipped", "kind", kind, "reason", err)
@@ -472,6 +505,18 @@ func (w *Writer) write(ctx context.Context, kind string, build func() (map[strin
 		w.log.ErrorContext(ctx, "udlm record rejected by state-record schema", "kind", kind, "entity_uuid", entity, "error", err)
 		return false
 	}
+	var context map[string]any
+	if facet != nil && *facet != nil {
+		rtFacet, err := roundTrip(*facet)
+		if err == nil {
+			context, _ = rtFacet.(map[string]any)
+			err = ValidateContext(context)
+		}
+		if err != nil {
+			w.log.ErrorContext(ctx, "udlm record not written: its context facet was rejected", "kind", kind, "entity_uuid", entity, "error", err)
+			return false
+		}
+	}
 	generation, _ := body["generation"].(float64)
 	row := &StateRecord{
 		RecordUUID:   stringOf(body["record_uuid"]),
@@ -484,6 +529,7 @@ func (w *Writer) write(ctx context.Context, kind string, build func() (map[strin
 		Head:         stringOf(body["integrity"].(map[string]any)["head"]),
 		ContainedBy:  containerOf(body),
 		Body:         body,
+		Context:      context,
 	}
 	if err := w.store.Put(ctx, row); err != nil {
 		w.log.ErrorContext(ctx, "udlm record not stored", "kind", kind, "entity_uuid", entity, "error", err)

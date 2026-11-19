@@ -23,7 +23,13 @@ type StateRecord struct {
 	// containment (a cluster's node pool); empty otherwise.
 	ContainedBy string         `gorm:"column:contained_by;type:varchar(36);index"`
 	Body        map[string]any `gorm:"column:body;type:jsonb;serializer:json;not null"`
-	CreatedAt   time.Time      `gorm:"column:created_at;autoCreateTime"`
+	// Context is the record's udlm_context facet (registry/facets/udlm-context.facet.json):
+	// who caused the write, the policy decisions that permitted it, and the records
+	// those policies consulted. UDLM keeps this on the seal and not in the record
+	// (ADR-059), so it is stored beside Body and is not part of the record's hash.
+	// Nil when no policy decided anything.
+	Context   map[string]any `gorm:"column:context;type:jsonb;serializer:json"`
+	CreatedAt time.Time      `gorm:"column:created_at;autoCreateTime"`
 }
 
 // TableName keeps the table apart from every upstream table.

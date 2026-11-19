@@ -151,3 +151,17 @@ Usage: {{ include "dcm.waitForKeycloak" . | nindent 8 }}
     seccompProfile:
       type: RuntimeDefault
 {{- end }}
+
+{{/*
+The address a browser reaches the UI at: dcmUi.baseUrl when set, else the Route's
+host over https when the Route is on and names one, else the port-forward address.
+*/}}
+{{- define "dcm.uiBaseUrl" -}}
+{{- if .Values.dcmUi.baseUrl -}}
+{{- .Values.dcmUi.baseUrl -}}
+{{- else if and .Values.dcmUi.route.enabled .Values.dcmUi.route.host -}}
+{{- printf "https://%s" .Values.dcmUi.route.host -}}
+{{- else -}}
+http://localhost:7007
+{{- end -}}
+{{- end }}

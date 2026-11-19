@@ -441,6 +441,10 @@
           "description": "Image tag. Empty defaults to global.imageTag.",
           "default": "m2"
         },
+        "baseUrl": {
+          "type": "string",
+          "description": "The address a browser reaches the UI at. Empty defaults to https://<route.host> when the Route is enabled and names a host, else http://localhost:7007."
+        },
         "route": {
           "$ref": "#/definitions/route"
         },

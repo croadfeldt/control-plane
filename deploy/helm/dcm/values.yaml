@@ -69,6 +69,10 @@ dcmUi:
   enabled: true
   image: quay.io/dcm-project/dcm-ui
   tag: m2  # empty defaults to global.imageTag
+  # The address a browser reaches the UI at. Empty = https://<route.host> when the Route is enabled
+  # and names a host, else http://localhost:7007 (a port-forward). Set it when the UI is reached
+  # some other way, or through a Route whose host the cluster generates.
+  baseUrl: ""
   route:
     enabled: true
     host: ""

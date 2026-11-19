@@ -23,8 +23,11 @@ spec:
             - containerPort: 7007
               protocol: TCP
           env:
+            # The address a browser reaches the UI at. The UI hands it to the page it
+            # serves, and the page calls the backend there, so behind a Route it must
+            # be the Route's address. localhost is right only for a port-forward.
             - name: APP_BASE_URL
-              value: "http://localhost:7007"
+              value: {{ include "dcm.uiBaseUrl" . | quote }}
             - name: DCM_API_URL
               value: "http://{{ include "dcm.fullname" . }}-control-plane:8080"
 ---

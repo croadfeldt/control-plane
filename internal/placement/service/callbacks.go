@@ -189,9 +189,11 @@ func (s *PlacementService) OnResourceRunning(ctx context.Context, event types.Re
 			return handleSPRMError(err)
 		}
 		s.records.Requested(ctx, records.RequestedInput{
-			EntityUUID: r.ID,
-			Spec:       evaluated.EvaluatedSpec,
-			AgentName:  evaluated.SelectedAgent,
+			EntityUUID:  r.ID,
+			Spec:        evaluated.EvaluatedSpec,
+			AgentName:   evaluated.SelectedAgent,
+			PolicyInput: boundSpec,
+			Policies:    recordPolicies(evaluated.Policies),
 		})
 	}
 	return nil

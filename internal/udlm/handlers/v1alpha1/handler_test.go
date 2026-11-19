@@ -139,3 +139,36 @@ func TestNotFound(t *testing.T) {
 		t.Errorf("empty list: %d %v", code, page)
 	}
 }
+
+// The records list returns a record's context facet beside the record, keyed by
+// record_uuid, and leaves the key out when no record has one.
+func TestRecordsCarryTheirContextBesideThem(t *testing.T) {
+	h, st := newServer(t)
+	seed(t, st)
+	_, before := get(t, h, "/api/v1alpha1/udlm/entities/"+entity+"/records")
+	if _, has := before["contexts"]; has {
+		t.Errorf("contexts present although no record has one: %v", before["contexts"])
+	}
+
+	const withContext = "0198f3a0-0000-7000-8000-00000000c0de"
+	facet := map[string]any{"consulted": []any{map[string]any{"uuid": "6c1f5a0e-2b7d-4c3a-9e41-0d8f7a6b5c21", "version": "1"}}}
+	if err := st.Put(context.Background(), &records.StateRecord{
+		RecordUUID: withContext, EntityUUID: entity, TenantUUID: "75ccf4ff-3e8d-4963-bc51-459ae1014cb7",
+		RecordType: "requested_record", State: "Requested", ResourceType: "Machine.VM", Head: "sha256:00",
+		Body:    map[string]any{"record_type": "requested_record", "state": "Requested", "entity_uuid": entity, "record_uuid": withContext},
+		Context: facet,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, after := get(t, h, "/api/v1alpha1/udlm/entities/"+entity+"/records")
+	contexts, _ := after["contexts"].(map[string]any)
+	got, _ := contexts[withContext].(map[string]any)
+	if len(contexts) != 1 || got["consulted"] == nil {
+		t.Errorf("contexts = %v; want the one facet under its record's uuid", after["contexts"])
+	}
+	for _, r := range after["records"].([]any) {
+		if _, inside := r.(map[string]any)["consulted"]; inside {
+			t.Error("the facet leaked into a record")
+		}
+	}
+}

@@ -29,6 +29,26 @@ type EvaluateResponse struct {
 	Status        string         `json:"status"`
 	SelectedAgent string         `json:"selected_agent"`
 	EvaluatedSpec map[string]any `json:"evaluated_spec"`
+	// Policies is what each policy that returned a decision did, in evaluation
+	// order. Placement hands it to the UDLM record writer and reads nothing from it.
+	Policies []PolicyOutcome `json:"policies,omitempty"`
+}
+
+// PolicyOutcome is one policy's part in an evaluation. A parallel type, like
+// AgentInfo, so this package does not depend on internal/policy/service's types.
+type PolicyOutcome struct {
+	PolicyID   string         `json:"policy_id"`
+	PolicyType string         `json:"policy_type,omitempty"`
+	Spec       map[string]any `json:"spec,omitempty"` // the spec as this policy left it, when it patched
+	Reason     string         `json:"reason,omitempty"`
+	Consulted  []Citation     `json:"consulted,omitempty"`
+}
+
+// Citation names a record a policy consulted: uuid, version, and chain head.
+type Citation struct {
+	UUID    string `json:"uuid"`
+	Version string `json:"version"`
+	Head    string `json:"head,omitempty"`
 }
 
 // Client is the port PlacementService uses to evaluate policies.

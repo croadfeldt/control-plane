@@ -59,9 +59,12 @@ build-gitops:
 # checkout.
 UDLM_DIR ?= ../udlm
 UDLM_SCHEMAS := state-record.schema.json entity-view.schema.json common-elements.schema.json policy.schema.json
+UDLM_FACETS := udlm-context.facet.json
 generate-udlm:
 	@mkdir -p internal/udlm/schema
 	@for f in $(UDLM_SCHEMAS); do cp $(UDLM_DIR)/registry/$$f internal/udlm/schema/$$f; done
+	@mkdir -p internal/udlm/schema/facets
+	@for f in $(UDLM_FACETS); do cp $(UDLM_DIR)/registry/facets/$$f internal/udlm/schema/facets/$$f; done
 	@printf 'croadfeldt/udlm %s\n' "$$(git -C $(UDLM_DIR) rev-parse HEAD)" > internal/udlm/schema/SOURCE
 	go run ./cmd/udlm-servicetype-gen -udlm $(UDLM_DIR) -out api/catalog/v1alpha1/servicetypes -type all -meta-only
 

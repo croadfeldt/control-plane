@@ -5,9 +5,11 @@ package schema
 
 import "embed"
 
-// Files holds state-record.schema.json, entity-view.schema.json and the schemas they reference.
+// Files holds state-record.schema.json, entity-view.schema.json, the schemas they
+// reference, and the udlm_context facet under facets/, at the path each has in
+// the registry so relative `$ref`s resolve.
 //
-//go:embed *.schema.json
+//go:embed *.schema.json facets/*.facet.json
 var Files embed.FS
 
 // BaseURL is the `$id` base every vendored schema declares; relative `$ref`s
@@ -19,3 +21,8 @@ const StateRecord = BaseURL + "state-record.schema.json"
 
 // EntityView is the schema id of the computed read model.
 const EntityView = BaseURL + "entity-view.schema.json"
+
+// ContextFacet is the schema id of the udlm_context facet: who caused a write,
+// the policy decisions that permitted it, and the records those consulted
+// (ADR-059). It is also the facet's required `_schemaURL`.
+const ContextFacet = BaseURL + "facets/udlm-context.facet.json"

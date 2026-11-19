@@ -34,10 +34,19 @@ func (c *serviceClient) Evaluate(ctx context.Context, req EvaluateRequest) (*Eva
 	}
 
 	status := string(response.Status)
+	var policies []PolicyOutcome
+	for _, o := range response.Policies {
+		out := PolicyOutcome{PolicyID: o.PolicyID, PolicyType: o.PolicyType, Spec: o.Spec, Reason: o.Reason}
+		for _, c := range o.Consulted {
+			out.Consulted = append(out.Consulted, Citation{UUID: c.UUID, Version: c.Version, Head: c.Head})
+		}
+		policies = append(policies, out)
+	}
 	return &EvaluateResponse{
 		Status:        status,
 		SelectedAgent: response.SelectedAgent,
 		EvaluatedSpec: response.EvaluatedServiceInstance,
+		Policies:      policies,
 	}, nil
 }
 

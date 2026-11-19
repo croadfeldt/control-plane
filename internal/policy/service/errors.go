@@ -211,3 +211,14 @@ type ConstraintViolation struct {
 	Reason      string
 	SetByPolicy string
 }
+
+// NewInvalidPolicyOutputError reports a policy whose decision is malformed, such
+// as a `consulted` entry carrying a key a citation does not have. It is the
+// policy's fault, not the request's, so it is an internal error.
+func NewInvalidPolicyOutputError(policyID, detail string) *ServiceError {
+	return &ServiceError{
+		Type:    ErrorTypeInternal,
+		Message: fmt.Sprintf("Policy '%s' returned an invalid decision", policyID),
+		Detail:  detail,
+	}
+}

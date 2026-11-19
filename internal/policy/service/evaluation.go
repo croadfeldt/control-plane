@@ -45,6 +45,21 @@ type EvaluationResponse struct {
 	EvaluatedServiceInstance map[string]any
 	SelectedAgent            string
 	Status                   EvaluationStatus
+	// Policies is what each policy that returned a decision did, in evaluation
+	// order, so the caller can say which policy set which field.
+	Policies []PolicyOutcome
+}
+
+// PolicyOutcome is one policy's part in an evaluation.
+type PolicyOutcome struct {
+	PolicyID   string
+	PolicyType string
+	// Spec is the spec as this policy left it, set only when its patch was applied.
+	Spec map[string]any
+	// Reason is the policy's own account of its decision, when it gave one.
+	Reason string
+	// Consulted cites the records the policy read and that mattered.
+	Consulted []opa.Citation
 }
 
 type evaluationService struct {
@@ -100,6 +115,7 @@ func (s *evaluationService) EvaluateRequest(ctx context.Context, req *Evaluation
 	}
 
 	selectedAgent := ""
+	var outcomes []PolicyOutcome
 
 	var pageToken *string
 	policiesEvaluated := 0
@@ -125,10 +141,14 @@ func (s *evaluationService) EvaluateRequest(ctx context.Context, req *Evaluation
 
 			log.Debug("Evaluating policy", "policy_id", policy.ID, "policy_type", policy.PolicyType, "priority", policy.Priority)
 
-			currentSpec, selectedAgent, err = s.evaluatePolicy(ctx, &policy, currentSpec, selectedAgent, availableAgents, req.ExcludeAgents, constraintCtx)
+			var outcome *PolicyOutcome
+			currentSpec, selectedAgent, outcome, err = s.evaluatePolicy(ctx, &policy, currentSpec, selectedAgent, availableAgents, req.ExcludeAgents, constraintCtx)
 			if err != nil {
 				log.Warn("Policy evaluation failed", "policy_id", policy.ID, "error", err)
 				return nil, err
+			}
+			if outcome != nil {
+				outcomes = append(outcomes, *outcome)
 			}
 			policiesEvaluated++
 		}
@@ -155,6 +175,7 @@ func (s *evaluationService) EvaluateRequest(ctx context.Context, req *Evaluation
 		EvaluatedServiceInstance: currentSpec,
 		SelectedAgent:            selectedAgent,
 		Status:                   status,
+		Policies:                 outcomes,
 	}, nil
 }
 
@@ -166,7 +187,7 @@ func (s *evaluationService) evaluatePolicy(
 	availableAgents []AgentInfo,
 	excludeAgents []string,
 	constraintCtx *ConstraintContext,
-) (map[string]any, string, error) {
+) (map[string]any, string, *PolicyOutcome, error) {
 	log := logging.FromContext(ctx)
 	opaInput := map[string]any{
 		"spec": currentSpec,
@@ -209,7 +230,7 @@ func (s *evaluationService) evaluatePolicy(
 
 	evalResult, err := s.engine.EvaluatePolicy(ctx, policy.ID, opaInput)
 	if err != nil {
-		return nil, "", NewInternalError(
+		return nil, "", nil, NewInternalError(
 			fmt.Sprintf("Failed to evaluate policy '%s'", policy.ID),
 			err.Error(),
 			err,
@@ -218,25 +239,35 @@ func (s *evaluationService) evaluatePolicy(
 
 	if !evalResult.Defined {
 		log.Debug("Policy returned undefined result, skipping", "policy_id", policy.ID)
-		return currentSpec, selectedAgent, nil
+		return currentSpec, selectedAgent, nil, nil
 	}
 
 	decision := opa.ParsePolicyDecision(evalResult.Result)
+	consulted, err := opa.ParseConsulted(evalResult.Result)
+	if err != nil {
+		return nil, "", nil, NewInvalidPolicyOutputError(policy.ID, err.Error())
+	}
+	outcome := &PolicyOutcome{
+		PolicyID:   policy.ID,
+		PolicyType: policy.PolicyType,
+		Reason:     decision.Reason,
+		Consulted:  consulted,
+	}
 
 	if decision.Rejected {
 		log.Info("Policy rejected request", "policy_id", policy.ID, "reason", decision.RejectionReason)
-		return nil, "", NewPolicyRejectedError(policy.ID, decision.RejectionReason)
+		return nil, "", nil, NewPolicyRejectedError(policy.ID, decision.RejectionReason)
 	}
 
 	if decision.Constraints != nil {
 		if err := constraintCtx.MergeConstraints(decision.Constraints, policy.ID); err != nil {
 			var conflictErr *ConstraintConflictError
 			if errors.As(err, &conflictErr) {
-				return nil, "", NewConstraintConflictError(
+				return nil, "", nil, NewConstraintConflictError(
 					policy.ID, conflictErr.FieldPath, conflictErr.SetByPolicy, conflictErr.Reason,
 				)
 			}
-			return nil, "", NewConstraintConflictError(policy.ID, "", "", err.Error())
+			return nil, "", nil, NewConstraintConflictError(policy.ID, "", "", err.Error())
 		}
 	}
 
@@ -247,40 +278,45 @@ func (s *evaluationService) evaluatePolicy(
 			EnvironmentConstraints: decision.AgentConstraints.EnvironmentConstraints,
 		}
 		if err := constraintCtx.MergeAgentConstraints(ac, policy.ID); err != nil {
-			return nil, "", NewAgentConstraintError(policy.ID, err.Error())
+			return nil, "", nil, NewAgentConstraintError(policy.ID, err.Error())
 		}
 	}
 
 	if decision.Patch != nil {
 		violations := constraintCtx.ValidatePatch(decision.Patch)
 		if len(violations) > 0 {
-			return nil, "", NewConstraintViolationError(policy.ID, violations)
+			return nil, "", nil, NewConstraintViolationError(policy.ID, violations)
 		}
 
 		currentSpec, err = mergePatch(currentSpec, decision.Patch)
 		if err != nil {
-			return nil, "", NewInternalError("Failed to merge patch into current spec", err.Error(), err)
+			return nil, "", nil, NewInternalError("Failed to merge patch into current spec", err.Error(), err)
 		}
 		log.Debug("Policy patch applied", "policy_id", policy.ID)
+		// A copy: later policies patch a fresh copy too (mergePatch), but the
+		// caller must not see this snapshot move.
+		if outcome.Spec, err = deep.Copy(currentSpec); err != nil {
+			return nil, "", nil, NewInternalError("Failed to copy the patched spec", err.Error(), err)
+		}
 	}
 
 	if decision.SelectedAgent != "" {
 		if err := constraintCtx.ValidateAgent(decision.SelectedAgent, agentNames(availableAgents)); err != nil {
-			return nil, "", NewAgentConstraintError(policy.ID, err.Error())
+			return nil, "", nil, NewAgentConstraintError(policy.ID, err.Error())
 		}
 		// A lookup miss here only happens when availableAgents was empty
 		// (ValidateAgent didn't enforce membership either), so there's
 		// nothing to validate the environment against.
 		if env, ok := agentEnvironment(availableAgents, decision.SelectedAgent); ok {
 			if err := constraintCtx.ValidateAgentEnvironment(env); err != nil {
-				return nil, "", NewAgentConstraintError(policy.ID, err.Error())
+				return nil, "", nil, NewAgentConstraintError(policy.ID, err.Error())
 			}
 		}
 		log.Debug("Policy selected agent", "policy_id", policy.ID, "agent", decision.SelectedAgent)
 		selectedAgent = decision.SelectedAgent
 	}
 
-	return currentSpec, selectedAgent, nil
+	return currentSpec, selectedAgent, outcome, nil
 }
 
 func mergePatch(base, patch map[string]any) (map[string]any, error) {
